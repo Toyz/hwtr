@@ -51,12 +51,20 @@ pub fn state(exe: &hwtr_psx::Exe, name: &str) -> Option<hwtr_cpu::Machine> {
     Some(m)
 }
 
-/// Compares RAM after the original and the port ran, skipping the stack the
-/// call used and any `skip` ranges (address, length); panics on the first
-/// differences, with addresses relative to `base`.
+/// Where `Machine::call` leaves room for results the caller passes pointers
+/// to: above the stack it calls on.
+#[allow(dead_code)]
+pub const OUT: u32 = hwtr_cpu::machine::STACK_TOP + 0x20;
+
+/// Compares RAM after the original and the port ran, skipping the stack below
+/// the one `Machine::call` starts from (the call's own frames) and the 16
+/// bytes above it (where a MIPS callee may save its register arguments), and
+/// any `skip` ranges (address, length); panics on the first differences, with
+/// addresses relative to `base`.
 #[allow(dead_code)]
 pub fn same_ram(original: &[u8], port: &[u8], base: u32, skip: &[(u32, u32)], what: &str) {
-    let stack = (hwtr_cpu::machine::STACK_TOP - 0x8000) & 0x1f_ffff..(hwtr_cpu::machine::STACK_TOP & 0x1f_ffff) + 0x100;
+    let top = hwtr_cpu::machine::STACK_TOP - 16;
+    let stack = (top - 0x8000) & 0x1f_ffff..(top & 0x1f_ffff) + 16;
     let skipped =
         |i: u32| stack.contains(&i) || skip.iter().any(|&(a, n)| (a & 0x1f_ffff..(a & 0x1f_ffff) + n).contains(&i));
     let diffs: Vec<String> = (0..original.len() as u32)

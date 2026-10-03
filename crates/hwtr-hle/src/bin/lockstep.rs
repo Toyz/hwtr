@@ -72,7 +72,9 @@ fn main() {
     }
     let (mut original, mut port) = (make(), make());
     hwtr_hle::port::install(&mut port.m);
-    let skip = hwtr_hle::port::unmatched();
+    // The stack differs, since a hooked function has no frame.
+    let mut skip = hwtr_hle::port::unmatched();
+    skip.push((0x801f_0000, 0x1_0000));
     let skipped = |i: u32| skip.iter().any(|&(a, n)| (a & 0x1f_ffff..(a & 0x1f_ffff) + n).contains(&i));
     for f in 0..frames {
         script.apply(&mut original, f);

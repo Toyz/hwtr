@@ -12,7 +12,7 @@ use hwtr_game::math::Tables;
 use hwtr_game::ram::Ram;
 
 /// (address, name) of every function `install` replaces.
-pub const PORTED: &[(u32, &str)] = &[(0x8004_0a90, "update_wheels")];
+pub const PORTED: &[(u32, &str)] = &[(0x8004_0a90, "update_wheels"), (0x8004_1af0, "aero")];
 
 /// Hooks the ported functions into `m`.
 pub fn install(m: &mut hwtr_cpu::Machine) {
@@ -22,6 +22,16 @@ pub fn install(m: &mut hwtr_cpu::Machine) {
         hwtr_game::car::update_wheels(&t1, &mut Ram(&mut bus.ram), cpu.r[4]);
         0
     });
+    m.hook(0x8004_1af0, aero);
+}
+
+/// `aero` as the original is called: car, and where to put the two results.
+fn aero(cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus) -> u32 {
+    let mut ram = Ram(&mut bus.ram);
+    let (a, b) = hwtr_game::car::aero(&mut ram, cpu.r[4]);
+    ram.set_i32(cpu.r[5], a);
+    ram.set_i32(cpu.r[6], b);
+    0
 }
 
 /// Compares RAM after the original against the port's copy.
@@ -37,24 +47,45 @@ fn compare(original: &[u8], port: &[u8], skip: &[(u32, u32)]) -> Result<(), Stri
     if diffs.is_empty() { Ok(()) } else { Err(diffs.join("; ")) }
 }
 
-/// Adds a shadow check for every ported function to `m`.
+/// Adds a shadow check for every ported function to `m`: the port runs on a
+/// copy of RAM through the same entry point a hook would use, and RAM must
+/// match when the original returns, apart from the stack below the entry
+/// `sp` (the call's own frames), the 16 bytes above it (where the callee may
+/// save its register arguments) and `unmatched` words.
 pub fn shadow(m: &mut hwtr_cpu::Machine) {
     let t = Rc::new(Tables::from_ram(&m.bus.ram));
+    let t1 = t.clone();
+    let wheels = move |cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus| {
+        hwtr_game::car::update_wheels(&t1, &mut Ram(&mut bus.ram), cpu.r[4]);
+        0
+    };
+    shadow_one(m, 0x8004_0a90, wheels);
+    shadow_one(m, 0x8004_1af0, aero);
+}
+
+fn shadow_one(
+    m: &mut hwtr_cpu::Machine,
+    addr: u32,
+    port: impl Fn(&mut hwtr_cpu::Cpu, &mut hwtr_cpu::Bus) -> u32 + 'static,
+) {
     let skip = Rc::new(unmatched());
-    let (t1, skip1) = (t.clone(), skip.clone());
-    m.check(0x8004_0a90, move |cpu, bus| {
-        let mut ram = bus.ram.clone();
-        hwtr_game::car::update_wheels(&t1, &mut Ram(&mut ram), cpu.r[4]);
-        let skip = skip1.clone();
+    m.check(addr, move |cpu, bus| {
+        let (mut cpu, mut bus2) = (cpu.clone(), hwtr_cpu::Bus { ram: bus.ram.clone(), ..Default::default() });
+        port(&mut cpu, &mut bus2);
+        let ram = bus2.ram;
+        let mut skip = (*skip).clone();
+        let sp = cpu.r[29];
+        // The call's frames, and the argument save area above them.
+        skip.push((sp.wrapping_sub(0x4000), 0x4000 + 16));
         Box::new(move |_, bus| compare(&bus.ram, &ram, &skip))
     });
 }
 
-/// Main RAM the port is not expected to reproduce: the stack, and words the
-/// original fills from uninitialised stack.
+/// Words the port is not expected to reproduce: those the original fills
+/// from uninitialised stack.
 pub fn unmatched() -> Vec<(u32, u32)> {
     use hwtr_game::car::{CAR_SIZE, CARS, WHEEL_SIZE, WHEELS, wheel};
-    let mut v = vec![(0x801f_0000, 0x1_0000)];
+    let mut v = Vec::new();
     for k in 0..8 {
         for i in 0..4 {
             v.push((CARS + k * CAR_SIZE + WHEELS + i * WHEEL_SIZE + wheel::HEADING + 12, 4));

@@ -633,6 +633,7 @@ pub fn decompile(p: &Program, start: u32, namer: &dyn Namer) -> Option<String> {
             spills: &mut spills,
             after,
             uses: BTreeMap::new(),
+            entry: k == 0,
         };
         if k == 0 && frame != 0 {
             // At entry sp is the frame plus its size, so after the prologue's
@@ -657,6 +658,8 @@ struct Emitter<'a, 'b> {
     /// For each instruction that writes a register, how often the value is
     /// read before it is overwritten.
     uses: BTreeMap<(u32, usize), usize>,
+    /// Whether this is the function's first block.
+    entry: bool,
 }
 
 impl Emitter<'_, '_> {
@@ -1026,8 +1029,11 @@ impl Emitter<'_, '_> {
                 self.set(pc, rt, Load(w, sg, rc(addr)));
             }
             Op::Sb | Op::Sh | Op::Sw | Op::Swl | Op::Swr => {
-                // A prologue saving a register it will restore.
+                // A prologue saving a register it will restore: in the entry
+                // block, the register still as it came in.
                 if let (Some(o), Reg(r)) = (slot(&addr), &t)
+                    && self.entry
+                    && !self.regs.contains_key(r)
                     && *r == rt
                     && SAVED.contains(r)
                     && i.op == Op::Sw

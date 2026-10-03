@@ -29,6 +29,16 @@ impl Ram<'_> {
         i32::from_le_bytes(self.0[i..i + 4].try_into().unwrap())
     }
 
+    /// A 64-bit word, stored low word first.
+    pub fn i64(&self, a: u32) -> i64 {
+        (self.i32(a) as u32 as i64) | ((self.i32(a + 4) as i64) << 32)
+    }
+
+    pub fn set_i64(&mut self, a: u32, v: i64) {
+        self.set_i32(a, v as i32);
+        self.set_i32(a + 4, (v >> 32) as i32);
+    }
+
     pub fn set_u8(&mut self, a: u32, v: u8) {
         self.0[at(a)] = v;
     }

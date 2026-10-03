@@ -57,3 +57,46 @@ fn update_wheels_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn aero_matches_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0xae20_0000_1111_2222);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let cars = m.bus.read_u32(car::CAR_COUNT);
+        let start = m.bus.ram.clone();
+        for round in 0..256 {
+            for k in 0..cars {
+                let at = CARS + k * CAR_SIZE;
+                m.bus.ram.copy_from_slice(&start);
+                if round > 0 {
+                    // Speeds and velocities over every magnitude, flags,
+                    // contact, and the tuning bytes.
+                    let mut ram = Ram(&mut m.bus.ram);
+                    let big = |rng: &mut common::Rng| (rng.word() as i32) >> (8 + rng.below(24));
+                    let v = [big(&mut rng), big(&mut rng), big(&mut rng)];
+                    ram.set_vec3(at + car::VEL, v);
+                    let speed = if round % 2 == 0 { big(&mut rng).abs() } else { 4096 + rng.below(3) as i32 - 1 };
+                    ram.set_i32(at + car::SPEED, speed);
+                    ram.set_vec3(at + car::DRAG_POINT, [big(&mut rng), big(&mut rng), big(&mut rng)]);
+                    ram.set_i32(at + car::FLAGS, rng.word() as i32);
+                    ram.set_u8(at + car::GROUNDED, rng.below(3) as u8);
+                    for b in [10, 33, 34, 36, 37, 39, 40] {
+                        ram.set_u8(car::TUNING + b, rng.word() as u8);
+                    }
+                }
+                let out = common::OUT;
+                let mut port = m.bus.ram.clone();
+                let (a, b) = car::aero(&mut Ram(&mut port), at);
+                {
+                    let mut ram = Ram(&mut port);
+                    ram.set_i32(out, a);
+                    ram.set_i32(out + 4, b);
+                }
+                m.call(0x8004_1af0, &[at, out, out + 4]).unwrap();
+                common::same_ram(&m.bus.ram, &port, at, &[], &format!("{name} car {k} round {round}"));
+            }
+        }
+    }
+}
