@@ -6,7 +6,7 @@
 //! never sees it. Tests and the reference's shadow checks use it to hold the
 //! port to the original byte for byte.
 
-use super::{Axle, Car, Engine, Tuning, TuningSet, Wheel};
+use super::{AirPower, AxisLock, Axle, Car, Engine, Tuning, TuningSet, Wheel};
 use crate::body::{self, Body};
 use crate::ram::Ram;
 
@@ -20,6 +20,7 @@ pub const FLAGS: u32 = 0x4;
 pub const STEER: u32 = 0x10;
 pub const ACCEL: u32 = 0x14;
 pub const BRAKE: u32 = 0x18;
+pub const STICK: u32 = 0x1c;
 pub const HANDBRAKE: u32 = 0x24;
 /// The rigid body; the car's position, velocity and the rest are its.
 pub const BODY: u32 = 0x30;
@@ -56,14 +57,21 @@ pub const DAMP_FRONT_OUT: u32 = 0x67c;
 pub const GRIP_REAR: u32 = 0x688;
 pub const DAMP_REAR_IN: u32 = 0x690;
 pub const DAMP_REAR_OUT: u32 = 0x694;
+pub const AIR_PITCH: u32 = 0x69c;
+pub const AIR_ROLL: u32 = 0x6a0;
+pub const AIR_YAW: u32 = 0x6a4;
 pub const UNKNOWN_6B4: u32 = 0x6b4;
 pub const ORIGIN: u32 = 0x770;
 pub const WIDTH: u32 = 0x780;
 pub const LENGTH: u32 = 0x784;
 pub const HEIGHT: u32 = 0x788;
 pub const UNKNOWN_865: u32 = 0x865;
-pub const UNKNOWN_86A: u32 = 0x86a;
-pub const UNKNOWN_86B: u32 = 0x86b;
+pub const AIR_CONTROL: u32 = 0x86a;
+pub const AIR_ARMED: u32 = 0x86b;
+/// The axis lock: active (byte), axis (word), direction (VECTOR).
+pub const AIR_LOCK: u32 = 0x876;
+pub const AIR_LOCK_AXIS: u32 = 0x878;
+pub const AIR_LOCK_DIR: u32 = 0x87c;
 
 /// The shared tuning bytes.
 pub const TUNING: u32 = 0x8013_6a18;
@@ -244,6 +252,7 @@ impl Car {
             steer: ram.i32(at + STEER),
             accel: ram.i32(at + ACCEL),
             brake: ram.i32(at + BRAKE),
+            stick: [ram.i32(at + STICK), ram.i32(at + STICK + 4)],
             handbrake: ram.u8(at + HANDBRAKE),
             body: Body::read(ram, at + BODY),
             drag_point: ram.vec3(at + DRAG_POINT),
@@ -263,10 +272,20 @@ impl Car {
             width: ram.i32(at + WIDTH),
             length: ram.i32(at + LENGTH),
             height: ram.i32(at + HEIGHT),
+            air_power: AirPower {
+                pitch: ram.i32(at + AIR_PITCH),
+                roll: ram.i32(at + AIR_ROLL),
+                yaw: ram.i32(at + AIR_YAW),
+            },
             unknown_6b4: ram.i32(at + UNKNOWN_6B4),
             unknown_865: ram.u8(at + UNKNOWN_865),
-            unknown_86a: ram.u8(at + UNKNOWN_86A),
-            unknown_86b: ram.u8(at + UNKNOWN_86B),
+            air_control: ram.u8(at + AIR_CONTROL),
+            air_armed: ram.u8(at + AIR_ARMED),
+            air_lock: AxisLock {
+                active: ram.u8(at + AIR_LOCK),
+                axis: ram.i32(at + AIR_LOCK_AXIS),
+                dir: ram.vec3(at + AIR_LOCK_DIR),
+            },
         }
     }
 
@@ -276,6 +295,8 @@ impl Car {
         ram.set_i32(at + STEER, self.steer);
         ram.set_i32(at + ACCEL, self.accel);
         ram.set_i32(at + BRAKE, self.brake);
+        ram.set_i32(at + STICK, self.stick[0]);
+        ram.set_i32(at + STICK + 4, self.stick[1]);
         ram.set_u8(at + HANDBRAKE, self.handbrake);
         self.body.write(ram, at + BODY);
         ram.set_vec3(at + DRAG_POINT, self.drag_point);
@@ -298,9 +319,15 @@ impl Car {
         ram.set_i32(at + WIDTH, self.width);
         ram.set_i32(at + LENGTH, self.length);
         ram.set_i32(at + HEIGHT, self.height);
+        ram.set_i32(at + AIR_PITCH, self.air_power.pitch);
+        ram.set_i32(at + AIR_ROLL, self.air_power.roll);
+        ram.set_i32(at + AIR_YAW, self.air_power.yaw);
         ram.set_i32(at + UNKNOWN_6B4, self.unknown_6b4);
         ram.set_u8(at + UNKNOWN_865, self.unknown_865);
-        ram.set_u8(at + UNKNOWN_86A, self.unknown_86a);
-        ram.set_u8(at + UNKNOWN_86B, self.unknown_86b);
+        ram.set_u8(at + AIR_CONTROL, self.air_control);
+        ram.set_u8(at + AIR_ARMED, self.air_armed);
+        ram.set_u8(at + AIR_LOCK, self.air_lock.active);
+        ram.set_i32(at + AIR_LOCK_AXIS, self.air_lock.axis);
+        ram.set_vec3(at + AIR_LOCK_DIR, self.air_lock.dir);
     }
 }

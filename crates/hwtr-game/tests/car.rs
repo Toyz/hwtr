@@ -4,7 +4,7 @@ mod common;
 
 use hwtr_game::car::layout::{self as car, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS};
 use hwtr_game::car::{Car, Tuning, Wheel};
-use hwtr_game::math::Tables;
+use hwtr_game::math::{Tables, div_fx, fx};
 use hwtr_game::ram::Ram;
 
 /// Runs `f` on the car at `at`, read out of `ram` and written back.
@@ -247,8 +247,8 @@ fn car_physics_matches_the_original() {
                     ram.set_i32(at + car::FLAGS, rng.word() as i32);
                     ram.set_u8(at + 0x865, rng.below(2) as u8);
                     ram.set_i32(at + 0x6b4, rng.word() as i32);
-                    ram.set_u8(at + 0x86a, rng.below(2) as u8);
-                    ram.set_u8(at + 0x86b, rng.below(2) as u8);
+                    ram.set_u8(at + car::AIR_CONTROL, rng.below(2) as u8);
+                    ram.set_u8(at + car::AIR_ARMED, rng.below(4) as u8);
                     ram.set_vec3(at + car::SPIN, [0; 3].map(|_| (rng.word() as i32) >> (16 + rng.below(16))));
                     for b in [10, 33, 34, 35, 36, 37, 38, 39, 40, 41, 51] {
                         ram.set_u8(car::TUNING + b, rng.word() as u8);
@@ -324,6 +324,54 @@ fn wheel_spin_matches_the_original() {
                 let mut port = m.bus.ram.clone();
                 on_car(&mut port, at, |car, _| car.spin_wheels());
                 m.call(0x8004_4fc4, &[at]).unwrap();
+                common::same_ram(&m.bus.ram, &port, at, &[], &format!("{name} car {k} round {round}"));
+            }
+        }
+    }
+}
+
+#[test]
+fn air_control_matches_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0xa1f0_0000_0000_0008);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let cars = m.bus.read_u32(car::CAR_COUNT);
+        let start = m.bus.ram.clone();
+        for round in 0..600 {
+            for k in 0..cars {
+                let at = CARS + k * CAR_SIZE;
+                m.bus.ram.copy_from_slice(&start);
+                if round > 0 {
+                    let mut ram = Ram(&mut m.bus.ram);
+                    // Stick values at and around the dead zone's edges.
+                    let stick = |rng: &mut common::Rng| {
+                        [0, 818, 819, 820, -818, -819, -820, 4096, -4096, rng.word() as i32 >> 19]
+                            [rng.below(10) as usize]
+                    };
+                    ram.set_i32(at + car::STICK, stick(&mut rng));
+                    ram.set_i32(at + car::STICK + 4, stick(&mut rng));
+                    ram.set_u8(at + car::HANDBRAKE, rng.below(2) as u8);
+                    ram.set_u8(at + car::AIR_ARMED, rng.below(4) as u8);
+                    ram.set_u8(at + car::AIR_LOCK, rng.below(2) as u8);
+                    ram.set_i32(at + car::AIR_LOCK_AXIS, rng.below(4) as i32);
+                    let j = rng.below(3);
+                    let dir = [0, 1, 2].map(|i| ram.i16(at + car::ROT + 2 * (3 * i + j)) as i32);
+                    ram.set_vec3(at + car::AIR_LOCK_DIR, dir);
+                    // At and around 15 mph (15 × 17.6 in/s), as the game rounds it.
+                    let mph15 = fx(15 << 12, div_fx(176 << 12, 10 << 12));
+                    let speed = [mph15, mph15 + 1, mph15 - 1, rng.below(0x200_000) as i32][rng.below(4) as usize];
+                    ram.set_i32(at + car::SPEED, speed);
+                    for power in [car::AIR_PITCH, car::AIR_ROLL, car::AIR_YAW] {
+                        ram.set_i32(at + power, rng.below(0x20_000) as i32);
+                    }
+                    for i in 0..3 {
+                        ram.set_i64(at + car::BODY + 0x130 + 8 * i, (rng.word() as i32 as i64) << rng.below(20));
+                    }
+                }
+                let mut port = m.bus.ram.clone();
+                on_car(&mut port, at, |car, _| car.air_control());
+                m.call(0x8003_d71c, &[at]).unwrap();
                 common::same_ram(&m.bus.ram, &port, at, &[], &format!("{name} car {k} round {round}"));
             }
         }

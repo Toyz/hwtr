@@ -68,6 +68,9 @@ fn main() {
         }
         let s = &hle.m.check_stats;
         tracing::info!("{frames} frames: {} calls matched, {} skipped for interrupts", s.passed, s.skipped);
+        for (addr, name, _) in hwtr_hle::port::PORTED {
+            tracing::info!("  {addr:08x} {name}: {}", s.by_function.get(addr).copied().unwrap_or(0));
+        }
         return;
     }
     let (mut original, mut port) = (make(), make());

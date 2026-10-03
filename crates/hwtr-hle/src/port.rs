@@ -15,7 +15,7 @@ use std::rc::Rc;
 
 use hwtr_cpu::{Bus, Cpu, Machine};
 use hwtr_game::body::Body;
-use hwtr_game::car::layout::{CAR_SIZE, CARS, WHEEL_SIZE, WHEELS, wheel};
+use hwtr_game::car::layout::{BODY, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS, wheel};
 use hwtr_game::car::{Car, Tuning};
 use hwtr_game::math::Tables;
 use hwtr_game::ram::Ram;
@@ -33,6 +33,9 @@ pub const PORTED: &[(u32, &str, Adapter)] = &[
     (0x8004_4fc4, "spin_wheels", spin_wheels),
     (0x8006_c504, "integrate", integrate),
     (0x8002_5be4, "orthonormalize", orthonormalize),
+    (0x8003_d71c, "air_control", air_control),
+    (0x8007_1bc0, "align", align),
+    (0x8003_d5cc, "damp_spin", damp_spin),
 ];
 
 /// Runs `f` on the car at `at`, read out of RAM and written back.
@@ -75,10 +78,34 @@ fn spin_wheels(_: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
 
 /// The original takes the body and the step's length.
 fn integrate(t: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
+    on_body(bus, cpu.r[4], |body| body.integrate(t, cpu.r[5] as i32));
+    0
+}
+
+fn air_control(_: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
+    on_car(bus, cpu.r[4], |car, _| car.air_control());
+    0
+}
+
+/// Runs `f` on the body at `at`, read out of RAM and written back.
+fn on_body(bus: &mut Bus, at: u32, f: impl FnOnce(&mut Body)) {
     let mut ram = Ram(&mut bus.ram);
-    let mut body = Body::read(&ram, cpu.r[4]);
-    body.integrate(t, cpu.r[5] as i32);
-    body.write(&mut ram, cpu.r[4]);
+    let mut body = Body::read(&ram, at);
+    f(&mut body);
+    body.write(&mut ram, at);
+}
+
+/// The original takes the body, the axis, and a VECTOR by value: two words
+/// in registers, the third on the stack.
+fn align(_: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
+    let dir = [cpu.r[6] as i32, cpu.r[7] as i32, bus.read_u32(cpu.r[29] + 16) as i32];
+    on_body(bus, cpu.r[4], |body| body.align(cpu.r[5] as u8, dir));
+    0
+}
+
+/// The original takes the car.
+fn damp_spin(_: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
+    on_body(bus, cpu.r[4] + BODY, Body::damp_spin);
     0
 }
 

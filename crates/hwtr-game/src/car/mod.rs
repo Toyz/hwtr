@@ -146,6 +146,24 @@ impl Engine {
     }
 }
 
+/// How hard the stick turns the car in the air, about each axis.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AirPower {
+    pub pitch: i32,
+    pub roll: i32,
+    pub yaw: i32,
+}
+
+/// A body axis held to a direction in the air (see [`Body::align`]); kept
+/// as the game stores it, active or not.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AxisLock {
+    /// Non-zero while held.
+    pub active: u8,
+    pub axis: i32,
+    pub dir: Vec3,
+}
+
 /// One set of tuning bytes, chosen by car flag bit 7, 8 or 9.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TuningSet {
@@ -214,6 +232,8 @@ pub struct Car {
     /// Pedals, 0 to 1. The brake is the throttle in reverse.
     pub accel: i32,
     pub brake: i32,
+    /// The stick, -1 to 1: across (steering) and along.
+    pub stick: [i32; 2],
     /// Non-zero while the handbrake is on: the rear wheels lose their
     /// sideways grip.
     pub handbrake: u8,
@@ -241,16 +261,23 @@ pub struct Car {
     pub width: i32,
     pub length: i32,
     pub height: i32,
+    pub air_power: AirPower,
     /// Bit 0 of the first, or the second non-zero: the dragging surface does
-    /// not drag. Both set on the last two: an airborne wheel's downforce acts
-    /// along the body from the position. Meanings not yet known.
+    /// not drag. Meanings not yet known.
     pub unknown_6b4: i32,
     pub unknown_865: u8,
-    pub unknown_86a: u8,
-    pub unknown_86b: u8,
+    /// Non-zero while the stick is turning the car in the air.
+    pub air_control: u8,
+    /// Which stick axes may turn the car in the air: [`Car::ARMED_ALONG`],
+    /// [`Car::ARMED_ACROSS`]. An axis is armed once centred above 15 mph.
+    pub air_armed: u8,
+    pub air_lock: AxisLock,
 }
 
 impl Car {
+    pub const ARMED_ALONG: u8 = 1;
+    pub const ARMED_ACROSS: u8 = 2;
+
     fn axle(&self, rear: bool) -> &Axle {
         if rear { &self.rear } else { &self.front }
     }
@@ -437,7 +464,8 @@ impl Car {
                 // Down the body, while other wheels touch the ground.
                 (wheel.world, column(&rot, 2).map(|c| fx(c, down)), None)
             } else {
-                let at = if self.unknown_86b != 0 && self.unknown_86a != 0 {
+                // Under air control, about the centre of gravity's height.
+                let at = if self.air_armed != 0 && self.air_control != 0 {
                     let along = wheel.mount[1].wrapping_sub(self.origin[1]);
                     add(column(&rot, 1).map(|c| fx(c, along)), self.body.pos)
                 } else {
@@ -576,6 +604,77 @@ impl Car {
             if let Some(rate) = rate {
                 wheel.spin_rate = rate;
             }
+        }
+    }
+}
+
+impl Car {
+    /// 0x8003d71c: the stick turns the car in the air. Each stick axis is
+    /// armed once centred (within ±0.2) while the car does over 15 mph, and
+    /// then acts when pushed: across, it yaws the car (rolls it with the
+    /// handbrake held); along, it pitches it. The strongest of the three
+    /// wins, as a couple of opposite forces either side of the drag point,
+    /// scaled by the car's size, mass and air power; that axis's
+    /// perpendicular is then held (see [`Body::align`]) until another wins.
+    /// The spin is damped while the stick acts.
+    pub fn air_control(&mut self) {
+        if self.air_lock.active != 0 {
+            self.body.align(self.air_lock.axis as u8, self.air_lock.dir);
+        }
+        self.air_control = 0;
+        let dead = div_fx(2 << 12, 10 << 12);
+        let centred = |v: i32| v < dead && -dead < v;
+        let [across, along] = self.stick;
+        let (across_centred, along_centred) = (centred(across), centred(along));
+        if across_centred {
+            self.air_armed |= Self::ARMED_ACROSS;
+        }
+        if along_centred {
+            self.air_armed |= Self::ARMED_ALONG;
+        }
+        let mph = div_fx(176 << 12, 10 << 12);
+        if self.body.speed < fx(15 << 12, mph) {
+            self.air_armed = 0;
+            self.air_lock.active = 0;
+        }
+        let armed = |bit: u8| self.air_armed & bit != 0;
+        let acting = (!across_centred && armed(Self::ARMED_ACROSS)) || (!along_centred && armed(Self::ARMED_ALONG));
+        if !acting {
+            return;
+        }
+        self.air_control = 1;
+        self.body.damp_spin();
+        let (mut roll, mut yaw) = if self.handbrake_on() { (across, 0) } else { (0, across) };
+        let mut pitch = along;
+        if !armed(Self::ARMED_ACROSS) {
+            (roll, yaw) = (0, 0);
+        }
+        if !armed(Self::ARMED_ALONG) {
+            pitch = 0;
+        }
+        let half = div_fx(50 << 12, 100 << 12);
+        let mass = self.body.mass;
+        let force = |power: i32, input: i32| fx(half, fx(power, fx(mass, input)));
+        let rot = self.body.rot;
+        let col = |j: usize| column(&rot, j);
+        let scale = |v: Vec3, k: i32| v.map(|c| fx(c, k));
+        let square = |x: i32| fx(x, x);
+        let (w2, l2, h2) = (square(self.width), square(self.length), square(self.height));
+        let (r, y, p) = (roll.wrapping_abs(), yaw.wrapping_abs(), pitch.wrapping_abs());
+        let (axis, push, arm) = if y < r && p < r {
+            (1, scale(col(0), w2.wrapping_add(h2)), scale(col(2), force(self.air_power.roll, roll)))
+        } else if r < y && p < y {
+            (2, scale(col(0), w2.wrapping_add(l2)), scale(col(1), force(self.air_power.yaw, yaw)))
+        } else if r < p && y < p {
+            (0, scale(col(2), l2.wrapping_add(h2)), scale(col(1), force(self.air_power.pitch, pitch)))
+        } else {
+            return;
+        };
+        let centre = add(self.body.pos, self.drag_point);
+        self.body.apply_force(add(centre, arm), push);
+        self.body.apply_force(sub(centre, arm), push.map(i32::wrapping_neg));
+        if self.air_lock.active == 0 || self.air_lock.axis != axis {
+            self.air_lock = AxisLock { active: 1, axis, dir: col(axis as usize) };
         }
     }
 }

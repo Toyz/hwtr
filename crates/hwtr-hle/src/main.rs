@@ -4,6 +4,7 @@
 //! hwtr-hle [FRAMES] [--shots DIR] [--every N] [--press F:BUTTONS[:LEN],...]
 //!          [--analog] [--stick F:LX,LY[:LEN];...] [--save FILE] [--load FILE]
 //!          [--peek ADDR:LEN,...]     memory after the run, as words
+//!          [--poke ADDR=WORD,...]    words written after loading (to set up a test)
 //!          [--writes]                which functions stored where
 //! ```
 //!
@@ -31,6 +32,7 @@ fn main() {
     let mut script = hwtr_hle::script::Script::default();
     let (mut save, mut load) = (None::<PathBuf>, None::<PathBuf>);
     let mut peeks: Vec<(u32, u32)> = Vec::new();
+    let mut pokes: Vec<(u32, u32)> = Vec::new();
     let mut writes = false;
     let mut writes_from = 0u64;
     while let Some(a) = args.next() {
@@ -41,6 +43,16 @@ fn main() {
             "--writes-from" => {
                 writes = true;
                 writes_from = args.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            }
+            "--poke" => {
+                for p in args.next().unwrap_or_default().split(',') {
+                    let (a, v) = p.split_once('=').expect("--poke ADDR=WORD");
+                    let num = |s: &str| {
+                        let s = s.trim_start_matches("0x");
+                        u32::from_str_radix(s, 16).expect("hex")
+                    };
+                    pokes.push((num(a), num(v)));
+                }
             }
             "--peek" => {
                 for p in args.next().unwrap_or_default().split(',') {
@@ -66,6 +78,9 @@ fn main() {
         let bytes = std::fs::read(p).expect("state file");
         hle.load(&bytes).expect("state");
         tracing::info!("loaded {} ({} frames in)", p.display(), hle.frames.get());
+    }
+    for &(a, v) in &pokes {
+        hle.m.bus.write_u32(a, v);
     }
     if writes && writes_from == 0 {
         hle.m.stores = Some(Vec::new());

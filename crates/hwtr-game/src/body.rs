@@ -4,10 +4,14 @@
 //! physics (`car_update`), cars at state 1 (0x80040494) and two other
 //! callers (0x8006b754, 0x8007c894).
 
-use crate::math::{Matrix, Matrix64, Tables, Vec3, add, div_fx, fx, mul_16_64, mul_64_16, sub, transpose};
+use crate::math::{Matrix, Matrix64, Tables, Vec3, add, column, div_fx, dot, fx, mul_16_64, mul_64_16, sub, transpose};
 
 /// The fastest a body moves, inches a second (about 131 mph).
 pub const MAX_SPEED: i32 = 0x90_0000;
+
+/// What [`Body::damp_spin`] keeps of the angular momentum: `1 - 25 × 8/4096`,
+/// about 0.95.
+const SPIN_KEPT: i32 = 0x1000 - fx(8, 0x1_9000);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Body {
@@ -59,6 +63,37 @@ impl Body {
             *sum = sum.wrapping_add(t);
         }
         self.force = add(self.force, force);
+    }
+
+    /// 0x8003d5cc: slows the spin, a step's worth of damping in the air.
+    pub fn damp_spin(&mut self) {
+        self.ang_momentum = self.ang_momentum.map(|l| l.wrapping_mul(SPIN_KEPT as i64) >> 12);
+    }
+
+    /// 0x80071bc0: holds body axis `axis` (0, 1, anything else 2) to the
+    /// unit direction `dir`. The angular momentum keeps only its part about
+    /// `dir`; then, if the axis is already within 60 degrees of `dir`, the
+    /// axis becomes `dir` and the other two lose their parts along it.
+    pub fn align(&mut self, axis: u8, dir: Vec3) {
+        let wide = |c: i32, x: i64| ((c as i64) << 8).wrapping_mul(x) >> 20;
+        let along = (0..3).fold(0i64, |s, k| s.wrapping_add(wide(dir[k], self.ang_momentum[k])));
+        self.ang_momentum = dir.map(|c| wide(c, along));
+        let k = match axis {
+            0 => 0,
+            1 => 1,
+            _ => 2,
+        };
+        let columns = [0, 1, 2].map(|j| column(&self.rot, j));
+        if dot(dir, columns[k]) < 0x800 {
+            return;
+        }
+        let mut columns = columns.map(|c| sub(c, dir.map(|x| fx(x, dot(dir, c)))));
+        columns[k] = dir;
+        for (j, c) in columns.iter().enumerate() {
+            for (row, x) in self.rot.iter_mut().zip(c) {
+                row[j] = *x as i16;
+            }
+        }
     }
 
     /// 0x8006c504: one step of `dt` seconds. Gravity joins the force sum;

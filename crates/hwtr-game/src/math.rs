@@ -193,7 +193,7 @@ pub fn cross(a: Vec3, b: Vec3) -> Vec3 {
 
 /// GCC's fixed-point multiply as the game compiles it: the 64-bit product
 /// shifted down 12 and kept to 32 bits (`mflo >> 12 | mfhi << 20`).
-pub fn fx(a: i32, b: i32) -> i32 {
+pub const fn fx(a: i32, b: i32) -> i32 {
     ((a as i64 * b as i64) >> 12) as i32
 }
 

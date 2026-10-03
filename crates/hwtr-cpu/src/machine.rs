@@ -32,6 +32,8 @@ pub type Check = Box<dyn FnMut(&Cpu, &Bus) -> CheckExit>;
 #[derive(Default, Debug)]
 pub struct CheckStats {
     pub passed: u64,
+    /// Calls passed, by function.
+    pub by_function: std::collections::BTreeMap<u32, u64>,
     /// Calls an interrupt landed inside, whose effects would confuse the
     /// comparison.
     pub skipped: u64,
@@ -541,7 +543,10 @@ impl Machine {
                     self.check_stats.skipped += 1;
                 } else {
                     match (c.exit)(&self.cpu, &self.bus) {
-                        Ok(()) => self.check_stats.passed += 1,
+                        Ok(()) => {
+                            self.check_stats.passed += 1;
+                            *self.check_stats.by_function.entry(c.func).or_default() += 1;
+                        }
                         Err(e) => self.check_stats.failed.push((c.func, e)),
                     }
                 }
