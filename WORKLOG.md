@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-8 entries: build 1, content 3, decomp 4, design 1, disc 1, engine 2, format 1, race 1, render 1, test 3, tooling 6.
+9 entries: audio 1, build 1, content 3, decomp 4, design 1, disc 1, engine 2, format 2, race 1, render 2, test 3, tooling 7.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -20,3 +20,4 @@ The [reference](docs/README.md) says what is true now.
 | 6 | [Two table-driven state machines run the game, and modules publish themselves in interface tables](worklog/0006-two-table-driven-state-machines-run-the-game-and-modules.md) | 2026-10-03 | engine, decomp, tooling |
 | 7 | [hwtr-cpu: an R3000A and GTE interpreter that runs one original function at a time](worklog/0007-hwtr-cpu-an-r3000a-and-gte-interpreter-that-runs-one.md) | 2026-10-03 | tooling, test, render |
 | 8 | [The state machine is ported and agrees with the original step for step](worklog/0008-the-state-machine-is-ported-and-agrees-with-the-original.md) | 2026-10-03 | engine, test |
+| 9 | [TIM and VAB: every image and every sound bank on the disc decodes](worklog/0009-tim-and-vab-every-image-and-every-sound-bank-on-the-disc.md) | 2026-10-03 | format, audio, render, tooling |

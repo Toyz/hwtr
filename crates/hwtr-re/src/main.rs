@@ -18,6 +18,9 @@ const USAGE: &str = "usage: hwtr-re <command> ...
   disc audio [DIR]          CD-DA tracks as WAV (default work/audio)
   big ls FILE               every member of a BIG archive, nested ones too, checksums verified
   big extract FILE [DIR]    members to DIR (default work/big)
+  tim FILE|DIR [OUT] [--clut N]
+                            TIM to PNG; a directory converts every TIM under it (default work/png)
+  vab DIR|VH [OUT]          check every VAB (VH with its VB) under DIR, or write one bank's samples as WAV
   exe info FILE             PS-X EXE header
   disasm FILE [--from ADDR] [--to ADDR] [--count N] [--gp ADDR]
                             disassemble a PS-X EXE (or a raw image with --base ADDR),
@@ -303,6 +306,124 @@ fn big_cmd(args: &mut Args, cue: &Option<String>) -> Result<()> {
             println!("{n} members -> {}", out.display());
         }
         _ => return Err(USAGE.into()),
+    }
+    Ok(())
+}
+
+fn tim_cmd(args: &mut Args, cue: &Option<String>) -> Result<()> {
+    let clut = args.take("--clut").map(|s| parse_num(&s)).transpose()?.unwrap_or(0) as usize;
+    let input = args.items.first().ok_or("tim FILE|DIR [OUT]")?.clone();
+    let convert = |bytes: &[u8], out: &Path| -> Result<String> {
+        let tim = hwtr_data::Tim::parse(bytes).map_err(|e| e.to_string())?;
+        let png = hwtr_data::png::encode(tim.width(), tim.height(), &tim.to_rgba(clut));
+        std::fs::write(out, png).map_err(|e| e.to_string())?;
+        Ok(format!(
+            "{:?} {}x{} at vram ({}, {}){}",
+            tim.mode,
+            tim.width(),
+            tim.height(),
+            tim.rect.x,
+            tim.rect.y,
+            tim.clut.as_ref().map_or(String::new(), |(r, _)| format!(", {} palettes at ({}, {})", r.h, r.x, r.y))
+        ))
+    };
+    let path = PathBuf::from(&input);
+    if path.is_dir() {
+        let out = args.items.get(1).map(PathBuf::from).unwrap_or_else(|| root().join("work/png"));
+        let mut stack = vec![path.clone()];
+        let (mut ok, mut bad) = (0, 0);
+        while let Some(dir) = stack.pop() {
+            for e in std::fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                    continue;
+                }
+                let name = p.file_name().unwrap().to_string_lossy().to_uppercase();
+                if !name.ends_with("TIM") {
+                    continue;
+                }
+                let rel = p.strip_prefix(&path).unwrap();
+                let dest = out.join(rel).with_extension("png");
+                std::fs::create_dir_all(dest.parent().unwrap()).map_err(|e| e.to_string())?;
+                match convert(&std::fs::read(&p).map_err(|e| e.to_string())?, &dest) {
+                    Ok(_) => ok += 1,
+                    Err(e) => {
+                        bad += 1;
+                        eprintln!("{}: {e}", p.display());
+                    }
+                }
+            }
+        }
+        println!("{ok} TIMs converted, {bad} failed -> {}", out.display());
+    } else {
+        let out = args.items.get(1).map(PathBuf::from).unwrap_or_else(|| path.with_extension("png"));
+        println!("{}", convert(&read_input(&input, cue)?, &out)?);
+    }
+    Ok(())
+}
+
+fn vab_cmd(args: &mut Args) -> Result<()> {
+    use hwtr_data::vab;
+    let input = PathBuf::from(args.items.first().ok_or("vab DIR|VH [OUT]")?);
+    let body = |vh: &Path| {
+        let name = vh.file_name().unwrap().to_string_lossy();
+        vh.with_file_name(format!("{}VB", &name[..name.len() - 2]))
+    };
+    if input.is_dir() {
+        let mut stack = vec![input];
+        let (mut ok, mut bad, mut samples) = (0, 0, 0);
+        while let Some(dir) = stack.pop() {
+            for e in std::fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                    continue;
+                }
+                if !p.file_name().unwrap().to_string_lossy().ends_with("VH") {
+                    continue;
+                }
+                let vh = std::fs::read(&p).map_err(|e| e.to_string())?;
+                let vb = std::fs::read(body(&p)).unwrap_or_default();
+                match vab::Vab::parse(&vh) {
+                    Ok(v) => {
+                        let total: u32 = v.vag_sizes.iter().sum();
+                        if total as usize != vb.len() {
+                            bad += 1;
+                            eprintln!("{}: samples total {total}, VB is {}", p.display(), vb.len());
+                        } else {
+                            ok += 1;
+                            samples += v.vag_sizes.len() - 1;
+                        }
+                    }
+                    Err(e) => {
+                        bad += 1;
+                        eprintln!("{}: {e}", p.display());
+                    }
+                }
+            }
+        }
+        println!("{ok} banks parse and match their VB ({samples} samples), {bad} do not");
+    } else {
+        let vh = std::fs::read(&input).map_err(|e| e.to_string())?;
+        let vb = std::fs::read(body(&input)).map_err(|e| e.to_string())?;
+        let v = vab::Vab::parse(&vh)?;
+        let out = args.items.get(1).map(PathBuf::from).unwrap_or_else(|| root().join("work/wav"));
+        std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+        println!("{} programs, {} tones, {} samples", v.programs.len(), v.tones.len(), v.vag_sizes.len() - 1);
+        for t in &v.tones {
+            println!(
+                "  program {:>3} vag {:>3} notes {:>3}-{:>3} center {:>3}.{:<3} vol {:>3} pan {:>3} adsr {:04x} {:04x}",
+                t.program, t.vag, t.min_note, t.max_note, t.center, t.shift, t.volume, t.pan, t.adsr1, t.adsr2
+            );
+        }
+        let stem = input.file_name().unwrap().to_string_lossy().to_string();
+        for n in 1..v.vag_sizes.len() {
+            let pcm = vab::decode_adpcm(v.vag(&vb, n).ok_or("sample past the VB")?);
+            // A VAB does not store the recording rate; 22050 Hz is assumed.
+            std::fs::write(out.join(format!("{stem}_{n:02}.wav")), vab::wav(&pcm, 22050)).map_err(|e| e.to_string())?;
+        }
+        println!("-> {}", out.display());
     }
     Ok(())
 }
@@ -686,6 +807,8 @@ fn main() {
         "disc" => disc_cmd(&mut args, &cue),
         "exe" => exe_info(&mut args, &cue),
         "big" => big_cmd(&mut args, &cue),
+        "tim" => tim_cmd(&mut args, &cue),
+        "vab" => vab_cmd(&mut args),
         "disasm" => disasm(&mut args, &cue),
         "funcs" => funcs(&mut args, &cue),
         "strings" => strings(&mut args, &cue),

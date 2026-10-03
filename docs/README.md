@@ -26,6 +26,8 @@ The containers and record layouts.
 | Page | Status | Discs | Covers |
 | --- | --- | --- | --- |
 | [The BIG archive](formats/big.md) | solid | US | US CCCPSX.BIG and the 12 BIG archives nested in it; US CCCPSX.EXE:0x800cd574 "\CCCPSX.BIG;1" |
+| [TIM images](formats/tim.md) | solid | US | US PSXLEGAL.TIM, PSXRFA1.TIM, every *TIM member of CCCPSX.BIG (575 distinct files) |
+| [VAB sound banks](formats/vab.md) | partial | US | US every *VH and *VB member of CCCPSX.BIG (499 banks, 1829 samples); US CCCPSX.EXE:0x8001a0c4 the bank loader |
 
 ## Engine
 
