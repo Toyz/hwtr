@@ -3,7 +3,7 @@ title: The car object and its physics step
 status: partial
 discs: US
 covers: US CCCPSX.EXE:0x80128fcc the car array, 0x800d263c the car count, 0x8004064c cars_update, 0x8003fbe4 car_update, 0x800427a8 car_physics, 0x80040a90 update_wheels, 0x80041af0 aero, 0x80060138 drivetrain, 0x80136a18 the tuning bytes
-worklog: 18, 19
+worklog: 18, 19, 20
 ---
 
 # The car object and its physics step
@@ -45,7 +45,8 @@ come from use and stay provisional until every reader of a field is ported.
 | +0x14 | s32 | accelerator, 0 to 1 |
 | +0x18 | s32 | brake, 0 to 1; the throttle in reverse |
 | +0x24 | u8 | handbrake: the rear wheels lose their sideways grip |
-| +0xec | VECTOR | an axis of the body, read as "up" |
+| +0x30 | body | the rigid body ([its page](rigid-body.md)); the fields to +0x210 below are its |
+| +0xec | VECTOR | gravity's direction |
 | +0xfc | VECTOR | where drag acts, from the position, world axes |
 | +0x10c | VECTOR | position |
 | +0x12c | VECTOR | velocity |
@@ -58,7 +59,7 @@ come from use and stay provisional until every reader of a field is ported.
 | +0x548 | u8 | wheel count |
 | +0x549, +0x54a | u8 | wheels on the front axle, on the rear |
 | +0x54b | u8 | wheels on the ground this step |
-| +0x54c | u8 | grounded wheels whose normal faces against +0xec (`-(n · up) >= 2049`) |
+| +0x54c | u8 | grounded wheels on a floor: ground within 60° of level (`-(n · gravity) >= 2049`) |
 | +0x550 | engine | the engine and gearbox (below) |
 | +0x644 | s32 | mass |
 | +0x648, +0x64c | s32 | centre of gravity: fraction of half the length forward, of half the height up |
@@ -172,7 +173,7 @@ Where they come from (TUNING.PRM, the difficulty?) is not yet known.
    of `-m v × percent × 0.4`, across the normal, is added.
 6. **Each wheel in the air** adds its axle's downforce share: down the body's
    up column at its world mount while any wheel is on the ground, otherwise
-   along -(+0xec), at a point set by +0x86a/+0x86b.
+   along minus gravity's direction, at a point set by +0x86a/+0x86b.
 
 Every force goes into +0x1e4 and its torque about the position, `r × F` with
 each product taken in 64 bits from both factors shifted up 8 and the result
@@ -184,8 +185,10 @@ fourth word written. Nothing is known to read it.
 
 ## Unknown
 
-- What +0xec and +0x770 are, beyond their use here; what surface 6 is.
+- What +0x770 is, beyond its use here; what surface 6 is.
 - What +0x6b4, +0x865 and +0x86a/+0x86b mean.
 - Where the tuning bytes come from.
 - What states 1 and 0 are for (other cars, finished cars?).
-- The rest of `car_update`: integrating the sums into motion, collisions.
+- The rest of `car_update`: the airborne control (0x8003d71c), recovery
+  (0x80041384), the player's effects and sound (0x8003cb74). The sums become
+  motion in the [rigid body](rigid-body.md) integrator.
