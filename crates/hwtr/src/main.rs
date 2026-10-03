@@ -1,9 +1,10 @@
-//! hwtr: Hot Wheels Turbo Racing on the PC.
+//! hwtr: Hot Wheels Turbo Racing on the PC, the port and only the port.
 //!
-//! `--original` runs the original game in the interpreter (`hwtr-hle`) in the
-//! window instead, with the pad, as the reference the port is held to.
+//! Everything it runs is ported Rust code; the original game, run in the
+//! interpreter, stays in `hwtr-hle` and the tests, where the port is checked
+//! against it.
 //!
-//! Otherwise this is the platform bring-up: it opens the disc, puts a window up,
+//! So far this is the platform bring-up: it opens the disc, puts a window up,
 //! presents a PlayStation-sized picture at 4:3, and reads the pad. The
 //! pictures are the boot screens read straight from the disc; the ported game
 //! takes over from here as its parts land.
@@ -45,9 +46,6 @@ struct App {
     screen: usize,
     next_frame: Instant,
     rumbling: bool,
-    /// `--original`: the original game, run in the interpreter, as a
-    /// reference to hold the port against.
-    original: Option<hwtr_hle::Hle>,
 }
 
 fn key_button(code: KeyCode) -> u16 {
@@ -86,19 +84,6 @@ impl App {
             );
         }
         self.pad = pad;
-        if let Some(hle) = &mut self.original {
-            hle.pad = pad.buttons;
-            hle.sticks = self.input.has_gamepad().then_some([pad.lx, pad.ly, pad.rx, pad.ry]);
-            if let Err(e) = hle.frame() {
-                tracing::error!("the original stopped: {e:x?}");
-                self.original = None;
-                return;
-            }
-            let (w, h, rgba) = hle.hw.borrow().gpu.screen();
-            self.screens[0] = ("original".into(), Picture { width: w as u32, height: h as u32, rgba });
-            self.screen = 0;
-            return;
-        }
         if pressed & (buttons::CROSS | buttons::START) != 0 {
             self.screen = (self.screen + 1) % self.screens.len();
             if let Some(w) = &self.win {
@@ -264,35 +249,15 @@ fn main() {
         .init();
     let mut args = std::env::args().skip(1);
     let mut cue = None;
-    let mut original = false;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--cue" => cue = args.next().map(PathBuf::from),
-            "--original" => original = true,
             _ => {
-                eprintln!("usage: hwtr [--cue DISC.cue] [--original]");
+                eprintln!("usage: hwtr [--cue DISC.cue]");
                 std::process::exit(2);
             }
         }
     }
-    let original = if original {
-        let path = match &cue {
-            Some(c) => c.clone(),
-            None => hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).unwrap_or_default(),
-        };
-        match hwtr_disc::Disc::open(&path)
-            .map_err(|e| e.to_string())
-            .and_then(|d| hwtr_hle::Hle::new(std::rc::Rc::new(d)))
-        {
-            Ok(h) => Some(h),
-            Err(e) => {
-                tracing::error!("{e}");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        None
-    };
     let screens = match screens(cue) {
         Ok(s) => s,
         Err(e) => {
@@ -316,7 +281,6 @@ fn main() {
         screen: 0,
         next_frame: Instant::now(),
         rumbling: false,
-        original,
     };
     if let Err(e) = event_loop.run_app(&mut app) {
         tracing::error!("{e}");
