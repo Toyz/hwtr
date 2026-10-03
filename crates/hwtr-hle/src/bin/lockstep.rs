@@ -17,7 +17,7 @@
 
 use std::rc::Rc;
 
-use hwtr_game::car::{CAR_SIZE, CARS};
+use hwtr_game::car::layout::{CAR_SIZE, CARS};
 use hwtr_hle::Hle;
 use hwtr_hle::script::Script;
 
@@ -48,7 +48,7 @@ fn main() {
         hle.m.step_limit = 30_000_000;
         hle
     };
-    for (addr, name) in hwtr_hle::port::PORTED {
+    for (addr, name, _) in hwtr_hle::port::PORTED {
         tracing::info!("ported: {addr:08x} {name}");
     }
     if !replace {

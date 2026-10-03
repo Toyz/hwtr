@@ -124,6 +124,12 @@ pub fn mul_16_64(m: &Matrix, a: &Matrix64) -> Matrix64 {
     out
 }
 
+/// Column `j` of `m`: for a rotation, 0 is the body's sideways axis, 1 its
+/// forward axis and 2 its up axis, in world space.
+pub fn column(m: &Matrix, j: usize) -> Vec3 {
+    m.map(|row| row[j] as i32)
+}
+
 pub fn transpose(m: &Matrix) -> Matrix {
     let mut t = [[0; 3]; 3];
     for (i, row) in m.iter().enumerate() {
@@ -163,6 +169,26 @@ pub fn apply_matrix_lv(m: &Matrix, v: [i32; 3]) -> [i32; 3] {
         out[i] = mac_row(&m[i], lo, 12).wrapping_add(h8);
     }
     out
+}
+
+/// A vector, 4.12 or world units.
+pub type Vec3 = [i32; 3];
+
+pub fn add(a: Vec3, b: Vec3) -> Vec3 {
+    [a[0].wrapping_add(b[0]), a[1].wrapping_add(b[1]), a[2].wrapping_add(b[2])]
+}
+
+pub fn sub(a: Vec3, b: Vec3) -> Vec3 {
+    [a[0].wrapping_sub(b[0]), a[1].wrapping_sub(b[1]), a[2].wrapping_sub(b[2])]
+}
+
+/// `a × b`, each product by `fx`.
+pub fn cross(a: Vec3, b: Vec3) -> Vec3 {
+    [
+        fx(a[1], b[2]).wrapping_sub(fx(a[2], b[1])),
+        fx(a[2], b[0]).wrapping_sub(fx(a[0], b[2])),
+        fx(a[0], b[1]).wrapping_sub(fx(a[1], b[0])),
+    ]
 }
 
 /// GCC's fixed-point multiply as the game compiles it: the 64-bit product

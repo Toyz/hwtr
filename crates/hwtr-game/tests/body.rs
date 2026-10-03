@@ -3,8 +3,8 @@
 
 mod common;
 
-use hwtr_game::body;
-use hwtr_game::car::{BODY, CAR_COUNT, CAR_SIZE, CARS};
+use hwtr_game::body::{Body, layout as body};
+use hwtr_game::car::layout::{BODY, CAR_COUNT, CAR_SIZE, CARS};
 use hwtr_game::math::Tables;
 use hwtr_game::ram::Ram;
 
@@ -50,7 +50,10 @@ fn integrate_matches_the_original() {
                     }
                 }
                 let mut port = m.bus.ram.clone();
-                body::integrate(&t, &mut Ram(&mut port), b, dt);
+                let mut ram = Ram(&mut port);
+                let mut body = Body::read(&ram, b);
+                body.integrate(&t, dt);
+                body.write(&mut ram, b);
                 m.call(0x8006_c504, &[b, dt as u32]).unwrap();
                 common::same_ram(&m.bus.ram, &port, b, &[], &format!("{name} car {k} round {round}"));
             }

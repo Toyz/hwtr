@@ -1,116 +1,190 @@
 //! The rigid body: mass, inertia, position, rotation, momentum and the
-//! force and torque summed over a step. Cars carry one at +0x30 (see
-//! [`crate::car::BODY`]); 0x8006c504 integrates it, for cars under full
+//! force and torque summed over a step. Cars carry one (see
+//! [`crate::car::Car::body`]); 0x8006c504 integrates it, for cars under full
 //! physics (`car_update`), cars at state 1 (0x80040494) and two other
 //! callers (0x8006b754, 0x8007c894).
-//!
-//! Offsets are from the body's start.
 
-use crate::math::{Matrix64, Tables, div_fx, fx, mul_16_64, mul_64_16, transpose};
-use crate::ram::Ram;
+use crate::math::{Matrix, Matrix64, Tables, Vec3, add, div_fx, fx, mul_16_64, mul_64_16, sub, transpose};
 
-/// The inverse of the inertia tensor in the body's axes, 64-bit.
-pub const INV_INERTIA: u32 = 0x58;
-pub const MASS: u32 = 0xb0;
-pub const INV_MASS: u32 = 0xb4;
-/// Gravity's strength (386, inches a second squared) and direction.
-pub const GRAVITY: u32 = 0xb8;
-pub const GRAVITY_DIR: u32 = 0xbc;
-pub const POS: u32 = 0xdc;
-pub const MOMENTUM: u32 = 0xec;
-pub const VEL: u32 = 0xfc;
-/// The velocity's length.
-pub const SPEED: u32 = 0x10c;
-/// A libgte MATRIX: the rotation, body to world.
-pub const ROT: u32 = 0x110;
-/// Angular momentum, 64-bit.
-pub const ANG_MOMENTUM: u32 = 0x130;
-/// The inverse inertia in world axes, 64-bit, `R I⁻¹ Rᵀ`.
-pub const INV_INERTIA_WORLD: u32 = 0x148;
-/// Angular velocity, and its length.
-pub const SPIN: u32 = 0x1a0;
-pub const SPIN_RATE: u32 = 0x1b0;
-/// Force summed over the step.
-pub const FORCE: u32 = 0x1b4;
-/// Torque summed over the step, 64-bit.
-pub const TORQUE: u32 = 0x1c8;
-/// Non-zero: the body is at rest and not integrated.
-pub const ASLEEP: u32 = 0x1e0;
-
-/// The fastest a body moves, inches a second (about 520 mph).
+/// The fastest a body moves, inches a second (about 131 mph).
 pub const MAX_SPEED: i32 = 0x90_0000;
 
-fn add(a: [i32; 3], b: [i32; 3]) -> [i32; 3] {
-    [a[0].wrapping_add(b[0]), a[1].wrapping_add(b[1]), a[2].wrapping_add(b[2])]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Body {
+    /// The inverse of the inertia tensor in the body's axes.
+    pub inv_inertia: Matrix64,
+    pub mass: i32,
+    pub inv_mass: i32,
+    /// Gravity's strength (386, inches a second squared) and direction.
+    pub gravity: i32,
+    pub gravity_dir: Vec3,
+    pub pos: Vec3,
+    pub momentum: Vec3,
+    pub vel: Vec3,
+    /// The velocity's length.
+    pub speed: i32,
+    /// Body to world.
+    pub rot: Matrix,
+    pub ang_momentum: [i64; 3],
+    /// The inverse inertia in world axes, `R I⁻¹ Rᵀ`.
+    pub inv_inertia_world: Matrix64,
+    /// Angular velocity, radians a second, and its length.
+    pub spin: Vec3,
+    pub spin_rate: i32,
+    /// Force and torque summed over the step.
+    pub force: Vec3,
+    pub torque: [i64; 3],
+    /// Non-zero: at rest and not integrated.
+    pub asleep: u8,
 }
 
-/// 0x8006c504: one step of `dt` seconds. Gravity joins the force sum; the
-/// momentum takes the force, and the velocity follows through the inverse
-/// mass, its length held to [`MAX_SPEED`]; the position moves. The angular
-/// momentum takes the torque, the world inverse inertia is turned to the
-/// current rotation, the angular velocity follows (held to 4π a second), and
-/// the rotation turns by it: `R += [ω dt]ₓ R`, entry by entry in 16 bits,
-/// with no renormalising here. Both sums are cleared. An asleep body is left
-/// alone.
-pub fn integrate(t: &Tables, ram: &mut Ram, b: u32, dt: i32) {
-    if ram.u8(b + ASLEEP) != 0 {
-        return;
+/// The 64-bit product the torque uses: both factors shifted up 8 as 64-bit
+/// values, the product shifted down 20, so 4.12 by 4.12 to 4.12 without
+/// losing the top bits.
+fn wide(a: i32, b: i32) -> i64 {
+    ((a as i64) << 8).wrapping_mul((b as i64) << 8) >> 20
+}
+
+impl Body {
+    /// Adds `force`, acting at the world point `at`, to the force sum, and
+    /// its torque about the position to the torque sum.
+    pub fn apply_force(&mut self, at: Vec3, force: Vec3) {
+        let r = sub(at, self.pos);
+        let torque = [
+            wide(r[1], force[2]).wrapping_sub(wide(force[1], r[2])),
+            wide(force[0], r[2]).wrapping_sub(wide(r[0], force[2])),
+            wide(r[0], force[1]).wrapping_sub(wide(force[0], r[1])),
+        ];
+        for (sum, t) in self.torque.iter_mut().zip(torque) {
+            *sum = sum.wrapping_add(t);
+        }
+        self.force = add(self.force, force);
     }
-    let weight = fx(ram.i32(b + GRAVITY), ram.i32(b + MASS));
-    let gravity = ram.vec3(b + GRAVITY_DIR).map(|c| fx(c, weight));
-    ram.set_vec3(b + FORCE, add(ram.vec3(b + FORCE), gravity));
-    let force = ram.vec3(b + FORCE);
-    ram.set_vec3(b + MOMENTUM, add(force.map(|c| fx(c, dt)), ram.vec3(b + MOMENTUM)));
-    let inv_mass = ram.i32(b + INV_MASS);
-    ram.set_vec3(b + VEL, ram.vec3(b + MOMENTUM).map(|c| fx(c, inv_mass)));
-    let speed = t.length(ram.vec3(b + VEL));
-    ram.set_i32(b + SPEED, speed);
-    if speed > MAX_SPEED {
-        let k = div_fx(MAX_SPEED, speed);
-        ram.set_vec3(b + MOMENTUM, ram.vec3(b + MOMENTUM).map(|c| fx(c, k)));
-        ram.set_vec3(b + VEL, ram.vec3(b + VEL).map(|c| fx(c, k)));
-        ram.set_i32(b + SPEED, MAX_SPEED);
-    }
-    ram.set_vec3(b + POS, add(ram.vec3(b + VEL).map(|c| fx(c, dt)), ram.vec3(b + POS)));
-    ram.set_vec3(b + FORCE, [0; 3]);
-    for k in 0..3 {
-        let at = b + ANG_MOMENTUM + 8 * k;
-        let torque = ram.i64(b + TORQUE + 8 * k);
-        ram.set_i64(at, ram.i64(at).wrapping_add(torque.wrapping_mul(dt as i64) >> 12));
-    }
-    let rot = ram.matrix(b + ROT);
-    let world = mul_64_16(&mul_16_64(&rot, &ram.matrix64(b + INV_INERTIA)), &transpose(&rot));
-    ram.set_matrix64(b + INV_INERTIA_WORLD, &world);
-    let momentum = [0, 1, 2].map(|k| ram.i64(b + ANG_MOMENTUM + 8 * k));
-    let spin = world.map(|row| {
-        let s = (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(momentum[k]) >> 20));
-        (s >> 8) as i32
-    });
-    ram.set_vec3(b + SPIN, spin);
-    let rate = t.length(spin);
-    ram.set_i32(b + SPIN_RATE, rate);
-    let max = fx(0x4000, 0x3244);
-    if rate > max {
-        let k = div_fx(max, rate);
+
+    /// 0x8006c504: one step of `dt` seconds. Gravity joins the force sum;
+    /// the momentum takes the force, and the velocity follows through the
+    /// inverse mass, its length held to [`MAX_SPEED`]; the position moves.
+    /// The angular momentum takes the torque, the world inverse inertia is
+    /// turned to the current rotation, the angular velocity follows (held to
+    /// 4π a second), and the rotation turns by it: `R += [ω dt]ₓ R`, entry by
+    /// entry in 16 bits, with no renormalising here. Both sums are cleared.
+    /// An asleep body is left alone.
+    pub fn integrate(&mut self, t: &Tables, dt: i32) {
+        if self.asleep != 0 {
+            return;
+        }
+        let weight = fx(self.gravity, self.mass);
+        self.force = add(self.force, self.gravity_dir.map(|c| fx(c, weight)));
+        self.momentum = add(self.force.map(|c| fx(c, dt)), self.momentum);
+        self.vel = self.momentum.map(|c| fx(c, self.inv_mass));
+        self.speed = t.length(self.vel);
+        if self.speed > MAX_SPEED {
+            let k = div_fx(MAX_SPEED, self.speed);
+            self.momentum = self.momentum.map(|c| fx(c, k));
+            self.vel = self.vel.map(|c| fx(c, k));
+            self.speed = MAX_SPEED;
+        }
+        self.pos = add(self.vel.map(|c| fx(c, dt)), self.pos);
+        self.force = [0; 3];
+        for (l, torque) in self.ang_momentum.iter_mut().zip(self.torque) {
+            *l = l.wrapping_add(torque.wrapping_mul(dt as i64) >> 12);
+        }
+        let rot = self.rot;
+        self.inv_inertia_world = mul_64_16(&mul_16_64(&rot, &self.inv_inertia), &transpose(&rot));
+        let l = self.ang_momentum;
+        self.spin = self.inv_inertia_world.map(|row| {
+            let s = (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(l[k]) >> 20));
+            (s >> 8) as i32
+        });
+        self.spin_rate = t.length(self.spin);
+        let max = fx(0x4000, 0x3244);
+        if self.spin_rate > max {
+            let k = div_fx(max, self.spin_rate);
+            self.ang_momentum = self.ang_momentum.map(|l| l.wrapping_mul(k as i64) >> 12);
+            self.spin = self.spin.map(|c| fx(c, k));
+            self.spin_rate = max;
+        }
+        let d = self.spin.map(|c| ((c as i64) << 8).wrapping_mul(dt as i64) >> 12);
+        let skew: Matrix64 =
+            [[0, d[2].wrapping_neg(), d[1]], [d[2], 0, d[0].wrapping_neg()], [d[1].wrapping_neg(), d[0], 0]];
+        let turn = mul_64_16(&skew, &rot);
         for i in 0..3 {
-            let at = b + ANG_MOMENTUM + 8 * i;
-            ram.set_i64(at, ram.i64(at).wrapping_mul(k as i64) >> 12);
+            for j in 0..3 {
+                self.rot[i][j] = rot[i][j].wrapping_add((turn[i][j] >> 8) as i16);
+            }
         }
-        ram.set_vec3(b + SPIN, ram.vec3(b + SPIN).map(|c| fx(c, k)));
-        ram.set_i32(b + SPIN_RATE, max);
+        self.torque = [0; 3];
     }
-    let d = ram.vec3(b + SPIN).map(|c| ((c as i64) << 8).wrapping_mul(dt as i64) >> 12);
-    let cross: Matrix64 =
-        [[0, d[2].wrapping_neg(), d[1]], [d[2], 0, d[0].wrapping_neg()], [d[1].wrapping_neg(), d[0], 0]];
-    let turn = mul_64_16(&cross, &rot);
-    let mut next = rot;
-    for i in 0..3 {
-        for j in 0..3 {
-            next[i][j] = rot[i][j].wrapping_add((turn[i][j] >> 8) as i16);
+}
+
+/// Where the original keeps a body: offsets from its start, and the codec.
+pub mod layout {
+    use super::Body;
+    use crate::ram::Ram;
+
+    pub const INV_INERTIA: u32 = 0x58;
+    pub const MASS: u32 = 0xb0;
+    pub const INV_MASS: u32 = 0xb4;
+    pub const GRAVITY: u32 = 0xb8;
+    pub const GRAVITY_DIR: u32 = 0xbc;
+    pub const POS: u32 = 0xdc;
+    pub const MOMENTUM: u32 = 0xec;
+    pub const VEL: u32 = 0xfc;
+    pub const SPEED: u32 = 0x10c;
+    /// A libgte MATRIX; its translation part is not used.
+    pub const ROT: u32 = 0x110;
+    pub const ANG_MOMENTUM: u32 = 0x130;
+    pub const INV_INERTIA_WORLD: u32 = 0x148;
+    pub const SPIN: u32 = 0x1a0;
+    pub const SPIN_RATE: u32 = 0x1b0;
+    pub const FORCE: u32 = 0x1b4;
+    pub const TORQUE: u32 = 0x1c8;
+    pub const ASLEEP: u32 = 0x1e0;
+
+    impl Body {
+        pub fn read(ram: &Ram, b: u32) -> Body {
+            let wide3 = |a: u32| [0, 1, 2].map(|k| ram.i64(a + 8 * k));
+            Body {
+                inv_inertia: ram.matrix64(b + INV_INERTIA),
+                mass: ram.i32(b + MASS),
+                inv_mass: ram.i32(b + INV_MASS),
+                gravity: ram.i32(b + GRAVITY),
+                gravity_dir: ram.vec3(b + GRAVITY_DIR),
+                pos: ram.vec3(b + POS),
+                momentum: ram.vec3(b + MOMENTUM),
+                vel: ram.vec3(b + VEL),
+                speed: ram.i32(b + SPEED),
+                rot: ram.matrix(b + ROT),
+                ang_momentum: wide3(b + ANG_MOMENTUM),
+                inv_inertia_world: ram.matrix64(b + INV_INERTIA_WORLD),
+                spin: ram.vec3(b + SPIN),
+                spin_rate: ram.i32(b + SPIN_RATE),
+                force: ram.vec3(b + FORCE),
+                torque: wide3(b + TORQUE),
+                asleep: ram.u8(b + ASLEEP),
+            }
         }
-    }
-    ram.set_matrix(b + ROT, &next);
-    for k in 0..3 {
-        ram.set_i64(b + TORQUE + 8 * k, 0);
+
+        pub fn write(&self, ram: &mut Ram, b: u32) {
+            ram.set_matrix64(b + INV_INERTIA, &self.inv_inertia);
+            ram.set_i32(b + MASS, self.mass);
+            ram.set_i32(b + INV_MASS, self.inv_mass);
+            ram.set_i32(b + GRAVITY, self.gravity);
+            ram.set_vec3(b + GRAVITY_DIR, self.gravity_dir);
+            ram.set_vec3(b + POS, self.pos);
+            ram.set_vec3(b + MOMENTUM, self.momentum);
+            ram.set_vec3(b + VEL, self.vel);
+            ram.set_i32(b + SPEED, self.speed);
+            ram.set_matrix(b + ROT, &self.rot);
+            for k in 0..3 {
+                ram.set_i64(b + ANG_MOMENTUM + 8 * k, self.ang_momentum[k as usize]);
+                ram.set_i64(b + TORQUE + 8 * k, self.torque[k as usize]);
+            }
+            ram.set_matrix64(b + INV_INERTIA_WORLD, &self.inv_inertia_world);
+            ram.set_vec3(b + SPIN, self.spin);
+            ram.set_i32(b + SPIN_RATE, self.spin_rate);
+            ram.set_vec3(b + FORCE, self.force);
+            ram.set_u8(b + ASLEEP, self.asleep);
+        }
     }
 }

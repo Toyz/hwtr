@@ -2,9 +2,19 @@
 
 mod common;
 
-use hwtr_game::car::{self, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS};
+use hwtr_game::car::layout::{self as car, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS};
+use hwtr_game::car::{Car, Tuning, Wheel};
 use hwtr_game::math::Tables;
 use hwtr_game::ram::Ram;
+
+/// Runs `f` on the car at `at`, read out of `ram` and written back.
+fn on_car<R>(ram: &mut [u8], at: u32, f: impl FnOnce(&mut Car, &Tuning) -> R) -> R {
+    let mut ram = Ram(ram);
+    let (mut car, tuning) = (Car::read(&ram, at), Tuning::read(&ram));
+    let r = f(&mut car, &tuning);
+    car.write(&mut ram, at);
+    r
+}
 
 const STATES: [&str; 3] = ["desert1-race", "desert1-drive", "desert1-speed"];
 
@@ -36,7 +46,7 @@ fn update_wheels_matches_the_original() {
                     for i in 0..4 {
                         let w = at + WHEELS + i * WHEEL_SIZE;
                         ram.set_u8(w + car::wheel::FLAGS, rng.word() as u8);
-                        ram.set_u8(w + car::wheel::ON_GROUND, (rng.below(3) != 0) as u8);
+                        ram.set_u8(w + car::wheel::GROUND, (rng.below(3) != 0) as u8);
                         let n = [0; 3].map(|_| (rng.word() as i32) >> (18 + rng.below(14)));
                         ram.set_vec3(w + car::wheel::NORMAL, n);
                         // Every fourth round, normals at the threshold
@@ -50,7 +60,7 @@ fn update_wheels_matches_the_original() {
                     }
                 }
                 let mut port = m.bus.ram.clone();
-                car::update_wheels(&t, &mut Ram(&mut port), at);
+                on_car(&mut port, at, |car, _| car.place_wheels(&t));
                 m.call(0x8004_0a90, &[at]).unwrap();
                 common::same_ram(&m.bus.ram, &port, at, &wheel_padding(at), &format!("{name} car {k} round {round}"));
             }
@@ -88,7 +98,8 @@ fn aero_matches_the_original() {
                 }
                 let out = common::OUT;
                 let mut port = m.bus.ram.clone();
-                let (a, b) = car::aero(&mut Ram(&mut port), at);
+                let down = on_car(&mut port, at, |car, tuning| car.aero(tuning));
+                let (a, b) = (down.front, down.rear);
                 {
                     let mut ram = Ram(&mut port);
                     ram.set_i32(out, a);
@@ -127,8 +138,8 @@ fn drivetrain_matches_the_original() {
                     for i in 0..4 {
                         let w = at + WHEELS + i * WHEEL_SIZE;
                         ram.set_u8(w + car::wheel::FLAGS, rng.word() as u8);
-                        ram.set_u8(w + car::wheel::ON_GROUND, (rng.below(4) != 0) as u8);
-                        ram.set_u8(w + car::wheel::SLIPPING, (rng.below(3) == 0) as u8);
+                        ram.set_u8(w + car::wheel::GROUND, (rng.below(4) != 0) as u8);
+                        ram.set_u8(w + car::wheel::SLIP, (rng.below(3) == 0) as u8);
                         // Never 1: half of it would divide by zero, which
                         // the game's wheels never ask for.
                         let d = [0, -5, 2, 2 + rng.below(0x40000) as i32][rng.below(4) as usize];
@@ -168,14 +179,14 @@ fn drivetrain_matches_the_original() {
                     // the engine sits exactly at the redline.
                     if round % 4 == 1 {
                         for i in 0..4 {
-                            ram.set_u8(at + WHEELS + i * WHEEL_SIZE + car::wheel::SLIPPING, 1);
+                            ram.set_u8(at + WHEELS + i * WHEEL_SIZE + car::wheel::SLIP, 1);
                         }
                         ram.set_i32(at + car::ACCEL, 4096);
                         ram.set_i32(at + car::BRAKE, 4096);
                     }
                 }
                 let mut port = m.bus.ram.clone();
-                car::drivetrain(&t, &mut Ram(&mut port), at);
+                on_car(&mut port, at, |car, _| car.drivetrain(&t));
                 m.call(0x8006_0138, &[at]).unwrap();
                 common::same_ram(&m.bus.ram, &port, at, &[], &format!("{name} car {k} round {round}"));
             }
@@ -219,7 +230,7 @@ fn car_physics_matches_the_original() {
                     for i in 0..wheels {
                         let w = at + WHEELS + i * WHEEL_SIZE;
                         if rng.below(4) == 0 {
-                            ram.set_u8(w + car::wheel::ON_GROUND, 0);
+                            ram.set_u8(w + car::wheel::GROUND, 0);
                         }
                         ram.set_u8(w + car::wheel::SURFACE, [2, 6, 0][rng.below(3) as usize]);
                         ram.set_vec3(w + car::wheel::CONTACT_VEL, [big(&mut rng), big(&mut rng), big(&mut rng)]);
@@ -227,7 +238,7 @@ fn car_physics_matches_the_original() {
                         ram.set_i32(w + car::wheel::SPRING, rng.below(2000 << 12) as i32);
                         ram.set_i32(w + car::wheel::FRICTION, rng.below(2 << 12) as i32);
                         if rng.below(3) == 0 {
-                            ram.set_u8(w + car::wheel::FLAGS, ram.u8(w + car::wheel::FLAGS) ^ car::wheel::REAR);
+                            ram.set_u8(w + car::wheel::FLAGS, ram.u8(w + car::wheel::FLAGS) ^ Wheel::REAR);
                         }
                     }
                     ram.set_i32(at + car::ACCEL, rng.below(4097) as i32);
@@ -245,7 +256,7 @@ fn car_physics_matches_the_original() {
                     // Every wheel in the air.
                     if round % 6 == 2 {
                         for i in 0..wheels {
-                            ram.set_u8(at + WHEELS + i * WHEEL_SIZE + car::wheel::ON_GROUND, 0);
+                            ram.set_u8(at + WHEELS + i * WHEEL_SIZE + car::wheel::GROUND, 0);
                         }
                     }
                     // At rest with no spring force and frictionless tyres: no
@@ -266,7 +277,7 @@ fn car_physics_matches_the_original() {
                     }
                 }
                 let mut port = m.bus.ram.clone();
-                car::car_physics(&t, &mut Ram(&mut port), at);
+                on_car(&mut port, at, |car, tuning| car.physics(&t, tuning));
                 m.call(0x8004_27a8, &[at]).unwrap();
                 let pads: Vec<(u32, u32)> =
                     (0..wheels).map(|i| (at + WHEELS + i * WHEEL_SIZE + car::wheel::HEADING + 12, 4)).collect();
@@ -293,8 +304,8 @@ fn wheel_spin_matches_the_original() {
                     let big = |rng: &mut common::Rng| (rng.word() as i32) >> (6 + rng.below(26));
                     for i in 0..4 {
                         let w = at + WHEELS + i * WHEEL_SIZE;
-                        ram.set_u8(w + car::wheel::ON_GROUND, rng.below(2) as u8);
-                        ram.set_u8(w + car::wheel::SLIPPING, rng.below(2) as u8);
+                        ram.set_u8(w + car::wheel::GROUND, rng.below(2) as u8);
+                        ram.set_u8(w + car::wheel::SLIP, rng.below(2) as u8);
                         ram.set_u8(w + car::wheel::FLAGS, rng.word() as u8);
                         ram.set_i32(w + car::wheel::DIAMETER, 0x1000 + rng.below(0x40000) as i32);
                         ram.set_i32(w + car::wheel::SPIN_RATE, rng.word() as i32);
@@ -311,7 +322,7 @@ fn wheel_spin_matches_the_original() {
                     ram.set_i32(at + car::ENGINE + car::engine::WHEEL_RPM, big(&mut rng));
                 }
                 let mut port = m.bus.ram.clone();
-                car::wheel_spin(&mut Ram(&mut port), at);
+                on_car(&mut port, at, |car, _| car.spin_wheels());
                 m.call(0x8004_4fc4, &[at]).unwrap();
                 common::same_ram(&m.bus.ram, &port, at, &[], &format!("{name} car {k} round {round}"));
             }

@@ -1,9 +1,9 @@
-//! Main RAM as the original lays it out.
+//! Main RAM as the original lays it out, for the codecs (`layout` modules)
+//! that convert between it and the port's types.
 //!
-//! While the race is being ported, the port works on the original's data
-//! structures in place, so a ported function can stand in for the original
-//! one inside the running game (and be checked there, frame by frame). The
-//! layouts become Rust types once every function touching them is ported.
+//! The port's logic works on Rust types; this is only how tests and the
+//! reference's shadow checks read those types out of the original's memory
+//! and write them back, to compare the two byte for byte.
 
 use crate::math::{Matrix, Matrix64};
 

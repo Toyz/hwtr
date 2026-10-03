@@ -1,76 +1,123 @@
 //! The ported functions, as checks on the original and as replacements.
 //!
-//! `shadow` checks each ported function on every call the running game makes:
-//! the port runs on a copy of RAM taken as the original function is entered,
-//! and when the original returns the two must agree. The game itself runs
-//! unchanged, so its timing does too. `install` replaces the originals
-//! outright.
+//! Each entry in [`PORTED`] pairs an original function with an adapter: it
+//! reads the port's types out of RAM through their codecs, runs the port,
+//! and writes them back, taking arguments and leaving results as the
+//! original's calling convention does.
+//!
+//! `shadow` checks each ported function on every call the running game
+//! makes: the adapter runs on a copy of RAM taken as the original function
+//! is entered, and when the original returns the two must agree. The game
+//! itself runs unchanged, so its timing does too. `install` replaces the
+//! originals outright.
 
 use std::rc::Rc;
 
+use hwtr_cpu::{Bus, Cpu, Machine};
+use hwtr_game::body::Body;
+use hwtr_game::car::layout::{CAR_SIZE, CARS, WHEEL_SIZE, WHEELS, wheel};
+use hwtr_game::car::{Car, Tuning};
 use hwtr_game::math::Tables;
 use hwtr_game::ram::Ram;
 
-/// (address, name) of every function `install` replaces.
-pub const PORTED: &[(u32, &str)] = &[
-    (0x8004_0a90, "update_wheels"),
-    (0x8004_1af0, "aero"),
-    (0x8006_0138, "drivetrain"),
-    (0x8004_27a8, "car_physics"),
-    (0x8004_4fc4, "wheel_spin"),
-    (0x8006_c504, "integrate"),
-    (0x8002_5be4, "orthonormalize"),
+/// Runs a port in place of the original: arguments in the CPU's registers,
+/// memory on the bus; returns v0.
+pub type Adapter = fn(&Tables, &mut Cpu, &mut Bus) -> u32;
+
+/// Every ported function: (address, name, adapter).
+pub const PORTED: &[(u32, &str, Adapter)] = &[
+    (0x8004_0a90, "place_wheels", place_wheels),
+    (0x8004_1af0, "aero", aero),
+    (0x8006_0138, "drivetrain", drivetrain),
+    (0x8004_27a8, "physics", physics),
+    (0x8004_4fc4, "spin_wheels", spin_wheels),
+    (0x8006_c504, "integrate", integrate),
+    (0x8002_5be4, "orthonormalize", orthonormalize),
 ];
 
-/// Hooks the ported functions into `m`.
-pub fn install(m: &mut hwtr_cpu::Machine) {
-    let t = Rc::new(Tables::from_ram(&m.bus.ram));
-    let t1 = t.clone();
-    m.hook(0x8004_0a90, move |cpu, bus| {
-        hwtr_game::car::update_wheels(&t1, &mut Ram(&mut bus.ram), cpu.r[4]);
-        0
-    });
-    m.hook(0x8004_1af0, aero);
-    let t2 = t.clone();
-    m.hook(0x8006_0138, move |cpu, bus| {
-        hwtr_game::car::drivetrain(&t2, &mut Ram(&mut bus.ram), cpu.r[4]);
-        0
-    });
-    let t3 = t.clone();
-    m.hook(0x8004_27a8, move |cpu, bus| {
-        hwtr_game::car::car_physics(&t3, &mut Ram(&mut bus.ram), cpu.r[4]);
-        0
-    });
-    m.hook(0x8004_4fc4, wheel_spin);
-    let t4 = t.clone();
-    m.hook(0x8006_c504, move |cpu, bus| {
-        hwtr_game::body::integrate(&t4, &mut Ram(&mut bus.ram), cpu.r[4], cpu.r[5] as i32);
-        0
-    });
-    let t5 = t.clone();
-    m.hook(0x8002_5be4, move |cpu, bus| orthonormalize(&t5, cpu, bus));
+/// Runs `f` on the car at `at`, read out of RAM and written back.
+fn on_car<R>(bus: &mut Bus, at: u32, f: impl FnOnce(&mut Car, &Tuning) -> R) -> R {
+    let mut ram = Ram(&mut bus.ram);
+    let (mut car, tuning) = (Car::read(&ram, at), Tuning::read(&ram));
+    let r = f(&mut car, &tuning);
+    car.write(&mut ram, at);
+    r
 }
 
-/// 0x80025be4 on the MATRIX at a0.
-fn orthonormalize(t: &Tables, cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus) -> u32 {
+fn place_wheels(t: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
+    on_car(bus, cpu.r[4], |car, _| car.place_wheels(t));
+    0
+}
+
+/// The original takes the car and two pointers for the downforce.
+fn aero(_: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
+    let down = on_car(bus, cpu.r[4], |car, tuning| car.aero(tuning));
+    let mut ram = Ram(&mut bus.ram);
+    ram.set_i32(cpu.r[5], down.front);
+    ram.set_i32(cpu.r[6], down.rear);
+    0
+}
+
+fn drivetrain(t: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
+    on_car(bus, cpu.r[4], |car, _| car.drivetrain(t));
+    0
+}
+
+fn physics(t: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
+    on_car(bus, cpu.r[4], |car, tuning| car.physics(t, tuning));
+    0
+}
+
+fn spin_wheels(_: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
+    on_car(bus, cpu.r[4], |car, _| car.spin_wheels());
+    0
+}
+
+/// The original takes the body and the step's length.
+fn integrate(t: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
+    let mut ram = Ram(&mut bus.ram);
+    let mut body = Body::read(&ram, cpu.r[4]);
+    body.integrate(t, cpu.r[5] as i32);
+    body.write(&mut ram, cpu.r[4]);
+    0
+}
+
+/// The original takes a MATRIX.
+fn orthonormalize(t: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
     let mut ram = Ram(&mut bus.ram);
     let m = t.orthonormalize(&ram.matrix(cpu.r[4]));
     ram.set_matrix(cpu.r[4], &m);
     0
 }
 
-fn wheel_spin(cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus) -> u32 {
-    hwtr_game::car::wheel_spin(&mut Ram(&mut bus.ram), cpu.r[4]);
-    0
+/// Hooks the ported functions into `m` in place of the originals.
+pub fn install(m: &mut Machine) {
+    let t = Rc::new(Tables::from_ram(&m.bus.ram));
+    for &(addr, _, adapter) in PORTED {
+        let t = t.clone();
+        m.hook(addr, move |cpu, bus| adapter(&t, cpu, bus));
+    }
 }
 
-/// `aero` as the original is called: car, and where to put the two results.
-fn aero(cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus) -> u32 {
-    let mut ram = Ram(&mut bus.ram);
-    let (a, b) = hwtr_game::car::aero(&mut ram, cpu.r[4]);
-    ram.set_i32(cpu.r[5], a);
-    ram.set_i32(cpu.r[6], b);
-    0
+/// Adds a shadow check for every ported function to `m`. RAM must match
+/// when the original returns, apart from the stack below the entry `sp`
+/// (the call's own frames), the 16 bytes above it (where the callee may save
+/// its register arguments) and [`unmatched`] words.
+pub fn shadow(m: &mut Machine) {
+    let t = Rc::new(Tables::from_ram(&m.bus.ram));
+    let skip = Rc::new(unmatched());
+    for &(addr, _, adapter) in PORTED {
+        let (t, skip) = (t.clone(), skip.clone());
+        m.check(addr, move |cpu, bus| {
+            let (mut cpu, mut copy) = (cpu.clone(), Bus { ram: bus.ram.clone(), ..Default::default() });
+            adapter(&t, &mut cpu, &mut copy);
+            let sp = cpu.r[29];
+            let mut skip = (*skip).clone();
+            skip.push((sp.wrapping_sub(0x4000), 0x4000 + 16));
+            let ram = copy.ram;
+            Box::new(move |_, bus| compare(&bus.ram, &ram, &skip))
+        });
+    }
 }
 
 /// Compares RAM after the original against the port's copy.
@@ -86,70 +133,10 @@ fn compare(original: &[u8], port: &[u8], skip: &[(u32, u32)]) -> Result<(), Stri
     if diffs.is_empty() { Ok(()) } else { Err(diffs.join("; ")) }
 }
 
-/// Adds a shadow check for every ported function to `m`: the port runs on a
-/// copy of RAM through the same entry point a hook would use, and RAM must
-/// match when the original returns, apart from the stack below the entry
-/// `sp` (the call's own frames), the 16 bytes above it (where the callee may
-/// save its register arguments) and `unmatched` words.
-pub fn shadow(m: &mut hwtr_cpu::Machine) {
-    let t = Rc::new(Tables::from_ram(&m.bus.ram));
-    let t1 = t.clone();
-    let wheels = move |cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus| {
-        hwtr_game::car::update_wheels(&t1, &mut Ram(&mut bus.ram), cpu.r[4]);
-        0
-    };
-    shadow_one(m, 0x8004_0a90, wheels);
-    shadow_one(m, 0x8004_1af0, aero);
-    let t2 = t.clone();
-    let drivetrain = move |cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus| {
-        hwtr_game::car::drivetrain(&t2, &mut Ram(&mut bus.ram), cpu.r[4]);
-        0
-    };
-    shadow_one(m, 0x8006_0138, drivetrain);
-    let t3 = t.clone();
-    let physics = move |cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus| {
-        hwtr_game::car::car_physics(&t3, &mut Ram(&mut bus.ram), cpu.r[4]);
-        0
-    };
-    shadow_one(m, 0x8004_27a8, physics);
-    shadow_one(m, 0x8004_4fc4, wheel_spin);
-    let t4 = t.clone();
-    let integrate = move |cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus| {
-        hwtr_game::body::integrate(&t4, &mut Ram(&mut bus.ram), cpu.r[4], cpu.r[5] as i32);
-        0
-    };
-    shadow_one(m, 0x8006_c504, integrate);
-    let t5 = t.clone();
-    shadow_one(m, 0x8002_5be4, move |cpu, bus| orthonormalize(&t5, cpu, bus));
-}
-
-fn shadow_one(
-    m: &mut hwtr_cpu::Machine,
-    addr: u32,
-    port: impl Fn(&mut hwtr_cpu::Cpu, &mut hwtr_cpu::Bus) -> u32 + 'static,
-) {
-    let skip = Rc::new(unmatched());
-    m.check(addr, move |cpu, bus| {
-        let (mut cpu, mut bus2) = (cpu.clone(), hwtr_cpu::Bus { ram: bus.ram.clone(), ..Default::default() });
-        port(&mut cpu, &mut bus2);
-        let ram = bus2.ram;
-        let mut skip = (*skip).clone();
-        let sp = cpu.r[29];
-        // The call's frames, and the argument save area above them.
-        skip.push((sp.wrapping_sub(0x4000), 0x4000 + 16));
-        Box::new(move |_, bus| compare(&bus.ram, &ram, &skip))
-    });
-}
-
 /// Words the port is not expected to reproduce: those the original fills
 /// from uninitialised stack.
 pub fn unmatched() -> Vec<(u32, u32)> {
-    use hwtr_game::car::{CAR_SIZE, CARS, WHEEL_SIZE, WHEELS, wheel};
-    let mut v = Vec::new();
-    for k in 0..8 {
-        for i in 0..4 {
-            v.push((CARS + k * CAR_SIZE + WHEELS + i * WHEEL_SIZE + wheel::HEADING + 12, 4));
-        }
-    }
-    v
+    (0..8)
+        .flat_map(|k| (0..6).map(move |i| (CARS + k * CAR_SIZE + WHEELS + i * WHEEL_SIZE + wheel::HEADING_PAD, 4)))
+        .collect()
 }
