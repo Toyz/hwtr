@@ -1,0 +1,17 @@
+# Names for CCCPSX.EXE (image 0x80010000, $gp 0x800d0b48).
+# One `0xADDRESS name` per line. Read by hwtr-re disasm/funcs/strings.
+# Confidence is in the comment: (sure) traced, (likely) from strings or shape.
+
+0x8009fc10 _start                  # (sure) PsyQ crt0: clears bss, sets gp and sp, InitHeap, calls main
+0x80010a5c main                    # (sure) called by _start
+0x800a2d98 strcmp                  # (likely) compares world names in world_colour
+0x80011310 world_colour            # (likely) world name -> 3 bytes passed to set_world_colour
+0x80010e34 set_world_colour        # (likely)
+
+# Data
+0x800c5bf4 track_archive_names     # (sure) char*[4][3]; Haunted 1 slot is NULL
+0x800c5c24 world_names             # (sure) char*[4] Desert Glacial Haunted Volcano
+0x800c5c34 track_display_names     # (sure) char*[4][3]; Haunted 1 slot is NULL
+0x800d0b48 gp_base                 # (sure) the value of $gp
+0x800d23cc bss_start               # (sure) cleared by _start
+0x80143b44 bss_end                 # (sure) heap starts here

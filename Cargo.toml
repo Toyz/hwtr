@@ -1,0 +1,19 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+hwtr-disc = { path = "crates/hwtr-disc" }
+hwtr-psx = { path = "crates/hwtr-psx" }
+hwtr-data = { path = "crates/hwtr-data" }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
