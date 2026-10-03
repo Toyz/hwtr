@@ -21,7 +21,7 @@ The constants made sense only once read as imperial: `0x949000 / 1000` and a
 second `/1000` is 0.002376, sea-level air in slug/ft³. Dividing by 12
 (`div_fx(4096, 0xc000)` = 341) turns inches into feet, `0xb0000 / 0xa000` =
 17.6 is inches per second per mph, and `0x182000` = 386 is g in in/s². So the
-world is in inches. That also explains the 1024-unit world cells of [[13]]:
+world is in inches. That also explains the 1024-unit world cells of [[12]]:
 about 85 feet.
 
 Which wheels are which came from the saved race, not the code. Flag bit 0 is
