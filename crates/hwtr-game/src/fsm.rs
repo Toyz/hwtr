@@ -144,7 +144,7 @@ impl Fsm {
 /// machine record, which is how both machines in `CCCPSX.EXE` are laid out.
 pub fn read_def(mem: &Memory, addr: u32) -> Option<Def<u32>> {
     let table = mem.u32(addr)?;
-    if table >= addr || (addr - table) % 4 != 0 {
+    if table >= addr || !(addr - table).is_multiple_of(4) {
         return None;
     }
     let count = (addr - table) / 4;

@@ -97,7 +97,8 @@ fn mat_set(m: &mut Matrix, word: usize, v: u32) {
     }
 }
 
-/// The UNR reciprocal table, 257 entries.
+/// The UNR reciprocal table, 257 entries, written as psx-spx gives it.
+#[allow(clippy::manual_div_ceil)]
 fn unr(i: usize) -> u32 {
     (((0x40000 / (i as u32 + 0x100)) + 1) / 2).saturating_sub(0x101)
 }

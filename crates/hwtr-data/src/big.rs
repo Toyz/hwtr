@@ -33,6 +33,10 @@ impl fmt::Display for BigError {
 
 impl std::error::Error for BigError {}
 
+/// A member found by [`Big::walk`]: its path through the nested archives, its
+/// entry, and its bytes.
+pub type Walked<'a> = (String, Member, &'a [u8]);
+
 pub struct Big<'a> {
     pub bytes: &'a [u8],
     pub members: Vec<Member>,
@@ -42,11 +46,11 @@ pub struct Big<'a> {
 /// any trailing bytes added one byte at a time.
 pub fn checksum(data: &[u8]) -> u32 {
     let mut sum = 0u32;
-    let mut words = data.chunks_exact(4);
-    for w in &mut words {
-        sum = sum.wrapping_add(u32::from_le_bytes(w.try_into().unwrap()));
+    let (words, rest) = data.as_chunks::<4>();
+    for w in words {
+        sum = sum.wrapping_add(u32::from_le_bytes(*w));
     }
-    for &b in words.remainder() {
+    for &b in rest {
         sum = sum.wrapping_add(b as u32);
     }
     sum
@@ -106,13 +110,13 @@ impl<'a> Big<'a> {
     }
 
     /// Every member, depth first, with its path through the nested archives.
-    pub fn walk(&self) -> Result<Vec<(String, Member, &'a [u8])>, BigError> {
+    pub fn walk(&self) -> Result<Vec<Walked<'a>>, BigError> {
         let mut out = Vec::new();
         self.walk_into("", &mut out)?;
         Ok(out)
     }
 
-    fn walk_into(&self, prefix: &str, out: &mut Vec<(String, Member, &'a [u8])>) -> Result<(), BigError> {
+    fn walk_into(&self, prefix: &str, out: &mut Vec<Walked<'a>>) -> Result<(), BigError> {
         for m in &self.members {
             let path = format!("{prefix}{}", m.name);
             let data = self.data(m);

@@ -603,8 +603,7 @@ fn fsm(args: &mut Args, cue: &Option<String>) -> Result<()> {
         }
     }
     let mut index = 0u32;
-    loop {
-        let Ok(st) = word(states + index * 4) else { break };
+    while let Ok(st) = word(states + index * 4) {
         if !m.contains(st) || (index as i16 > initial.max(last) && st < m.base) {
             break;
         }
