@@ -48,6 +48,8 @@ pub struct Machine {
     pub fault_cpu: Option<Cpu>,
     /// Debugging: stop with a fault when sp drops below this (0: off).
     pub sp_guard: u32,
+    /// When set, every store is recorded: (pc, address, width).
+    pub stores: Option<Vec<(u32, u32, u8)>>,
     /// Instructions executed since the machine was made; devices read it to
     /// time their work.
     pub clock: std::rc::Rc<std::cell::Cell<u64>>,
@@ -104,6 +106,7 @@ impl Default for Machine {
             watched: Vec::new(),
             fault_cpu: None,
             sp_guard: 0,
+            stores: None,
             clock: Default::default(),
             pending: Default::default(),
         };
@@ -520,6 +523,18 @@ impl Machine {
             }
             if let Some(t) = &mut self.trace {
                 t.push(pc);
+            }
+            if let Some(log) = &mut self.stores {
+                let insn = hwtr_psx::mips::decode(self.bus.read_u32(pc));
+                let width = match insn.op {
+                    hwtr_psx::mips::Op::Sb => 1,
+                    hwtr_psx::mips::Op::Sh => 2,
+                    hwtr_psx::mips::Op::Sw | hwtr_psx::mips::Op::Swl | hwtr_psx::mips::Op::Swr | hwtr_psx::mips::Op::Swc2 => 4,
+                    _ => 0,
+                };
+                if width > 0 {
+                    log.push((pc, self.cpu.r[insn.rs()].wrapping_add(insn.simm() as u32), width));
+                }
             }
             match self.cpu.step(&mut self.bus) {
                 Ok(()) => {}

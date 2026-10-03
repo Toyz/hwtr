@@ -6,3 +6,4 @@
 //! results.
 
 pub mod fsm;
+pub mod math;

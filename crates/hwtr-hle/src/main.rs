@@ -3,6 +3,8 @@
 //! ```text
 //! hwtr-hle [FRAMES] [--shots DIR] [--every N] [--press F:BUTTONS[:LEN],...]
 //!          [--analog] [--stick F:LX,LY[:LEN];...] [--save FILE] [--load FILE]
+//!          [--peek ADDR:LEN,...]     memory after the run, as words
+//!          [--writes]                which functions stored where
 //! ```
 //!
 //! Writes the displayed picture every N frames (and VRAM at the end) as PNG.
@@ -54,11 +56,27 @@ fn main() {
     // --analog: a DualShock in analog mode; --stick FRAME:LX,LY[:LENGTH] moves the left stick.
     let mut analog = false;
     let (mut save, mut load) = (None::<PathBuf>, None::<PathBuf>);
+    let mut peeks: Vec<(u32, u32)> = Vec::new();
+    let mut writes = false;
+    let mut writes_from = 0u64;
     let mut sticks: Vec<(u64, u8, u8, u64)> = Vec::new();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--analog" => analog = true,
             "--save" => save = args.next().map(PathBuf::from),
+            "--writes" => writes = true,
+            "--writes-from" => {
+                writes = true;
+                writes_from = args.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            }
+            "--peek" => {
+                for p in args.next().unwrap_or_default().split(',') {
+                    let (a, n) = p.split_once(':').unwrap_or((p, "64"));
+                    let a = u32::from_str_radix(a.trim_start_matches("0x"), 16).unwrap_or(0);
+                    let n = n.parse().or_else(|_| u32::from_str_radix(n.trim_start_matches("0x"), 16)).unwrap_or(64);
+                    peeks.push((a, n));
+                }
+            }
             "--load" => load = args.next().map(PathBuf::from),
             "--stick" => {
                 for p in args.next().unwrap_or_default().split(';') {
@@ -94,6 +112,14 @@ fn main() {
         hle.load(&bytes).expect("state");
         tracing::info!("loaded {} ({} frames in)", p.display(), hle.frames.get());
     }
+    if writes && writes_from == 0 {
+        hle.m.stores = Some(Vec::new());
+    }
+    // Watches start from the values in memory now, not from zero.
+    for i in 0..hle.m.watch.len() {
+        let a = hle.m.watch[i].0;
+        hle.m.watch[i].1 = hle.m.bus.read_u32(a);
+    }
     let start = std::time::Instant::now();
     let mut steps = 0u64;
     let trace = std::env::var_os("HWTR_TRACE").is_some();
@@ -121,6 +147,9 @@ fn main() {
             hle.pad = presses.iter().filter(|p| f >= p.0 && f < p.0 + p.2).fold(0, |a, p| a | p.1);
         }
         hle.m.trace = Some(Vec::new());
+        if writes && writes_from > 0 && f == writes_from {
+            hle.m.stores = Some(Vec::new());
+        }
         if f == 300 {
             hle.m.sp_guard = sp_guard.unwrap_or(0);
         }
@@ -212,6 +241,60 @@ fn main() {
         let mut by: Vec<_> = by.into_iter().collect();
         by.sort_by_key(|&(f, n)| (std::cmp::Reverse(n), f));
         tracing::info!("last frame, {} steps, by function: {:x?}", t.len(), &by[..by.len().min(10)]);
+    }
+    // --writes: which functions stored where, over the whole run.
+    if let Some(log) = hle.m.stores.take() {
+        let exe_bytes = {
+            let cue = hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).expect("cue");
+            let disc = hwtr_disc::Disc::open(&cue).expect("disc");
+            let iso = disc.iso().expect("iso");
+            iso.find("CCCPSX.EXE").and_then(|e| iso.read(&e)).expect("exe")
+        };
+        let exe = hwtr_psx::Exe::parse(&exe_bytes).expect("exe");
+        let gp = hwtr_psx::analysis::find_gp(&exe.view(), exe.pc0);
+        let a = hwtr_psx::program::Program::analyze(exe.view(), exe.pc0, gp);
+        // function -> (stores, lowest and highest address, distinct 4 KB pages)
+        let mut by: std::collections::BTreeMap<u32, (u64, u32, u32, std::collections::BTreeSet<u32>)> = Default::default();
+        for &(pc, addr, _) in &log {
+            let addr = addr & 0x1f_ffff | 0x8000_0000;
+            let f = a.func_of(pc).map_or(pc, |f| f.start);
+            let e = by.entry(f).or_insert((0, u32::MAX, 0, Default::default()));
+            e.0 += 1;
+            e.1 = e.1.min(addr);
+            e.2 = e.2.max(addr);
+            e.3.insert(addr >> 12);
+        }
+        // HWTR_WRITES_IN=LO-HI: also list, for that range, which functions
+        // wrote each 64-byte block.
+        if let Some((lo, hi)) = std::env::var("HWTR_WRITES_IN").ok().and_then(|v| {
+            let (a, b) = v.split_once('-')?;
+            Some((u32::from_str_radix(a, 16).ok()?, u32::from_str_radix(b, 16).ok()?))
+        }) {
+            let mut blocks: std::collections::BTreeMap<u32, std::collections::BTreeMap<u32, u64>> = Default::default();
+            for &(pc, addr, _) in &log {
+                let addr = addr & 0x1f_ffff | 0x8000_0000;
+                if addr >= lo && addr < hi {
+                    let f = a.func_of(pc).map_or(pc, |f| f.start);
+                    *blocks.entry(addr & !63).or_default().entry(f).or_default() += 1;
+                }
+            }
+            for (b, fs) in &blocks {
+                let fs: Vec<String> = fs.iter().map(|(f, n)| format!("{f:08x}x{n}")).collect();
+                println!("{b:08x}: {}", fs.join(" "));
+            }
+        }
+        let mut rows: Vec<_> = by.into_iter().collect();
+        rows.sort_by_key(|r| std::cmp::Reverse(r.1.0));
+        println!("{:>8} {:>9}  {:>8}..{:<8} pages", "function", "stores", "low", "high");
+        for (f, (n, lo, hi, pages)) in rows.iter().take(60) {
+            println!("{f:08x} {n:>9}  {lo:08x}..{hi:08x} {}", pages.len());
+        }
+    }
+    for &(a, n) in &peeks {
+        for row in (0..n).step_by(16) {
+            let words: Vec<String> = (0..4).map(|k| format!("{:08x}", hle.m.bus.read_u32(a + row + 4 * k))).collect();
+            println!("{:08x}: {}", a + row, words.join(" "));
+        }
     }
     if let Some(p) = &save {
         let bytes = hle.save();
