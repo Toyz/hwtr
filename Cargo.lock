@@ -3,12 +3,27 @@
 version = 4
 
 [[package]]
+name = "hwtr-cpu"
+version = "0.1.0"
+dependencies = [
+ "hwtr-psx",
+]
+
+[[package]]
 name = "hwtr-data"
 version = "0.1.0"
 
 [[package]]
 name = "hwtr-disc"
 version = "0.1.0"
+
+[[package]]
+name = "hwtr-game"
+version = "0.1.0"
+dependencies = [
+ "hwtr-cpu",
+ "hwtr-psx",
+]
 
 [[package]]
 name = "hwtr-psx"

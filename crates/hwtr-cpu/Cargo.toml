@@ -1,0 +1,10 @@
+[package]
+name = "hwtr-cpu"
+version = "0.1.0"
+description = "An R3000A + GTE interpreter that runs single functions of the original executable, so the port can be checked against them."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hwtr-psx.workspace = true

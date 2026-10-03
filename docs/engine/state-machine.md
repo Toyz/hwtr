@@ -3,7 +3,7 @@ title: The table-driven state machines
 status: solid
 discs: US
 covers: US CCCPSX.EXE:0x8006ba60 fsm_init, 0x8006baac fsm_post, 0x8006bb18 fsm_tick, 0x800c5bdc fsm_main, 0x800c6640 fsm_second
-worklog: 6
+worklog: 6, 8
 ---
 
 # The table-driven state machines
@@ -100,6 +100,11 @@ state's exit.
 - `hwtr-re fsm FILE ADDR` dumps a machine with each transition's posters
   (calls to `fsm_post` whose `a0` and `a1` are constants): 622 of
   `fsm_main`'s and 68 of `fsm_second`'s transitions resolve that way.
+
+- `hwtr-game::fsm` reproduces all three functions; its test drives the
+  original and the port with the same random posts and ticks over both
+  machines' real tables and compares every action call, `current`, `phase`
+  and `event` after every step.
 
 ## Unknown
 
