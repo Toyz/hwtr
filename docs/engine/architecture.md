@@ -58,7 +58,7 @@ already filled (inferred to undo them) and returns 0.
 | table | bytes | slots | filled by | what the slots point at (by their strings) |
 | --- | ---: | ---: | --- | --- |
 | 0x8011df28 | 252 | 63 | 0x8002881c | race loading (`LOADING ...`), memory card (`BASLUS-00964HTWHEELS`), TIM loading, world colour |
-| 0x8012fcdc | 84 | 21 | 0x8001bd88 | *unknown*; 0x8001b170 switches on a field selector and reads 98-byte records at 0x8012b2b8 indexed by its first argument |
+| 0x8012fcdc | 84 | 21 | 0x8001bd88 | *unknown*; 0x8001b170 switches on a field selector and reads 98-byte records at 0x8011b2b8 indexed by its first argument |
 | 0x8012fd30 | 292 | 73 | 0x8001e3b4 | general: power-up loading (`%s.pup`), `fsm_second`'s tick, file names (`%s%d`) |
 | 0x8012fe54 | 176 | 44 | 0x80019870 | sound: engine banks (`Electrc`), `mainsfx2`, `dialog%d`, static sound slots |
 

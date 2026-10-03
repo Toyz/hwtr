@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-10 entries: audio 1, build 2, content 3, decomp 4, design 1, disc 1, engine 2, format 2, input 1, race 1, render 3, test 3, tooling 7.
+11 entries: audio 1, build 2, content 3, decomp 5, design 1, disc 1, engine 2, format 2, input 2, race 1, render 3, test 3, tooling 7.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -22,3 +22,4 @@ The [reference](docs/README.md) says what is true now.
 | 8 | [The state machine is ported and agrees with the original step for step](worklog/0008-the-state-machine-is-ported-and-agrees-with-the-original.md) | 2026-10-03 | engine, test |
 | 9 | [TIM and VAB: every image and every sound bank on the disc decodes](worklog/0009-tim-and-vab-every-image-and-every-sound-bank-on-the-disc.md) | 2026-10-03 | format, audio, render, tooling |
 | 10 | [The platform layer: a window, a 4:3 presenter, and the DualSense as a PlayStation pad](worklog/0010-the-platform-layer-a-window-a-4-3-presenter-and-the.md) | 2026-10-03 | input, render, build |
+| 11 | [The controls module reads libpad buffers and supports digital, DualShock analog, analog joystick and neGcon](worklog/0011-the-controls-module-reads-libpad-buffers-and-supports.md) | 2026-10-03 | input, decomp |

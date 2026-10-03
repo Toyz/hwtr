@@ -32,12 +32,25 @@
 0x8005fb3c iface_fill_stub         # (sure) points every slot of a table at iface_stub
 0x8005fb6c iface_stub              # (sure) returns 0
 0x8002881c iface_game_fill         # (sure) fills iface_game
-0x8001bd88 iface_b_fill            # (sure) fills iface_b
+0x8001bd88 iface_controls_fill     # (sure) fills iface_controls
 0x8001e3b4 iface_general_fill      # (sure) fills iface_general
 0x80019870 iface_sound_fill        # (sure) fills iface_sound
 0x8011df28 iface_game              # (sure) 63 slots: race loading, memory card, TIM loading
-0x8012fcdc iface_b                 # (sure) 21 slots, purpose unknown
+0x8012fcdc iface_controls          # (sure) 21 slots: the controls module
 0x8012fd30 iface_general           # (sure) 73 slots
 0x8012fe54 iface_sound             # (sure) 44 slots: engines, effects, dialog
 0x80033304 race_load               # (likely) prints the LOADING ... progress strings
 0x8009cb74 fsm_second_tick         # (sure) fsm_tick(&fsm_second), in iface_general slot 0x8012fe20
+
+# Controls (see docs/engine/controls.md)
+0x8001d320 controls_init           # (sure) PadInitDirect on the two port buffers, PadStartCom, default mappings
+0x800a77c4 PadInitDirect           # (likely) libpad; called with the two 34-byte port buffers
+0x800a7e24 PadStartCom             # (likely) libpad
+0x8001d3fc controls_port_reset     # (likely) per port, from controls_init and when a pad changes
+0x8001c344 controls_read_port      # (sure) dispatches on the pad type byte: 0x41 digital, 0x23/0x53/0x73 analog
+0x8001c480 controls_read_digital   # (likely)
+0x8001cee4 controls_read_analog    # (likely) neGcon, analog joystick, DualShock
+0x8001abe8 controls_action_held    # (sure) action 0..27 against the player's mapping masks
+0x8011b388 pad_buffer              # (sure) u8[2][34], libpad receive buffers, port 1 then port 2
+0x8011b3d8 control_mapping         # (sure) u32[2][29], per-player action masks, copied from control_mapping_default
+0x800bdc08 control_mapping_default # (sure) u32[29]

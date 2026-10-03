@@ -36,6 +36,7 @@ How the game works, subsystem by subsystem.
 | Page | Status | Discs | Covers |
 | --- | --- | --- | --- |
 | [How the program is put together](engine/architecture.md) | partial | US | US CCCPSX.EXE:0x8009fc10 _start, 0x80010a5c main, 0x8005fa00 game_init, 0x8005fb3c, 0x8002881c, 0x8001bd88, 0x80019870, 0x8001e3b4, interface tables 0x8011df28, 0x8012fcdc, 0x8012fd30, 0x8012fe54 |
+| [Controls and the pad](engine/controls.md) | partial | US | US CCCPSX.EXE:0x8001d320 controls_init, 0x8001c344 controls_read_port, 0x8001c480, 0x8001cee4, 0x8001abe8 controls_action_held, 0x8011b388 pad_buffer, 0x8011b3d8 control_mapping, 0x800bdc08 control_mapping_default, interface table 0x8012fcdc |
 | [The table-driven state machines](engine/state-machine.md) | solid | US | US CCCPSX.EXE:0x8006ba60 fsm_init, 0x8006baac fsm_post, 0x8006bb18 fsm_tick, 0x800c5bdc fsm_main, 0x800c6640 fsm_second |
 
 ## Content
