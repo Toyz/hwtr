@@ -1,7 +1,8 @@
 //! hwtr-hle: run the original game headless for N frames.
 //!
 //! ```text
-//! hwtr-hle [FRAMES] [--shots DIR] [--every N]
+//! hwtr-hle [FRAMES] [--shots DIR] [--every N] [--press F:BUTTONS[:LEN],...]
+//!          [--analog] [--stick F:LX,LY[:LEN];...] [--save FILE] [--load FILE]
 //! ```
 //!
 //! Writes the displayed picture every N frames (and VRAM at the end) as PNG.
@@ -50,8 +51,26 @@ fn main() {
     let (mut frames, mut shots, mut every) = (120u64, PathBuf::from("work/hle"), 30u64);
     // --press FRAME:BUTTONS[:LENGTH], buttons by name joined with +.
     let mut presses: Vec<(u64, u16, u64)> = Vec::new();
+    // --analog: a DualShock in analog mode; --stick FRAME:LX,LY[:LENGTH] moves the left stick.
+    let mut analog = false;
+    let (mut save, mut load) = (None::<PathBuf>, None::<PathBuf>);
+    let mut sticks: Vec<(u64, u8, u8, u64)> = Vec::new();
     while let Some(a) = args.next() {
         match a.as_str() {
+            "--analog" => analog = true,
+            "--save" => save = args.next().map(PathBuf::from),
+            "--load" => load = args.next().map(PathBuf::from),
+            "--stick" => {
+                for p in args.next().unwrap_or_default().split(';') {
+                    let mut it = p.split(':');
+                    let at: u64 = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                    let xy: Vec<u8> =
+                        it.next().unwrap_or("128,128").split(',').filter_map(|v| v.parse().ok()).collect();
+                    let len: u64 = it.next().and_then(|s| s.parse().ok()).unwrap_or(60);
+                    sticks.push((at, *xy.first().unwrap_or(&128), *xy.get(1).unwrap_or(&128), len));
+                }
+                analog = true;
+            }
             "--press" => {
                 for p in args.next().unwrap_or_default().split(',') {
                     let mut it = p.split(':');
@@ -70,6 +89,11 @@ fn main() {
     let cue = hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).expect("cue");
     let disc = Rc::new(hwtr_disc::Disc::open(&cue).expect("disc"));
     let mut hle = hwtr_hle::Hle::new(disc).expect("hle");
+    if let Some(p) = &load {
+        let bytes = std::fs::read(p).expect("state file");
+        hle.load(&bytes).expect("state");
+        tracing::info!("loaded {} ({} frames in)", p.display(), hle.frames.get());
+    }
     let start = std::time::Instant::now();
     let mut steps = 0u64;
     let trace = std::env::var_os("HWTR_TRACE").is_some();
@@ -89,11 +113,20 @@ fn main() {
             if f == 300 {
                 hle.m.sp_guard = sp_guard.unwrap_or(0);
             }
+            if analog {
+                let (lx, ly) =
+                    sticks.iter().rev().find(|s| f >= s.0 && f < s.0 + s.3).map_or((128, 128), |s| (s.1, s.2));
+                hle.sticks = Some([lx, ly, 128, 128]);
+            }
             hle.pad = presses.iter().filter(|p| f >= p.0 && f < p.0 + p.2).fold(0, |a, p| a | p.1);
         }
         hle.m.trace = Some(Vec::new());
         if f == 300 {
             hle.m.sp_guard = sp_guard.unwrap_or(0);
+        }
+        if analog {
+            let (lx, ly) = sticks.iter().rev().find(|s| f >= s.0 && f < s.0 + s.3).map_or((128, 128), |s| (s.1, s.2));
+            hle.sticks = Some([lx, ly, 128, 128]);
         }
         hle.pad = presses.iter().filter(|p| f >= p.0 && f < p.0 + p.2).fold(0, |a, p| a | p.1);
         if let Err(e) = hle.frame() {
@@ -179,6 +212,11 @@ fn main() {
         let mut by: Vec<_> = by.into_iter().collect();
         by.sort_by_key(|&(f, n)| (std::cmp::Reverse(n), f));
         tracing::info!("last frame, {} steps, by function: {:x?}", t.len(), &by[..by.len().min(10)]);
+    }
+    if let Some(p) = &save {
+        let bytes = hle.save();
+        std::fs::write(p, &bytes).expect("write state");
+        tracing::info!("saved {} ({} bytes)", p.display(), bytes.len());
     }
     // Where the game's flow is: fsm_main's current state.
     {

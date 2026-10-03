@@ -53,6 +53,9 @@ pub struct Hle {
     /// Port 1's buttons, PlayStation bit order, 1 = pressed; written into
     /// libpad's receive buffer every frame (port 2 reads as empty).
     pub pad: u16,
+    /// Port 1's sticks (left x, left y, right x, right y; 0x80 at rest) when
+    /// the pad is an analog DualShock; `None` for a digital pad.
+    pub sticks: Option<[u8; 4]>,
     pub hw: Rc<RefCell<hw::Hw>>,
     pub frames: Rc<Cell<u64>>,
     /// Files the game read, in order: (lba, sectors).
@@ -224,11 +227,33 @@ impl Hle {
             });
         }
         let frames = m.vblank.count.clone();
-        let mut hle = Hle { m, pad: 0, hw, frames, reads };
+        let mut hle = Hle { m, pad: 0, sticks: None, hw, frames, reads };
         hle.m.cpu.jump(exe.pc0);
         hle.m.cpu.r[29] = 0x801f_ff00;
         hle.m.cpu.r[31] = hwtr_cpu::machine::RETURN;
         Ok(hle)
+    }
+
+    /// The whole running game as bytes: machine and hardware. The disc and
+    /// the hooks are not in it; `load` goes into an `Hle` made from the same
+    /// disc. The CD position is not saved: the game is between reads at a
+    /// frame boundary.
+    pub fn save(&self) -> Vec<u8> {
+        let mut w = hwtr_cpu::state::Writer::default();
+        w.bytes(b"hwtr-hle state 1");
+        self.m.save(&mut w);
+        self.hw.borrow().save(&mut w);
+        w.u16(self.pad);
+        w.0
+    }
+
+    pub fn load(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let mut r = hwtr_cpu::state::Reader(bytes);
+        r.expect(b"hwtr-hle state 1").map_err(|e| e.to_string())?;
+        self.m.load(&mut r).map_err(|e| e.to_string())?;
+        self.hw.borrow_mut().load(&mut r).map_err(|e| e.to_string())?;
+        self.pad = r.u16().map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     /// Runs to the next vertical blank (one frame), or a fault.
@@ -236,7 +261,13 @@ impl Hle {
         // libpad's buffers as its interrupt routine leaves them: status 0,
         // a digital pad (0x41), the buttons inverted; port 2 not connected.
         let b = !self.pad;
-        self.m.bus.load(PAD_BUFFER, &[0x00, 0x41, b as u8, (b >> 8) as u8]);
+        match self.sticks {
+            // DualShock in analog mode: the right stick comes first.
+            Some([lx, ly, rx, ry]) => {
+                self.m.bus.load(PAD_BUFFER, &[0x00, 0x73, b as u8, (b >> 8) as u8, rx, ry, lx, ly])
+            }
+            None => self.m.bus.load(PAD_BUFFER, &[0x00, 0x41, b as u8, (b >> 8) as u8]),
+        }
         self.m.bus.load(PAD_BUFFER + 34, &[0xff, 0xff, 0xff, 0xff]);
         match self.m.run() {
             Err(Fault::Halt { .. }) => Ok(()),

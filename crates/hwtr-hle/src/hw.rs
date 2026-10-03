@@ -67,6 +67,43 @@ fn set_word(ram: &mut [u8], at: u32, v: u32) {
 }
 
 impl Hw {
+    pub fn save(&self, w: &mut hwtr_cpu::state::Writer) {
+        w.bytes(b"hw");
+        self.gpu.save(w);
+        for ch in &self.dma {
+            for &v in ch {
+                w.u32(v);
+            }
+        }
+        w.u32(self.dpcr);
+        w.u32(self.dicr);
+        w.u16s(&self.spu_regs);
+        w.bytes(&self.spu_ram);
+        w.u32(self.spu_addr as u32);
+        w.u32(self.irq_mask);
+        w.u32(self.counter);
+        w.u64(self.gpu_busy_until);
+    }
+
+    pub fn load(&mut self, r: &mut hwtr_cpu::state::Reader) -> hwtr_cpu::state::Result<()> {
+        r.expect(b"hw")?;
+        self.gpu.load(r)?;
+        for ch in &mut self.dma {
+            for v in ch {
+                *v = r.u32()?;
+            }
+        }
+        self.dpcr = r.u32()?;
+        self.dicr = r.u32()?;
+        self.spu_regs = r.u16s()?;
+        self.spu_ram = r.bytes()?;
+        self.spu_addr = r.u32()? as usize;
+        self.irq_mask = r.u32()?;
+        self.counter = r.u32()?;
+        self.gpu_busy_until = r.u64()?;
+        Ok(())
+    }
+
     fn start_dma(&mut self, ram: &mut [u8], ch: usize) {
         let [madr, bcr, chcr] = self.dma[ch];
         let words = match (chcr >> 9) & 3 {

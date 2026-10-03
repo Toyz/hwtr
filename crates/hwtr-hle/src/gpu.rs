@@ -84,7 +84,62 @@ struct Mode {
     clut: u16,
 }
 
+fn put_xfer(w: &mut hwtr_cpu::state::Writer, t: &Option<(u16, u16, u16, u16, usize)>) {
+    match t {
+        Some((x, y, wd, h, n)) => {
+            w.u8(1);
+            for v in [*x, *y, *wd, *h] {
+                w.u16(v);
+            }
+            w.u32(*n as u32);
+        }
+        None => w.u8(0),
+    }
+}
+
+fn get_xfer(r: &mut hwtr_cpu::state::Reader) -> hwtr_cpu::state::Result<Option<(u16, u16, u16, u16, usize)>> {
+    Ok(if r.u8()? != 0 { Some((r.u16()?, r.u16()?, r.u16()?, r.u16()?, r.u32()? as usize)) } else { None })
+}
+
 impl Gpu {
+    pub fn save(&self, w: &mut hwtr_cpu::state::Writer) {
+        w.u16s(&self.vram);
+        w.u32s(&self.cmd);
+        put_xfer(w, &self.upload);
+        put_xfer(w, &self.download);
+        w.u16(self.texpage);
+        for v in [self.area.0, self.area.1, self.area.2, self.area.3, self.offset.0, self.offset.1] {
+            w.u32(v as u32);
+        }
+        let d = self.display;
+        for v in [d.x, d.y, d.width, d.height] {
+            w.u16(v);
+        }
+        w.bool(d.enabled);
+        w.u64(self.drawn);
+        w.bool(self.field);
+        w.u32(self.busy);
+    }
+
+    pub fn load(&mut self, r: &mut hwtr_cpu::state::Reader) -> hwtr_cpu::state::Result<()> {
+        self.vram = r.u16s()?;
+        self.cmd = r.u32s()?;
+        self.upload = get_xfer(r)?;
+        self.download = get_xfer(r)?;
+        self.texpage = r.u16()?;
+        let mut a = [0i32; 6];
+        for v in &mut a {
+            *v = r.u32()? as i32;
+        }
+        self.area = (a[0], a[1], a[2], a[3]);
+        self.offset = (a[4], a[5]);
+        self.display = Display { x: r.u16()?, y: r.u16()?, width: r.u16()?, height: r.u16()?, enabled: r.bool()? };
+        self.drawn = r.u64()?;
+        self.field = r.bool()?;
+        self.busy = r.u32()?;
+        Ok(())
+    }
+
     pub fn status(&mut self) -> u32 {
         self.field = !self.field;
         let mut s = 0x1c00_0000 | (self.texpage as u32 & 0x7ff);

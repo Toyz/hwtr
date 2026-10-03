@@ -122,7 +122,128 @@ enum Cv {
     None,
 }
 
+fn put_matrix(w: &mut crate::state::Writer, m: &Matrix) {
+    for row in m {
+        for &x in row {
+            w.u16(x as u16);
+        }
+    }
+}
+
+fn get_matrix(r: &mut crate::state::Reader) -> crate::state::Result<Matrix> {
+    let mut m = [[0i16; 3]; 3];
+    for row in &mut m {
+        for x in row {
+            *x = r.u16()? as i16;
+        }
+    }
+    Ok(m)
+}
+
 impl Gte {
+    /// Every register exactly, for save states.
+    pub fn save(&self, w: &mut crate::state::Writer) {
+        for v in &self.v {
+            for &x in v {
+                w.u16(x as u16);
+            }
+        }
+        w.0.extend(self.rgbc);
+        w.u16(self.otz);
+        for &x in &self.ir {
+            w.u16(x as u16);
+        }
+        for p in &self.sxy {
+            w.u16(p[0] as u16);
+            w.u16(p[1] as u16);
+        }
+        for &z in &self.sz {
+            w.u16(z);
+        }
+        for c in &self.rgb {
+            w.0.extend(c);
+        }
+        w.u32(self.res1);
+        for &m in &self.mac {
+            w.u32(m as u32);
+        }
+        w.u32(self.lzcs);
+        put_matrix(w, &self.rt);
+        for &t in &self.tr {
+            w.u32(t as u32);
+        }
+        put_matrix(w, &self.l);
+        for &t in &self.bk {
+            w.u32(t as u32);
+        }
+        put_matrix(w, &self.lr);
+        for &t in &self.fc {
+            w.u32(t as u32);
+        }
+        w.u32(self.ofx as u32);
+        w.u32(self.ofy as u32);
+        w.u16(self.h);
+        w.u16(self.dqa as u16);
+        w.u32(self.dqb as u32);
+        w.u16(self.zsf3 as u16);
+        w.u16(self.zsf4 as u16);
+        w.u32(self.flag);
+    }
+
+    pub fn load(r: &mut crate::state::Reader) -> crate::state::Result<Gte> {
+        let mut g = Gte::default();
+        for v in &mut g.v {
+            for x in v {
+                *x = r.u16()? as i16;
+            }
+        }
+        for c in &mut g.rgbc {
+            *c = r.u8()?;
+        }
+        g.otz = r.u16()?;
+        for x in &mut g.ir {
+            *x = r.u16()? as i16;
+        }
+        for p in &mut g.sxy {
+            p[0] = r.u16()? as i16;
+            p[1] = r.u16()? as i16;
+        }
+        for z in &mut g.sz {
+            *z = r.u16()?;
+        }
+        for c in &mut g.rgb {
+            for b in c {
+                *b = r.u8()?;
+            }
+        }
+        g.res1 = r.u32()?;
+        for m in &mut g.mac {
+            *m = r.u32()? as i32;
+        }
+        g.lzcs = r.u32()?;
+        g.rt = get_matrix(r)?;
+        for t in &mut g.tr {
+            *t = r.u32()? as i32;
+        }
+        g.l = get_matrix(r)?;
+        for t in &mut g.bk {
+            *t = r.u32()? as i32;
+        }
+        g.lr = get_matrix(r)?;
+        for t in &mut g.fc {
+            *t = r.u32()? as i32;
+        }
+        g.ofx = r.u32()? as i32;
+        g.ofy = r.u32()? as i32;
+        g.h = r.u16()?;
+        g.dqa = r.u16()? as i16;
+        g.dqb = r.u32()? as i32;
+        g.zsf3 = r.u16()? as i16;
+        g.zsf4 = r.u16()? as i16;
+        g.flag = r.u32()?;
+        Ok(g)
+    }
+
     // ---- register access -------------------------------------------------
 
     pub fn read_data(&self, r: usize) -> u32 {

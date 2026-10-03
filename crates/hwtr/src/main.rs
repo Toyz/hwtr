@@ -88,6 +88,7 @@ impl App {
         self.pad = pad;
         if let Some(hle) = &mut self.original {
             hle.pad = pad.buttons;
+            hle.sticks = self.input.has_gamepad().then_some([pad.lx, pad.ly, pad.rx, pad.ry]);
             if let Err(e) = hle.frame() {
                 tracing::error!("the original stopped: {e:x?}");
                 self.original = None;

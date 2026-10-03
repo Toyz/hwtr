@@ -102,6 +102,11 @@ impl Input {
         Input { gilrs, active: None, rumble: None, keyboard: Keyboard::default() }
     }
 
+    /// Whether a gamepad is connected (so the pad is an analog one).
+    pub fn has_gamepad(&self) -> bool {
+        self.active.is_some()
+    }
+
     /// Names of the connected gamepads.
     pub fn gamepads(&self) -> Vec<String> {
         self.gilrs.as_ref().map_or(Vec::new(), |g| {

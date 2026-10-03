@@ -69,6 +69,36 @@ pub struct Cpu {
 }
 
 impl Cpu {
+    pub fn save(&self, w: &mut crate::state::Writer) {
+        w.u32s(&self.r);
+        w.u32(self.hi);
+        w.u32(self.lo);
+        w.u32(self.pc);
+        w.u32(self.next_pc);
+        w.u32s(&self.cop0);
+        self.gte.save(w);
+        match self.load {
+            Some((reg, v)) => {
+                w.u8(1);
+                w.u32(reg as u32);
+                w.u32(v);
+            }
+            None => w.u8(0),
+        }
+    }
+
+    pub fn load(r: &mut crate::state::Reader) -> crate::state::Result<Cpu> {
+        let regs = r.u32s()?;
+        let (hi, lo, pc, next_pc) = (r.u32()?, r.u32()?, r.u32()?, r.u32()?);
+        let cop0 = r.u32s()?;
+        let gte = Gte::load(r)?;
+        let load = if r.u8()? != 0 { Some((r.u32()? as usize, r.u32()?)) } else { None };
+        let mut c = Cpu { hi, lo, pc, next_pc, gte, load, ..Cpu::default() };
+        c.r.copy_from_slice(&regs[..32]);
+        c.cop0.copy_from_slice(&cop0[..32]);
+        Ok(c)
+    }
+
     /// Sets the program counter, clearing any branch in flight.
     pub fn jump(&mut self, pc: u32) {
         self.pc = pc;

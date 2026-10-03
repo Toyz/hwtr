@@ -332,6 +332,63 @@ impl Machine {
         self.run()
     }
 
+    /// The machine's state (CPU, memory, heap, interrupt timing), without the
+    /// hooks and devices, which are code and re-made by whoever built the
+    /// machine.
+    pub fn save(&self, w: &mut crate::state::Writer) {
+        w.bytes(b"machine");
+        self.cpu.save(w);
+        w.bytes(&self.bus.ram);
+        w.bytes(&self.bus.scratch);
+        w.u32(self.heap.blocks.len() as u32);
+        for &(a, n, used) in &self.heap.blocks {
+            w.u32(a);
+            w.u32(n);
+            w.bool(used);
+        }
+        let v = &self.vblank;
+        w.u64(v.period);
+        w.u64(v.since);
+        w.u32(v.handler.get());
+        w.u32(v.skip.get());
+        w.u64(v.count.get());
+        w.u32(v.counter);
+        w.u32(v.return_to);
+        w.bool(v.masked);
+        w.u32(v.stack);
+        w.u64(self.clock.get());
+        let p = self.pending.borrow();
+        w.u32(p.len() as u32);
+        for &(t, h) in p.iter() {
+            w.u64(t);
+            w.u32(h);
+        }
+    }
+
+    pub fn load(&mut self, r: &mut crate::state::Reader) -> crate::state::Result<()> {
+        r.expect(b"machine")?;
+        self.cpu = Cpu::load(r)?;
+        self.bus.ram = r.bytes()?;
+        self.bus.scratch = r.bytes()?;
+        let n = r.u32()?;
+        self.heap.blocks = (0..n).map(|_| Ok((r.u32()?, r.u32()?, r.bool()?))).collect::<crate::state::Result<_>>()?;
+        let v = &mut self.vblank;
+        v.period = r.u64()?;
+        v.since = r.u64()?;
+        v.handler.set(r.u32()?);
+        v.skip.set(r.u32()?);
+        v.count.set(r.u64()?);
+        v.counter = r.u32()?;
+        v.return_to = r.u32()?;
+        v.masked = r.bool()?;
+        v.stack = r.u32()?;
+        self.clock.set(r.u64()?);
+        let n = r.u32()?;
+        let pending = (0..n).map(|_| Ok((r.u64()?, r.u32()?))).collect::<crate::state::Result<Vec<_>>>()?;
+        *self.pending.borrow_mut() = pending;
+        Ok(())
+    }
+
     /// Calls a function from between instructions of a run in progress (an
     /// interrupt handler, say): the CPU's state is saved and put back after,
     /// so the interrupted code carries on as if nothing ran.
