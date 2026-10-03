@@ -31,6 +31,17 @@ impl Tables {
         Tables { cos, sqrt }
     }
 
+    /// The same tables read from main RAM with the executable loaded.
+    pub fn from_ram(ram: &[u8]) -> Tables {
+        let u16_at = |a: u32| {
+            let i = (a & 0x1f_ffff) as usize;
+            u16::from_le_bytes([ram[i], ram[i + 1]])
+        };
+        let cos = (0..COS_ENTRIES as u32).map(|i| u16_at(COS_TABLE + 2 * i)).collect();
+        let sqrt = (0..SQRT_ENTRIES as u32).map(|i| u16_at(SQRT_TABLE + 2 * i)).collect();
+        Tables { cos, sqrt }
+    }
+
     /// cos(x), 0x80010afc.
     pub fn cos(&self, x: i32) -> i32 {
         // |x| mod a turn, the remainder as the original computes it (by a
@@ -116,4 +127,34 @@ pub fn apply_matrix_lv(m: &Matrix, v: [i32; 3]) -> [i32; 3] {
         out[i] = mac_row(&m[i], lo, 12).wrapping_add(h8);
     }
     out
+}
+
+/// GCC's fixed-point multiply as the game compiles it: the 64-bit product
+/// shifted down 12 and kept to 32 bits (`mflo >> 12 | mfhi << 20`).
+pub fn fx(a: i32, b: i32) -> i32 {
+    ((a as i64 * b as i64) >> 12) as i32
+}
+
+/// A 4.12 dot product, each term rounded down by `fx` before the sum.
+pub fn dot(a: [i32; 3], b: [i32; 3]) -> i32 {
+    fx(a[0], b[0]).wrapping_add(fx(a[1], b[1])).wrapping_add(fx(a[2], b[2]))
+}
+
+/// The R3000A's `div`: quotient and remainder, with what the hardware gives
+/// for a zero divisor (quotient -1 or 1 by the dividend's sign, remainder the
+/// dividend) and for `i32::MIN / -1`.
+pub fn div(a: i32, b: i32) -> (i32, i32) {
+    if b == 0 { (if a >= 0 { -1 } else { 1 }, a) } else { (a.wrapping_div(b), a.wrapping_rem(b)) }
+}
+
+/// `(a << 12) / b` without losing the top bits of `a`, as GCC inlines it at
+/// many call sites: for a divisor within ±0x80000, the whole part and the
+/// remainder are divided separately; past that, `a` is divided by `b >> 12`.
+pub fn div_fx(a: i32, b: i32) -> i32 {
+    if (b.wrapping_add(0x8_0000) as u32) <= 0x10_0000 {
+        let (q, r) = div(a, b);
+        (q << 12).wrapping_add(div(r << 12, b).0)
+    } else {
+        div(a, b >> 12).0
+    }
 }

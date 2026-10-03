@@ -476,7 +476,12 @@ impl Flow {
     }
 
     fn live_out(&self, k: usize) -> BTreeSet<usize> {
-        self.blocks[k].succ.iter().filter_map(|s| self.index.get(s)).flat_map(|&j| self.live_in[j].iter().copied()).collect()
+        self.blocks[k]
+            .succ
+            .iter()
+            .filter_map(|s| self.index.get(s))
+            .flat_map(|&j| self.live_in[j].iter().copied())
+            .collect()
     }
 
     /// The block's instructions in execution order, as (address, whether
@@ -675,7 +680,8 @@ impl Emitter<'_, '_> {
             return;
         }
         busy.push(r);
-        let readers: Vec<usize> = self.regs.iter().filter(|(q, x)| **q != r && mentions(x, &[r])).map(|(q, _)| *q).collect();
+        let readers: Vec<usize> =
+            self.regs.iter().filter(|(q, x)| **q != r && mentions(x, &[r])).map(|(q, _)| *q).collect();
         for q in readers {
             if busy.contains(&q) {
                 // A cycle: the old value goes to a temporary.
@@ -870,9 +876,7 @@ impl Emitter<'_, '_> {
                     .regs
                     .iter()
                     .filter(|(r, e)| {
-                        !CLOBBERED.contains(r)
-                            && live_end.contains(r)
-                            && (contains_load(e) || mentions(e, &CLOBBERED))
+                        !CLOBBERED.contains(r) && live_end.contains(r) && (contains_load(e) || mentions(e, &CLOBBERED))
                     })
                     .map(|(r, _)| *r)
                     .collect();

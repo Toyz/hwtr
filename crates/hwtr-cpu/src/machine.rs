@@ -20,6 +20,33 @@ pub const STACK_TOP: u32 = 0x801f_ff00;
 /// A hook runs instead of the code at its address and returns `v0`.
 pub type Hook = Box<dyn FnMut(&mut Cpu, &mut Bus) -> u32>;
 
+/// What a shadow check does when the function it watches returns: given the
+/// machine then, `Err` with what differs.
+pub type CheckExit = Box<dyn FnOnce(&Cpu, &Bus) -> Result<(), String>>;
+
+/// A shadow check, run as a function is entered (the original still runs):
+/// sees the machine at entry and returns what to check at the return.
+pub type Check = Box<dyn FnMut(&Cpu, &Bus) -> CheckExit>;
+
+/// Shadow checks so far.
+#[derive(Default, Debug)]
+pub struct CheckStats {
+    pub passed: u64,
+    /// Calls an interrupt landed inside, whose effects would confuse the
+    /// comparison.
+    pub skipped: u64,
+    /// (function, what differed).
+    pub failed: Vec<(u32, String)>,
+}
+
+struct OpenCheck {
+    func: u32,
+    ret: u32,
+    sp: u32,
+    interrupts: u64,
+    exit: CheckExit,
+}
+
 pub struct Machine {
     pub cpu: Cpu,
     pub bus: Bus,
@@ -57,6 +84,11 @@ pub struct Machine {
     /// runs like the vertical blank's handler, between instructions, when
     /// interrupts are on.
     pub pending: std::rc::Rc<std::cell::RefCell<Vec<(u64, u32)>>>,
+    /// Interrupt handlers run so far.
+    pub interrupts: u64,
+    checks: HashMap<u32, Check>,
+    open_checks: Vec<OpenCheck>,
+    pub check_stats: CheckStats,
 }
 
 /// The vertical blank interrupt, delivered every `period` instructions (or
@@ -109,6 +141,10 @@ impl Default for Machine {
             stores: None,
             clock: Default::default(),
             pending: Default::default(),
+            interrupts: 0,
+            checks: HashMap::new(),
+            open_checks: Vec::new(),
+            check_stats: CheckStats::default(),
         };
         m.install_bios();
         m
@@ -190,6 +226,13 @@ impl Machine {
 
     pub fn unhook(&mut self, addr: u32) {
         self.hooks.remove(&addr);
+    }
+
+    /// Checks every call of the function at `addr` as it runs: `check` sees
+    /// the machine at entry, and what it returns sees it at the return. The
+    /// results collect in `check_stats`.
+    pub fn check(&mut self, addr: u32, check: impl FnMut(&Cpu, &Bus) -> CheckExit + 'static) {
+        self.checks.insert(addr, Box::new(check));
     }
 
     /// The BIOS functions the PsyQ library reaches that are pure enough to
@@ -447,6 +490,7 @@ impl Machine {
                     p.iter().position(|&(t, _)| t <= now).map(|i| p.remove(i))
                 };
                 if let Some((_, handler)) = due {
+                    self.interrupts += 1;
                     self.vblank.in_handler = true;
                     let ret = if self.vblank.return_to != 0 { self.vblank.return_to } else { RETURN };
                     let r = self.call_nested_on(handler, &[], ret, self.vblank.stack);
@@ -474,6 +518,7 @@ impl Machine {
                     self.bus.write_u32(self.vblank.counter, v.wrapping_add(1));
                 }
                 let handler = self.vblank.handler.get();
+                self.interrupts += 1;
                 if handler != 0 {
                     self.vblank.in_handler = true;
                     let ret = if self.vblank.return_to != 0 { self.vblank.return_to } else { RETURN };
@@ -485,6 +530,28 @@ impl Machine {
                     }
                 }
                 return Err(Fault::Halt { pc });
+            }
+            // Shadow checks: a watched function returning, or being entered.
+            if let Some(top) = self.open_checks.last()
+                && pc == top.ret
+                && self.cpu.r[29] == top.sp
+            {
+                let c = self.open_checks.pop().unwrap();
+                if c.interrupts != self.interrupts {
+                    self.check_stats.skipped += 1;
+                } else {
+                    match (c.exit)(&self.cpu, &self.bus) {
+                        Ok(()) => self.check_stats.passed += 1,
+                        Err(e) => self.check_stats.failed.push((c.func, e)),
+                    }
+                }
+            }
+            if self.cpu.next_pc == pc.wrapping_add(4)
+                && let Some(check) = self.checks.get_mut(&pc)
+            {
+                let exit = check(&self.cpu, &self.bus);
+                let (ret, sp) = (self.cpu.r[31], self.cpu.r[29]);
+                self.open_checks.push(OpenCheck { func: pc, ret, sp, interrupts: self.interrupts, exit });
             }
             // A hook or a BIOS entry replaces the function: run it, then return
             // to ra as if the function had. Hooks only fire on a function's
@@ -529,7 +596,10 @@ impl Machine {
                 let width = match insn.op {
                     hwtr_psx::mips::Op::Sb => 1,
                     hwtr_psx::mips::Op::Sh => 2,
-                    hwtr_psx::mips::Op::Sw | hwtr_psx::mips::Op::Swl | hwtr_psx::mips::Op::Swr | hwtr_psx::mips::Op::Swc2 => 4,
+                    hwtr_psx::mips::Op::Sw
+                    | hwtr_psx::mips::Op::Swl
+                    | hwtr_psx::mips::Op::Swr
+                    | hwtr_psx::mips::Op::Swc2 => 4,
                     _ => 0,
                 };
                 if width > 0 {

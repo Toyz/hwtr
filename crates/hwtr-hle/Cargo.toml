@@ -12,3 +12,4 @@ hwtr-disc.workspace = true
 hwtr-psx.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+hwtr-game.workspace = true

@@ -17,6 +17,8 @@
 
 pub mod gpu;
 pub mod hw;
+pub mod port;
+pub mod script;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

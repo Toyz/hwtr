@@ -30,7 +30,8 @@ fn length_matches_the_original() {
     let mut m = Machine::with_exe(&exe);
     let mut rng = common::Rng(0x0bad_cafe_d00d_f00d);
     let at = 0x8018_0000;
-    let mut cases: Vec<[i32; 3]> = vec![[0, 0, 0], [1, 0, 0], [0, -1, 0], [3, 4, 0], [i32::MAX, 0, 0], [i32::MIN, i32::MIN, i32::MIN]];
+    let mut cases: Vec<[i32; 3]> =
+        vec![[0, 0, 0], [1, 0, 0], [0, -1, 0], [3, 4, 0], [i32::MAX, 0, 0], [i32::MIN, i32::MIN, i32::MIN]];
     for _ in 0..30_000 {
         // Magnitudes spread over every bit length.
         let bits = rng.below(32);

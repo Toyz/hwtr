@@ -829,8 +829,9 @@ fn callers(args: &mut Args, cue: &Option<String>) -> Result<()> {
 fn pseudo(args: &mut Args, cue: &Option<String>) -> Result<()> {
     let target = args.items.get(1).cloned().ok_or("pseudo FILE ADDR|NAME")?;
     let p = Program::load(args, cue)?;
-    let addr = parse_num(&target)
-        .or_else(|_| p.names.iter().find(|(_, n)| **n == target).map(|(&a, _)| a).ok_or(format!("no symbol {target}")))?;
+    let addr = parse_num(&target).or_else(|_| {
+        p.names.iter().find(|(_, n)| **n == target).map(|(&a, _)| a).ok_or(format!("no symbol {target}"))
+    })?;
     let names = |a: u32| -> Option<String> {
         if let Some(n) = p.names.get(&a) {
             return Some(n.clone());

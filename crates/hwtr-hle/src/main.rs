@@ -22,47 +22,20 @@ fn png(path: &std::path::Path, w: usize, h: usize, rgba: &[u8]) {
     std::fs::write(path.with_extension("ppm"), out).expect("write");
 }
 
-/// A button's bit by name.
-fn button(name: &str) -> u16 {
-    match name.to_lowercase().as_str() {
-        "select" => 1 << 0,
-        "l3" => 1 << 1,
-        "r3" => 1 << 2,
-        "start" => 1 << 3,
-        "up" => 1 << 4,
-        "right" => 1 << 5,
-        "down" => 1 << 6,
-        "left" => 1 << 7,
-        "l2" => 1 << 8,
-        "r2" => 1 << 9,
-        "l1" => 1 << 10,
-        "r1" => 1 << 11,
-        "triangle" => 1 << 12,
-        "circle" => 1 << 13,
-        "cross" | "x" => 1 << 14,
-        "square" => 1 << 15,
-        _ => 0,
-    }
-}
-
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
     let mut args = std::env::args().skip(1);
     let (mut frames, mut shots, mut every) = (120u64, PathBuf::from("work/hle"), 30u64);
-    // --press FRAME:BUTTONS[:LENGTH], buttons by name joined with +.
-    let mut presses: Vec<(u64, u16, u64)> = Vec::new();
-    // --analog: a DualShock in analog mode; --stick FRAME:LX,LY[:LENGTH] moves the left stick.
-    let mut analog = false;
+    let mut script = hwtr_hle::script::Script::default();
     let (mut save, mut load) = (None::<PathBuf>, None::<PathBuf>);
     let mut peeks: Vec<(u32, u32)> = Vec::new();
     let mut writes = false;
     let mut writes_from = 0u64;
-    let mut sticks: Vec<(u64, u8, u8, u64)> = Vec::new();
     while let Some(a) = args.next() {
         match a.as_str() {
-            "--analog" => analog = true,
+            "--analog" => script.analog = true,
             "--save" => save = args.next().map(PathBuf::from),
             "--writes" => writes = true,
             "--writes-from" => {
@@ -78,26 +51,8 @@ fn main() {
                 }
             }
             "--load" => load = args.next().map(PathBuf::from),
-            "--stick" => {
-                for p in args.next().unwrap_or_default().split(';') {
-                    let mut it = p.split(':');
-                    let at: u64 = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-                    let xy: Vec<u8> =
-                        it.next().unwrap_or("128,128").split(',').filter_map(|v| v.parse().ok()).collect();
-                    let len: u64 = it.next().and_then(|s| s.parse().ok()).unwrap_or(60);
-                    sticks.push((at, *xy.first().unwrap_or(&128), *xy.get(1).unwrap_or(&128), len));
-                }
-                analog = true;
-            }
-            "--press" => {
-                for p in args.next().unwrap_or_default().split(',') {
-                    let mut it = p.split(':');
-                    let at: u64 = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-                    let bits = it.next().unwrap_or("").split('+').map(button).fold(0, |a, b| a | b);
-                    let len: u64 = it.next().and_then(|s| s.parse().ok()).unwrap_or(4);
-                    presses.push((at, bits, len));
-                }
-            }
+            "--stick" => script.stick(&args.next().unwrap_or_default()),
+            "--press" => script.press(&args.next().unwrap_or_default()),
             "--shots" => shots = args.next().map(PathBuf::from).unwrap_or(shots),
             "--every" => every = args.next().and_then(|s| s.parse().ok()).unwrap_or(every),
             n => frames = n.parse().unwrap_or(frames),
@@ -122,7 +77,6 @@ fn main() {
     }
     let start = std::time::Instant::now();
     let mut steps = 0u64;
-    let trace = std::env::var_os("HWTR_TRACE").is_some();
     hle.m.step_limit = 30_000_000;
     let sp_guard = std::env::var("HWTR_SPGUARD").ok().and_then(|v| u32::from_str_radix(&v, 16).ok());
     // HWTR_WATCH=ADDR[,ADDR]: report every change to those words.
@@ -134,18 +88,6 @@ fn main() {
         }
     }
     for f in 0..frames {
-        if trace {
-            hle.m.trace = Some(Vec::new());
-            if f == 300 {
-                hle.m.sp_guard = sp_guard.unwrap_or(0);
-            }
-            if analog {
-                let (lx, ly) =
-                    sticks.iter().rev().find(|s| f >= s.0 && f < s.0 + s.3).map_or((128, 128), |s| (s.1, s.2));
-                hle.sticks = Some([lx, ly, 128, 128]);
-            }
-            hle.pad = presses.iter().filter(|p| f >= p.0 && f < p.0 + p.2).fold(0, |a, p| a | p.1);
-        }
         hle.m.trace = Some(Vec::new());
         if writes && writes_from > 0 && f == writes_from {
             hle.m.stores = Some(Vec::new());
@@ -153,11 +95,7 @@ fn main() {
         if f == 300 {
             hle.m.sp_guard = sp_guard.unwrap_or(0);
         }
-        if analog {
-            let (lx, ly) = sticks.iter().rev().find(|s| f >= s.0 && f < s.0 + s.3).map_or((128, 128), |s| (s.1, s.2));
-            hle.sticks = Some([lx, ly, 128, 128]);
-        }
-        hle.pad = presses.iter().filter(|p| f >= p.0 && f < p.0 + p.2).fold(0, |a, p| a | p.1);
+        script.apply(&mut hle, f);
         if let Err(e) = hle.frame() {
             tracing::error!("frame {f}: {e:x?} after {} steps", hle.m.steps);
             let fc = hle.m.fault_cpu.clone().unwrap_or_else(|| hle.m.cpu.clone());
@@ -254,7 +192,8 @@ fn main() {
         let gp = hwtr_psx::analysis::find_gp(&exe.view(), exe.pc0);
         let a = hwtr_psx::program::Program::analyze(exe.view(), exe.pc0, gp);
         // function -> (stores, lowest and highest address, distinct 4 KB pages)
-        let mut by: std::collections::BTreeMap<u32, (u64, u32, u32, std::collections::BTreeSet<u32>)> = Default::default();
+        let mut by: std::collections::BTreeMap<u32, (u64, u32, u32, std::collections::BTreeSet<u32>)> =
+            Default::default();
         for &(pc, addr, _) in &log {
             let addr = addr & 0x1f_ffff | 0x8000_0000;
             let f = a.func_of(pc).map_or(pc, |f| f.start);
