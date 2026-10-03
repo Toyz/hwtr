@@ -2,8 +2,8 @@
 title: The car object and its physics step
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x80128fcc the car array, 0x800d263c the car count, 0x8004064c cars_update, 0x8003fbe4 car_update, 0x800427a8 car_physics, 0x80040a90 update_wheels, 0x80041af0 aero, 0x80060138 drivetrain, 0x80136a18 the tuning bytes
-worklog: 18, 19, 20
+covers: US CCCPSX.EXE:0x80128fcc the car array, 0x800d263c the car count, 0x8004064c cars_update, 0x8003fbe4 car_update, 0x800427a8 car_physics, 0x80040a90 update_wheels, 0x80041af0 aero, 0x80060138 drivetrain, 0x80044fc4 wheel spin, 0x8003d71c air control, 0x80136a18 the tuning bytes
+worklog: 18, 19, 20, 22
 ---
 
 # The car object and its physics step
@@ -44,7 +44,8 @@ come from use and stay provisional until every reader of a field is ported.
 | +0x10 | s32 | steering angle, radians; negative steers right |
 | +0x14 | s32 | accelerator, 0 to 1 |
 | +0x18 | s32 | brake, 0 to 1; the throttle in reverse |
-| +0x24 | u8 | handbrake: the rear wheels lose their sideways grip |
+| +0x1c, +0x20 | s32 | the stick, -1 to 1: across (steering) and along |
+| +0x24 | u8 | handbrake: the rear wheels lose their sideways grip; in the air, the stick rolls instead of yawing |
 | +0x30 | body | the rigid body ([its page](rigid-body.md)); the fields to +0x210 below are its |
 | +0xec | VECTOR | gravity's direction |
 | +0xfc | VECTOR | where drag acts, from the position, world axes |
@@ -72,11 +73,16 @@ come from use and stay provisional until every reader of a field is ported.
 | +0x678, +0x67c | s32 | front damping in compression, in rebound |
 | +0x688 | s32 | rear tyre grip (and the base of the front's when a tuning set applies) |
 | +0x690, +0x694 | s32 | rear damping in compression, in rebound |
+| +0x69c, +0x6a0, +0x6a4 | s32 | air power: pitch, roll, yaw |
 | +0x6b4 | s32 | bit 0 cancels the surface-6 drag |
 | +0x770 | VECTOR | the point wheel mounts are measured from |
 | +0x780, +0x784, +0x788 | s32 | width, length, height |
 | +0x865 | u8 | non-zero cancels the surface-6 drag |
-| +0x86a, +0x86b | u8 | both set: an airborne wheel's downforce acts along the body from the position |
+| +0x86a | u8 | the stick is turning the car in the air |
+| +0x86b | u8 | air-control arming: bit 0 the stick's along axis, bit 1 across |
+| +0x876 | u8 | an axis lock is active |
+| +0x878 | s32 | the locked body axis (0, 1, 2) |
+| +0x87c | VECTOR | the direction it is held to |
 | +0x891 | u8 | update state |
 
 The player's car in Dawn Encounter, for scale: mass 5.18, wheels 31.7 and
@@ -100,6 +106,7 @@ grip 7.3, rear 9.8, brake bias 0.21, 78.5 x 190 x 48 inches.
 | +0x70 | s32 | tyre friction, scaling the grip |
 | +0x74 | s32 | spring force along the normal |
 | +0x78 | u8 | set when the tyre's force passed its grip |
+| +0x84 | s32 | how fast it turns, rad/s, for drawing |
 
 The player's car has wheels 0 and 1 in front (flags 6: steer, driven) and 2
 and 3 behind (flags 5: rear, driven): all-wheel drive.
@@ -173,7 +180,9 @@ Where they come from (TUNING.PRM, the difficulty?) is not yet known.
    of `-m v × percent × 0.4`, across the normal, is added.
 6. **Each wheel in the air** adds its axle's downforce share: down the body's
    up column at its world mount while any wheel is on the ground, otherwise
-   along minus gravity's direction, at a point set by +0x86a/+0x86b.
+   along minus gravity's direction: at its world mount offset sideways by
+   +0x770's x, or under air control at the position offset forward by the
+   mount's distance from +0x770.
 
 Every force goes into +0x1e4 and its torque about the position, `r × F` with
 each product taken in 64 bits from both factors shifted up 8 and the result
@@ -183,12 +192,46 @@ The original also copies four bytes of uninitialised stack into each heading's
 padding word (+0x28), because its stack copies of the vectors never have their
 fourth word written. Nothing is known to read it.
 
+## Air control (0x8003d71c)
+
+`car_update` runs it when no wheel touches the ground.
+
+1. A held axis lock is re-applied first ([rigid body](rigid-body.md),
+   0x80071bc0).
+2. Each stick axis is **armed** once it is centred (strictly within ±0.2)
+   while the car does over 15 mph (`fx(15, 17.6)` in/s); below that speed
+   arming and the lock are cleared. An armed axis that is now off centre
+   acts; this keeps a stick held through take-off from flipping the car.
+3. While it acts (+0x86a set), the spin is damped (0x8003d5cc, about 5% a
+   step), and the inputs are: across → yaw, or roll with the handbrake held;
+   along → pitch. Each becomes `½ × power × mass × input`.
+4. The strongest of the three, by absolute value and strictly greater than
+   both others, applies a couple of opposite forces at the drag point plus
+   and minus an arm:
+
+   | wins | force (column × size²) | arm (column × input force) | then holds axis |
+   | --- | --- | --- | --- |
+   | roll | sideways × (W² + H²) | up × roll | forward (1) |
+   | yaw | sideways × (W² + L²) | forward × yaw | up (2) |
+   | pitch | up × (L² + H²) | forward × pitch | sideways (0) |
+
+5. The held axis is locked to its current direction, unless that axis is
+   already the one held.
+
+## Wheel spin (0x80044fc4)
+
+For drawing. Rolling with grip: `2 v / d`, negative when the car moves
+against the heading. Otherwise wheels from the third on stop under the
+handbrake; a driven wheel follows the engine (`wheel rpm × 2π / 60`) unless
+braked harder than driven; an undriven wheel stops under more than half
+brake and otherwise keeps its rate.
+
 ## Unknown
 
 - What +0x770 is, beyond its use here; what surface 6 is.
 - What +0x6b4, +0x865 and +0x86a/+0x86b mean.
 - Where the tuning bytes come from.
 - What states 1 and 0 are for (other cars, finished cars?).
-- The rest of `car_update`: the airborne control (0x8003d71c), recovery
-  (0x80041384), the player's effects and sound (0x8003cb74). The sums become
+- The rest of `car_update`: recovery (0x80041384), the player's effects
+  and sound (0x8003cb74). The sums become
   motion in the [rigid body](rigid-body.md) integrator.

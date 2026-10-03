@@ -2,8 +2,8 @@
 title: The rigid body and its integrator
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8006c504 integrate, 0x80025be4 orthonormalize, 0x80026884 and 0x800273ec the 64x16-bit matrix products, 0x80026650 vec_length
-worklog: 20
+covers: US CCCPSX.EXE:0x8006c504 integrate, 0x80071bc0 align, 0x8003d5cc damp_spin, 0x80025be4 orthonormalize, 0x80026884 and 0x800273ec the 64x16-bit matrix products, 0x80026650 vec_length
+worklog: 20, 22
 ---
 
 # The rigid body and its integrator
@@ -59,6 +59,19 @@ the caller runs `orthonormalize` (0x80025be4) on the rotation.
 The rotation then drifts off orthonormal; `orthonormalize` fixes it by
 classical Gram-Schmidt on the columns, each normalised with the inline
 `(a << 12) / length` divide and kept to 16 bits.
+
+## Holding an axis (0x80071bc0) and damping spin (0x8003d5cc)
+
+`align(body, axis, dir)` (axis 0, 1, anything else 2; `dir` by value) keeps
+only the angular momentum about `dir`: its dot with `dir` (each product of
+`dir << 8` and the 64-bit momentum, shifted down 20) times `dir` again. Then,
+if the axis's column is within 60 degrees of `dir` (dot at least ½), that
+column becomes `dir` and the other two lose their components along it;
+otherwise the rotation is left. Air control uses it to hold the car level
+about the axis it last turned.
+
+`damp_spin(car)` scales the angular momentum by `1 - fx(8, 25.0)` = 3896/4096
+each call.
 
 ## Unknown
 

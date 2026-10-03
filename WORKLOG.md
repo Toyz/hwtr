@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-21 entries: audio 1, bug 1, build 2, content 5, decomp 6, design 2, disc 1, engine 3, format 6, input 3, physics 3, race 3, render 8, test 10, tooling 11.
+22 entries: audio 1, bug 1, build 2, content 5, decomp 6, design 2, disc 1, engine 3, format 6, input 4, physics 4, race 3, render 8, test 11, tooling 11.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -33,3 +33,4 @@ The [reference](docs/README.md) says what is true now.
 | 19 | [The car's physics step, ported: tyres, suspension, engine, aerodynamics](worklog/0019-the-car-s-physics-step-ported-tyres-suspension-engine.md) | 2026-10-03 | physics, decomp, test |
 | 20 | [The rigid body integrated and kept orthonormal](worklog/0020-the-rigid-body-integrated-and-kept-orthonormal.md) | 2026-10-03 | physics, test |
 | 21 | [Ports on native types; the original's layout only in codecs](worklog/0021-ports-on-native-types-the-original-s-layout-only-in-codecs.md) | 2026-10-03 | design, test |
+| 22 | [Air control, and testing it by dropping the car](worklog/0022-air-control-and-testing-it-by-dropping-the-car.md) | 2026-10-03 | physics, test, input |
