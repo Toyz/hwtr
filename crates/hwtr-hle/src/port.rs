@@ -13,7 +13,7 @@ use hwtr_game::ram::Ram;
 
 /// (address, name) of every function `install` replaces.
 pub const PORTED: &[(u32, &str)] =
-    &[(0x8004_0a90, "update_wheels"), (0x8004_1af0, "aero"), (0x8006_0138, "drivetrain")];
+    &[(0x8004_0a90, "update_wheels"), (0x8004_1af0, "aero"), (0x8006_0138, "drivetrain"), (0x8004_27a8, "car_physics")];
 
 /// Hooks the ported functions into `m`.
 pub fn install(m: &mut hwtr_cpu::Machine) {
@@ -27,6 +27,11 @@ pub fn install(m: &mut hwtr_cpu::Machine) {
     let t2 = t.clone();
     m.hook(0x8006_0138, move |cpu, bus| {
         hwtr_game::car::drivetrain(&t2, &mut Ram(&mut bus.ram), cpu.r[4]);
+        0
+    });
+    let t3 = t.clone();
+    m.hook(0x8004_27a8, move |cpu, bus| {
+        hwtr_game::car::car_physics(&t3, &mut Ram(&mut bus.ram), cpu.r[4]);
         0
     });
 }
@@ -73,6 +78,12 @@ pub fn shadow(m: &mut hwtr_cpu::Machine) {
         0
     };
     shadow_one(m, 0x8006_0138, drivetrain);
+    let t3 = t.clone();
+    let physics = move |cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus| {
+        hwtr_game::car::car_physics(&t3, &mut Ram(&mut bus.ram), cpu.r[4]);
+        0
+    };
+    shadow_one(m, 0x8004_27a8, physics);
 }
 
 fn shadow_one(

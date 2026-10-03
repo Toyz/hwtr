@@ -21,6 +21,9 @@ pub const STEER: u32 = 0x10;
 pub const ACCEL: u32 = 0x14;
 /// Brake, 0 to 1; also the throttle in reverse.
 pub const BRAKE: u32 = 0x18;
+/// Non-zero while the handbrake is on: the rear wheels lose their sideways
+/// grip.
+pub const HANDBRAKE: u32 = 0x24;
 /// The body's up axis in world space (inferred from its use below).
 pub const UP: u32 = 0xec;
 /// Where drag acts, relative to the position, world axes.
@@ -46,27 +49,50 @@ pub const WHEEL_SIZE: u32 = 0x88;
 pub const WHEEL_COUNT: u32 = 0x548;
 /// Wheels touching the ground, counted by `update_wheels`.
 pub const GROUNDED: u32 = 0x54b;
+/// How many wheels on the front axle and on the rear.
+pub const FRONT_WHEELS: u32 = 0x549;
+pub const REAR_WHEELS: u32 = 0x54a;
 /// Grounded wheels whose ground faces against the body's up axis.
 pub const GROUNDED_AGAINST: u32 = 0x54c;
 /// The engine and gearbox, see [`engine`].
 pub const ENGINE: u32 = 0x550;
+/// Mass.
+pub const MASS: u32 = 0x644;
+/// The centre of gravity along the body and up it, as fractions of half the
+/// length and half the height.
+pub const CG_ALONG: u32 = 0x648;
+pub const CG_UP: u32 = 0x64c;
+/// Braking force per unit weight, and the front axle's share of it.
+pub const BRAKE_GRIP: u32 = 0x650;
+pub const BRAKE_BIAS: u32 = 0x654;
 /// Drag coefficient.
 pub const DRAG: u32 = 0x658;
-/// Downforce: two coefficients and two factors, front and rear (by
-/// inference: the two results go to the two axles?).
-pub const DOWNFORCE_A: u32 = 0x65c;
-pub const DOWNFORCE_B: u32 = 0x660;
-pub const DOWNFORCE_A_SCALE: u32 = 0x664;
-pub const DOWNFORCE_B_SCALE: u32 = 0x668;
+/// Downforce coefficients and factors, front and rear.
+pub const DOWNFORCE_FRONT: u32 = 0x65c;
+pub const DOWNFORCE_REAR: u32 = 0x660;
+pub const DOWNFORCE_FRONT_SCALE: u32 = 0x664;
+pub const DOWNFORCE_REAR_SCALE: u32 = 0x668;
+/// Front tyre grip, and the front suspension's damping in compression and
+/// in rebound.
+pub const GRIP_FRONT: u32 = 0x670;
+pub const DAMP_FRONT_IN: u32 = 0x678;
+pub const DAMP_FRONT_OUT: u32 = 0x67c;
+/// The same for the rear.
+pub const GRIP_REAR: u32 = 0x688;
+pub const DAMP_REAR_IN: u32 = 0x690;
+pub const DAMP_REAR_OUT: u32 = 0x694;
 /// The point the wheel mounts are measured from (a centre of mass?).
 pub const ORIGIN: u32 = 0x770;
-/// Frontal width and height, inches.
+/// Width, length and height, inches.
 pub const WIDTH: u32 = 0x780;
+pub const LENGTH: u32 = 0x784;
 pub const HEIGHT: u32 = 0x788;
 
 /// A table of byte settings: +10 is a speed in mph added to the car's for
-/// downforce while it is on the ground, and +33 to +40 are percentages that
-/// scale the downforce (see `aero`).
+/// downforce while it is on the ground; +33, +36 and +39 scale the front
+/// downforce and +34, +37, +40 the rear, in percent, and +35, +38, +41 add
+/// tenths to the front grip, the set chosen by car flag bit 7, 8 or 9; +51
+/// is the drag of surface 6, in percent.
 pub const TUNING: u32 = 0x8013_6a18;
 
 /// Offsets within a wheel.
@@ -75,22 +101,30 @@ pub mod wheel {
     pub const MOUNT: u32 = 0x00;
     /// Diameter, inches.
     pub const DIAMETER: u32 = 0x14;
-    /// Bit 1: the wheel steers. Bit 2: the engine drives it.
+    /// [`REAR`], [`STEERS`], [`DRIVEN`].
     pub const FLAGS: u32 = 0x18;
+    pub const REAR: u8 = 1;
+    pub const STEERS: u8 = 2;
+    pub const DRIVEN: u8 = 4;
     /// Rolling direction, world space, unit 4.12.
     pub const HEADING: u32 = 0x1c;
     /// Mount point, world space.
     pub const WORLD: u32 = 0x2c;
     /// Non-zero when the wheel touches the ground.
     pub const ON_GROUND: u32 = 0x3c;
+    /// The kind of ground under it; 6 drags the car (see `car_physics`).
+    pub const SURFACE: u32 = 0x3d;
     /// Ground normal under the wheel.
     pub const NORMAL: u32 = 0x40;
     /// Contact point, world space.
     pub const CONTACT: u32 = 0x50;
     /// Velocity of the body at the contact point.
     pub const CONTACT_VEL: u32 = 0x60;
-    /// Non-zero when the wheel has lost grip (by inference: when no driven
-    /// wheel has it clear, the engine revs freely).
+    /// The tyre's friction, scaling the grip.
+    pub const FRICTION: u32 = 0x70;
+    /// The spring's force along the ground normal.
+    pub const SPRING: u32 = 0x74;
+    /// Set when the tyre's force passed its grip this step.
     pub const SLIPPING: u32 = 0x78;
 }
 
@@ -202,10 +236,10 @@ fn wide(a: i32, b: i32) -> i64 {
 /// 0x80041af0: aerodynamics. Above a speed of 1, adds the drag force
 /// `0.5 ρ v² Cd w h` (feet and seconds, from inches) against the velocity to
 /// the force sum, and its torque about the position, acting at
-/// `DRAG_POINT`, to the torque sum. Returns two downforces from the same
-/// dynamic pressure, computed with a bonus speed while the car is on the
-/// ground and scaled by tuning percentages chosen by the car's flags; at
-/// speed 1 or less both are 0.
+/// `DRAG_POINT`, to the torque sum. Returns the front and rear downforce
+/// from the same dynamic pressure, computed with a bonus speed while the car
+/// is on the ground and scaled by tuning percentages chosen by the car's
+/// flags; at speed 1 or less both are 0.
 pub fn aero(ram: &mut Ram, car: u32) -> (i32, i32) {
     let speed = ram.i32(car + SPEED);
     if speed <= 4096 {
@@ -224,8 +258,8 @@ pub fn aero(ram: &mut Ram, car: u32) -> (i32, i32) {
     } else {
         q
     };
-    let mut down_a = fx(q, fx(ram.i32(car + DOWNFORCE_A_SCALE), ram.i32(car + DOWNFORCE_A)));
-    let mut down_b = fx(q, fx(ram.i32(car + DOWNFORCE_B_SCALE), ram.i32(car + DOWNFORCE_B)));
+    let mut down_a = fx(q, fx(ram.i32(car + DOWNFORCE_FRONT_SCALE), ram.i32(car + DOWNFORCE_FRONT)));
+    let mut down_b = fx(q, fx(ram.i32(car + DOWNFORCE_REAR_SCALE), ram.i32(car + DOWNFORCE_REAR)));
     let flags = ram.i32(car + FLAGS);
     if flags & 0x380 != 0 {
         let (a, b) = if flags & 0x80 != 0 {
@@ -240,7 +274,15 @@ pub fn aero(ram: &mut Ram, car: u32) -> (i32, i32) {
         down_b = fx(down_b, percent(b));
     }
     let force = dir.map(|d| fx(d, drag.wrapping_neg()));
-    let r = ram.vec3(car + DRAG_POINT);
+    let at = add(ram.vec3(car + POS), ram.vec3(car + DRAG_POINT));
+    apply_force(ram, car, at, force);
+    (down_a, down_b)
+}
+
+/// Adds `force`, acting at the world point `at`, to the car's force sum,
+/// and its torque about the car's position to the torque sum.
+fn apply_force(ram: &mut Ram, car: u32, at: [i32; 3], force: [i32; 3]) {
+    let r = sub(at, ram.vec3(car + POS));
     let torque = [
         wide(r[1], force[2]).wrapping_sub(wide(force[1], r[2])),
         wide(force[0], r[2]).wrapping_sub(wide(r[0], force[2])),
@@ -251,7 +293,6 @@ pub fn aero(ram: &mut Ram, car: u32) -> (i32, i32) {
         ram.set_i64(at, ram.i64(at).wrapping_add(t));
     }
     ram.set_vec3(car + FORCE, add(ram.vec3(car + FORCE), force));
-    (down_a, down_b)
 }
 
 /// libgcc's `__divdi3` (0x800a9f78), 64-bit division truncated toward zero.
@@ -365,4 +406,170 @@ pub fn drivetrain(t: &Tables, ram: &mut Ram, car: u32) {
     let rpm = ram.i32(e + engine::RPM);
     ram.set_i32(e + engine::WHEEL_RPM, div_fx(rpm, ram.i32(e + engine::RATIO)));
     ram.set_i32(e + engine::RPM, rpm.max(ram.i32(e + engine::IDLE)));
+}
+
+/// 0x800427a8: one physics step's forces. Places the wheels, runs the engine
+/// and the aerodynamics, then for each wheel on the ground adds its tyre and
+/// suspension forces, acting at the contact point (measured from the centre
+/// of gravity):
+///
+/// - sideways friction against the contact point's velocity across the
+///   wheel's heading (all of it, for a rear wheel under the handbrake),
+///   `8 m / wheels` per unit of speed;
+/// - braking along the heading, `m g μ` times the pedal and the axle's share
+///   (the accelerator brakes in reverse);
+/// - the drive force, shared between the driven wheels on the ground;
+/// - damping against the contact point's speed along the ground normal, in
+///   rebound no more than the spring;
+/// - the spring along the normal.
+///
+/// The part across the normal is held within the grip, `(load - downforce)
+/// times the tyre's friction`, and the wheel marked slipping when it was
+/// cut. Surface 6 also drags the car along the ground. A wheel in the air
+/// adds its axle's share of the downforce instead: down the body at its
+/// mount while other wheels touch the ground, otherwise along the body's
+/// +0xec axis.
+pub fn car_physics(t: &Tables, ram: &mut Ram, car: u32) {
+    let mut driven = 0i32;
+    for i in 0..ram.u8(car + WHEEL_COUNT) as u32 {
+        let w = car + WHEELS + i * WHEEL_SIZE;
+        if ram.u8(w + wheel::FLAGS) & wheel::DRIVEN != 0 && ram.u8(w + wheel::ON_GROUND) != 0 {
+            driven += 1;
+        }
+    }
+    update_wheels(t, ram, car);
+    drivetrain(t, ram, car);
+    let (front, rear) = aero(ram, car);
+    let front_down = div_fx(front, (ram.u8(car + FRONT_WHEELS) as i32) << 12);
+    let rear_down = div_fx(rear, (ram.u8(car + REAR_WHEELS) as i32) << 12);
+    let rot = ram.matrix(car + ROT);
+    let column = |j: usize| rot.map(|row| row[j] as i32);
+    let offset = [
+        0,
+        fx(ram.i32(car + CG_ALONG), fx(ram.i32(car + LENGTH), 2048)),
+        fx(ram.i32(car + CG_UP), fx(ram.i32(car + HEIGHT), 2048)),
+    ];
+    let cg = rot.map(|row| {
+        fx(row[0] as i32, offset[0])
+            .wrapping_add(fx(row[1] as i32, offset[1]))
+            .wrapping_add(fx(row[2] as i32, offset[2]))
+    });
+    for i in 0..ram.u8(car + WHEEL_COUNT) as u32 {
+        let w = car + WHEELS + i * WHEEL_SIZE;
+        let flags = ram.u8(w + wheel::FLAGS);
+        let rear = flags & wheel::REAR != 0;
+        let at = sub(ram.vec3(w + wheel::CONTACT), cg);
+        if ram.u8(w + wheel::ON_GROUND) != 0 {
+            let n = ram.vec3(w + wheel::NORMAL);
+            let cv = ram.vec3(w + wheel::CONTACT_VEL);
+            let heading = ram.vec3(w + wheel::HEADING);
+            // Sideways friction.
+            let across = sub(cv, n.map(|c| fx(c, dot(cv, n))));
+            let slide = if rear && ram.u8(car + HANDBRAKE) != 0 {
+                across
+            } else {
+                sub(across, heading.map(|c| fx(c, dot(across, heading))))
+            };
+            let wheels = ram.u8(car + WHEEL_COUNT) as i32;
+            let k = fx(0x8000, div_fx(ram.i32(car + MASS), wheels << 12));
+            let mut f = slide.map(|c| fx(c.wrapping_neg(), k));
+            // Braking: m g μ (g is 386 inches a second squared).
+            let reverse = ram.u8(car + ENGINE + engine::REVERSE) != 0;
+            let mut brake = fx(fx(ram.i32(car + MASS), 0x18_2000), ram.i32(car + BRAKE_GRIP));
+            brake = fx(brake, ram.i32(car + if reverse { ACCEL } else { BRAKE }));
+            let bias = ram.i32(car + BRAKE_BIAS);
+            if rear {
+                brake = fx(brake, 4096i32.wrapping_sub(bias));
+                if wheels == 6 {
+                    brake = fx(brake, 2048);
+                }
+            } else {
+                brake = fx(brake, bias);
+            }
+            brake = fx(brake, 2048);
+            if !reverse {
+                brake = brake.wrapping_neg();
+            }
+            f = add(f, heading.map(|c| fx(c, brake)));
+            if flags & wheel::DRIVEN != 0 {
+                let drive = (ram.i64(car + ENGINE + engine::DRIVE) >> 8) as i32;
+                let share = div_fx(drive, driven << 12);
+                f = add(f, heading.map(|c| fx(c, share)));
+            }
+            // Suspension: damping along the normal, then the spring.
+            let speed = dot(cv, n);
+            let along = n.map(|c| fx(c, speed));
+            let spring = ram.i32(w + wheel::SPRING);
+            let damp = if speed < 0 {
+                let k = ram.i32(car + if rear { DAMP_REAR_IN } else { DAMP_FRONT_IN });
+                along.map(|c| fx(c, k.wrapping_neg()))
+            } else {
+                let k = ram.i32(car + if rear { DAMP_REAR_OUT } else { DAMP_FRONT_OUT });
+                let d = along.map(|c| fx(c, k.wrapping_neg()));
+                let len = t.length(d);
+                if spring < len {
+                    let scale = div_fx(spring, len);
+                    d.map(|c| fx(c, scale))
+                } else {
+                    d
+                }
+            };
+            f = add(f, damp);
+            f = add(f, n.map(|c| fx(c, spring)));
+            // Grip.
+            let load = dot(f, n);
+            let normal = n.map(|c| fx(c, load));
+            let mut tangent = sub(f, normal);
+            let len = t.length(tangent);
+            let down = if rear { rear_down } else { front_down }.wrapping_neg();
+            let grip = if rear {
+                ram.i32(car + GRIP_REAR)
+            } else {
+                let car_flags = ram.i32(car + FLAGS);
+                if car_flags & 0x380 == 0 {
+                    ram.i32(car + GRIP_FRONT)
+                } else {
+                    let k = if car_flags & 0x80 != 0 {
+                        35
+                    } else if car_flags & 0x100 != 0 {
+                        38
+                    } else {
+                        41
+                    };
+                    ram.i32(car + GRIP_REAR).wrapping_add(div_fx((ram.u8(TUNING + k) as i32) << 12, 0xa000))
+                }
+            };
+            let limit = fx(load.wrapping_add(down), fx(grip, ram.i32(w + wheel::FRICTION)));
+            let slipping = limit < len;
+            if slipping {
+                let scale = div_fx(limit, len);
+                tangent = tangent.map(|c| fx(c, scale));
+            }
+            ram.set_u8(w + wheel::SLIPPING, slipping as u8);
+            let mut f = add(normal, tangent);
+            if ram.u8(w + wheel::SURFACE) == 6 && ram.u8(car + 0x865) == 0 && ram.i32(car + 0x6b4) & 1 == 0 {
+                let pct = div_fx((ram.u8(TUNING + 51) as i32) << 12, 0x6_4000);
+                let k = div_fx(0x4000, 0xa000);
+                let x = cv.map(|c| fx(fx(fx(c, ram.i32(car + MASS).wrapping_neg()), pct), k));
+                f = add(f, sub(x, n.map(|c| fx(c, dot(n, x)))));
+            }
+            apply_force(ram, car, at, f);
+        } else if ram.u8(car + GROUNDED) != 0 {
+            let down = if rear { rear_down } else { front_down };
+            let f = column(2).map(|c| fx(c, down));
+            let at = ram.vec3(w + wheel::WORLD);
+            apply_force(ram, car, at, f);
+        } else {
+            let down = if rear { rear_down } else { front_down }.wrapping_neg();
+            let f = ram.vec3(car + UP).map(|c| fx(c, down));
+            let at = if ram.u8(car + 0x86b) != 0 && ram.u8(car + 0x86a) != 0 {
+                let a = ram.i32(w + wheel::MOUNT + 4).wrapping_sub(ram.i32(car + ORIGIN + 4));
+                add(column(1).map(|c| fx(c, a)), ram.vec3(car + POS))
+            } else {
+                let a = ram.i32(car + ORIGIN);
+                add(column(0).map(|c| fx(c, a)), ram.vec3(w + wheel::WORLD))
+            };
+            apply_force(ram, car, at, f);
+        }
+    }
 }

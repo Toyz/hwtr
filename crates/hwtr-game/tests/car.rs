@@ -182,3 +182,96 @@ fn drivetrain_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn car_physics_matches_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let t = Tables::from_exe(&exe);
+    let mut rng = common::Rng(0xca2f_0000_5eed_0003);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let cars = m.bus.read_u32(car::CAR_COUNT);
+        let start = m.bus.ram.clone();
+        for round in 0..400 {
+            for k in 0..cars {
+                let at = CARS + k * CAR_SIZE;
+                // Only cars under full physics have an engine to run.
+                if start[((at + 0x891) & 0x1f_ffff) as usize] != 2 {
+                    continue;
+                }
+                m.bus.ram.copy_from_slice(&start);
+                let mut wheels = 4;
+                if round > 0 {
+                    let mut ram = Ram(&mut m.bus.ram);
+                    let big = |rng: &mut common::Rng| (rng.word() as i32) >> (6 + rng.below(26));
+                    if round % 5 == 0 {
+                        // Six wheels: the rear pair twice.
+                        wheels = 6;
+                        for i in 4..6 {
+                            for b in 0..WHEEL_SIZE {
+                                let v = ram.u8(at + WHEELS + (i - 2) * WHEEL_SIZE + b);
+                                ram.set_u8(at + WHEELS + i * WHEEL_SIZE + b, v);
+                            }
+                        }
+                        ram.set_u8(at + car::WHEEL_COUNT, 6);
+                        ram.set_u8(at + car::REAR_WHEELS, 4);
+                    }
+                    for i in 0..wheels {
+                        let w = at + WHEELS + i * WHEEL_SIZE;
+                        if rng.below(4) == 0 {
+                            ram.set_u8(w + car::wheel::ON_GROUND, 0);
+                        }
+                        ram.set_u8(w + car::wheel::SURFACE, [2, 6, 0][rng.below(3) as usize]);
+                        ram.set_vec3(w + car::wheel::CONTACT_VEL, [big(&mut rng), big(&mut rng), big(&mut rng)]);
+                        ram.set_vec3(w + car::wheel::CONTACT, [big(&mut rng), big(&mut rng), big(&mut rng)]);
+                        ram.set_i32(w + car::wheel::SPRING, rng.below(2000 << 12) as i32);
+                        ram.set_i32(w + car::wheel::FRICTION, rng.below(2 << 12) as i32);
+                        if rng.below(3) == 0 {
+                            ram.set_u8(w + car::wheel::FLAGS, ram.u8(w + car::wheel::FLAGS) ^ car::wheel::REAR);
+                        }
+                    }
+                    ram.set_i32(at + car::ACCEL, rng.below(4097) as i32);
+                    ram.set_i32(at + car::BRAKE, rng.below(4097) as i32);
+                    ram.set_u8(at + car::HANDBRAKE, rng.below(2) as u8);
+                    ram.set_i32(at + car::FLAGS, rng.word() as i32);
+                    ram.set_u8(at + 0x865, rng.below(2) as u8);
+                    ram.set_i32(at + 0x6b4, rng.word() as i32);
+                    ram.set_u8(at + 0x86a, rng.below(2) as u8);
+                    ram.set_u8(at + 0x86b, rng.below(2) as u8);
+                    ram.set_vec3(at + car::SPIN, [0; 3].map(|_| (rng.word() as i32) >> (16 + rng.below(16))));
+                    for b in [10, 33, 34, 35, 36, 37, 38, 39, 40, 41, 51] {
+                        ram.set_u8(car::TUNING + b, rng.word() as u8);
+                    }
+                    // Every wheel in the air.
+                    if round % 6 == 2 {
+                        for i in 0..wheels {
+                            ram.set_u8(at + WHEELS + i * WHEEL_SIZE + car::wheel::ON_GROUND, 0);
+                        }
+                    }
+                    // At rest with no spring force and frictionless tyres: no
+                    // force at all, so the grip and the tyre's force are both
+                    // exactly zero.
+                    if round % 7 == 3 {
+                        for i in 0..wheels {
+                            let w = at + WHEELS + i * WHEEL_SIZE;
+                            ram.set_vec3(w + car::wheel::CONTACT_VEL, [0; 3]);
+                            ram.set_i32(w + car::wheel::SPRING, 0);
+                            ram.set_i32(w + car::wheel::FRICTION, 0);
+                        }
+                        // The wheels' contact velocities come from these.
+                        ram.set_vec3(at + car::VEL, [0; 3]);
+                        ram.set_vec3(at + car::SPIN, [0; 3]);
+                        ram.set_i32(at + car::ACCEL, 0);
+                        ram.set_i32(at + car::BRAKE, 0);
+                    }
+                }
+                let mut port = m.bus.ram.clone();
+                car::car_physics(&t, &mut Ram(&mut port), at);
+                m.call(0x8004_27a8, &[at]).unwrap();
+                let pads: Vec<(u32, u32)> =
+                    (0..wheels).map(|i| (at + WHEELS + i * WHEEL_SIZE + car::wheel::HEADING + 12, 4)).collect();
+                common::same_ram(&m.bus.ram, &port, at, &pads, &format!("{name} car {k} round {round}"));
+            }
+        }
+    }
+}
