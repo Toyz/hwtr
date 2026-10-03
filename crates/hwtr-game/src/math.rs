@@ -194,3 +194,33 @@ pub fn div_fx(a: i32, b: i32) -> i32 {
         div(a, b >> 12).0
     }
 }
+
+impl Tables {
+    /// `v` scaled to length 1, each component divided by the length with
+    /// `div_fx`, as the game normalises inline.
+    pub fn normalize(&self, v: [i32; 3]) -> [i32; 3] {
+        let len = self.length(v);
+        v.map(|c| div_fx(c, len))
+    }
+
+    /// 0x80025be4: the rotation made orthonormal again after a physics step,
+    /// by Gram-Schmidt on its columns in order: the first normalised, the
+    /// second less its projection on the first, the third less its
+    /// projections on both (each taken from the third as it was), each
+    /// normalised; entries kept to 16 bits.
+    pub fn orthonormalize(&self, m: &Matrix) -> Matrix {
+        let column = |j: usize| m.map(|row| row[j] as i32);
+        let scale = |v: [i32; 3], k: i32| v.map(|c| fx(c, k));
+        let sub = |a: [i32; 3], b: [i32; 3]| [0, 1, 2].map(|i| a[i].wrapping_sub(b[i]));
+        let a = self.normalize(column(0));
+        let c1 = column(1);
+        let b = self.normalize(sub(c1, scale(a, dot(c1, a))));
+        let c2 = column(2);
+        let c = self.normalize(sub(sub(c2, scale(a, dot(c2, a))), scale(b, dot(c2, b))));
+        let mut out = [[0; 3]; 3];
+        for i in 0..3 {
+            out[i] = [a[i] as i16, b[i] as i16, c[i] as i16];
+        }
+        out
+    }
+}

@@ -19,6 +19,7 @@ pub const PORTED: &[(u32, &str)] = &[
     (0x8004_27a8, "car_physics"),
     (0x8004_4fc4, "wheel_spin"),
     (0x8006_c504, "integrate"),
+    (0x8002_5be4, "orthonormalize"),
 ];
 
 /// Hooks the ported functions into `m`.
@@ -46,6 +47,16 @@ pub fn install(m: &mut hwtr_cpu::Machine) {
         hwtr_game::body::integrate(&t4, &mut Ram(&mut bus.ram), cpu.r[4], cpu.r[5] as i32);
         0
     });
+    let t5 = t.clone();
+    m.hook(0x8002_5be4, move |cpu, bus| orthonormalize(&t5, cpu, bus));
+}
+
+/// 0x80025be4 on the MATRIX at a0.
+fn orthonormalize(t: &Tables, cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus) -> u32 {
+    let mut ram = Ram(&mut bus.ram);
+    let m = t.orthonormalize(&ram.matrix(cpu.r[4]));
+    ram.set_matrix(cpu.r[4], &m);
+    0
 }
 
 fn wheel_spin(cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus) -> u32 {
@@ -108,6 +119,8 @@ pub fn shadow(m: &mut hwtr_cpu::Machine) {
         0
     };
     shadow_one(m, 0x8006_c504, integrate);
+    let t5 = t.clone();
+    shadow_one(m, 0x8002_5be4, move |cpu, bus| orthonormalize(&t5, cpu, bus));
 }
 
 fn shadow_one(

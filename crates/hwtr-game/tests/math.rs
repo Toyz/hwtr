@@ -74,3 +74,38 @@ fn apply_matrix_lv_matches_the_original() {
         assert_eq!(hwtr_game::math::apply_matrix_lv(&mat, v), want, "{mat:?} {v:?}");
     }
 }
+
+#[test]
+fn orthonormalize_matches_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let t = Tables::from_exe(&exe);
+    let mut m = Machine::with_exe(&exe);
+    let mut rng = common::Rng(0x0420_7400_0000_0006);
+    let at = 0x8018_0000;
+    for round in 0..20_000 {
+        // Near-rotations (as after a step), then anything with no zero
+        // column (the original traps dividing by a zero length).
+        let mut mat = [[0i16; 3]; 3];
+        for (i, row) in mat.iter_mut().enumerate() {
+            for (j, x) in row.iter_mut().enumerate() {
+                let near = if i == j { 4096 } else { 0 } + (rng.word() as i32 >> 26);
+                *x = if round % 2 == 0 { near as i16 } else { rng.word() as i16 };
+            }
+        }
+        for j in 0..3 {
+            if (0..3).all(|i| mat[i][j] == 0) {
+                mat[j][j] = 1;
+            }
+        }
+        for (k, x) in mat.iter().flatten().enumerate() {
+            m.bus.write(at + 2 * k as u32, 2, *x as u16 as u32);
+        }
+        if m.call(0x8002_5be4, &[at]).is_err() {
+            // A column left with no length after the projections.
+            continue;
+        }
+        let want: Vec<i16> = (0..9).map(|k| m.bus.read(at + 2 * k, 2).unwrap() as u16 as i16).collect();
+        let got: Vec<i16> = t.orthonormalize(&mat).iter().flatten().copied().collect();
+        assert_eq!(got, want, "orthonormalize({mat:?})");
+    }
+}
