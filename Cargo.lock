@@ -666,6 +666,7 @@ version = "0.1.0"
 dependencies = [
  "hwtr-cpu",
  "hwtr-disc",
+ "hwtr-game",
  "hwtr-psx",
  "tracing",
  "tracing-subscriber",

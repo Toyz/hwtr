@@ -92,10 +92,9 @@ fn orthonormalize_matches_the_original() {
                 *x = if round % 2 == 0 { near as i16 } else { rng.word() as i16 };
             }
         }
-        for j in 0..3 {
-            if (0..3).all(|i| mat[i][j] == 0) {
-                mat[j][j] = 1;
-            }
+        let zero: Vec<usize> = (0..3).filter(|&j| mat.iter().all(|row| row[j] == 0)).collect();
+        for j in zero {
+            mat[j][j] = 1;
         }
         for (k, x) in mat.iter().flatten().enumerate() {
             m.bus.write(at + 2 * k as u32, 2, *x as u16 as u32);
