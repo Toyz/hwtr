@@ -553,11 +553,12 @@ fn disasm(args: &mut Args, cue: &Option<String>) -> Result<()> {
     let end = end.min(mem.end());
     // Reference sites -> the address they form.
     let mut site_note = std::collections::BTreeMap::new();
+    // Every address the code forms gets a note, so nobody has to add a
+    // `lui` and an `addiu` by hand.
     for (&target, sites) in &p.refs {
-        if let Some(n) = p.note(target) {
-            for &s in sites {
-                site_note.insert(s, n.clone());
-            }
+        let n = p.note(target).unwrap_or_else(|| format!("0x{target:08x}"));
+        for &s in sites {
+            site_note.insert(s, n.clone());
         }
     }
     let label = |a: u32| p.names.get(&a).cloned();
