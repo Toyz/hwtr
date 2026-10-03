@@ -12,8 +12,14 @@ use hwtr_game::math::Tables;
 use hwtr_game::ram::Ram;
 
 /// (address, name) of every function `install` replaces.
-pub const PORTED: &[(u32, &str)] =
-    &[(0x8004_0a90, "update_wheels"), (0x8004_1af0, "aero"), (0x8006_0138, "drivetrain"), (0x8004_27a8, "car_physics")];
+pub const PORTED: &[(u32, &str)] = &[
+    (0x8004_0a90, "update_wheels"),
+    (0x8004_1af0, "aero"),
+    (0x8006_0138, "drivetrain"),
+    (0x8004_27a8, "car_physics"),
+    (0x8004_4fc4, "wheel_spin"),
+    (0x8006_c504, "integrate"),
+];
 
 /// Hooks the ported functions into `m`.
 pub fn install(m: &mut hwtr_cpu::Machine) {
@@ -34,6 +40,17 @@ pub fn install(m: &mut hwtr_cpu::Machine) {
         hwtr_game::car::car_physics(&t3, &mut Ram(&mut bus.ram), cpu.r[4]);
         0
     });
+    m.hook(0x8004_4fc4, wheel_spin);
+    let t4 = t.clone();
+    m.hook(0x8006_c504, move |cpu, bus| {
+        hwtr_game::body::integrate(&t4, &mut Ram(&mut bus.ram), cpu.r[4], cpu.r[5] as i32);
+        0
+    });
+}
+
+fn wheel_spin(cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus) -> u32 {
+    hwtr_game::car::wheel_spin(&mut Ram(&mut bus.ram), cpu.r[4]);
+    0
 }
 
 /// `aero` as the original is called: car, and where to put the two results.
@@ -84,6 +101,13 @@ pub fn shadow(m: &mut hwtr_cpu::Machine) {
         0
     };
     shadow_one(m, 0x8004_27a8, physics);
+    shadow_one(m, 0x8004_4fc4, wheel_spin);
+    let t4 = t.clone();
+    let integrate = move |cpu: &mut hwtr_cpu::Cpu, bus: &mut hwtr_cpu::Bus| {
+        hwtr_game::body::integrate(&t4, &mut Ram(&mut bus.ram), cpu.r[4], cpu.r[5] as i32);
+        0
+    };
+    shadow_one(m, 0x8006_c504, integrate);
 }
 
 fn shadow_one(

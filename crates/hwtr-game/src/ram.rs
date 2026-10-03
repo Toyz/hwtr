@@ -5,7 +5,7 @@
 //! one inside the running game (and be checked there, frame by frame). The
 //! layouts become Rust types once every function touching them is ported.
 
-use crate::math::Matrix;
+use crate::math::{Matrix, Matrix64};
 
 /// The 2 MB of main RAM, addressed as the game addresses it (KSEG0 and its
 /// mirrors all land in the same bytes).
@@ -59,6 +59,29 @@ impl Ram<'_> {
         }
     }
 
+    pub fn set_i16(&mut self, a: u32, v: i16) {
+        let i = at(a);
+        self.0[i..i + 2].copy_from_slice(&v.to_le_bytes());
+    }
+
+    pub fn matrix64(&self, a: u32) -> Matrix64 {
+        let mut m = [[0; 3]; 3];
+        for (i, row) in m.iter_mut().enumerate() {
+            for (j, x) in row.iter_mut().enumerate() {
+                *x = self.i64(a + 8 * (3 * i + j) as u32);
+            }
+        }
+        m
+    }
+
+    pub fn set_matrix64(&mut self, a: u32, m: &Matrix64) {
+        for (i, row) in m.iter().enumerate() {
+            for (j, x) in row.iter().enumerate() {
+                self.set_i64(a + 8 * (3 * i + j) as u32, *x);
+            }
+        }
+    }
+
     /// The 3x3 part of a libgte `MATRIX`, row-major.
     pub fn matrix(&self, a: u32) -> Matrix {
         let mut m = [[0; 3]; 3];
@@ -68,5 +91,13 @@ impl Ram<'_> {
             }
         }
         m
+    }
+
+    pub fn set_matrix(&mut self, a: u32, m: &Matrix) {
+        for (i, row) in m.iter().enumerate() {
+            for (j, x) in row.iter().enumerate() {
+                self.set_i16(a + 2 * (3 * i + j) as u32, *x);
+            }
+        }
     }
 }

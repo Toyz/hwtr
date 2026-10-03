@@ -5,6 +5,7 @@
 //! the original functions in `hwtr-cpu` and hold the port to the same
 //! results.
 
+pub mod body;
 pub mod car;
 pub mod fsm;
 pub mod math;

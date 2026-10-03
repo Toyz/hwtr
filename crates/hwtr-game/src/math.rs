@@ -98,6 +98,42 @@ impl Tables {
 /// A rotation (or any) matrix, 4.12, rows as the GTE takes them.
 pub type Matrix = [[i16; 3]; 3];
 
+/// A matrix of 64-bit entries, as the rigid-body code keeps inertia.
+pub type Matrix64 = [[i64; 3]; 3];
+
+/// `a · m`, 0x80026884: each product of a 64-bit entry and a 4.12 one taken
+/// in 64 bits and shifted down 12, then summed.
+pub fn mul_64_16(a: &Matrix64, m: &Matrix) -> Matrix64 {
+    let mut out = [[0; 3]; 3];
+    for (i, row) in out.iter_mut().enumerate() {
+        for (j, x) in row.iter_mut().enumerate() {
+            *x = (0..3).fold(0i64, |s, k| s.wrapping_add(a[i][k].wrapping_mul(m[k][j] as i64) >> 12));
+        }
+    }
+    out
+}
+
+/// `m · a`, 0x800273ec, the same way.
+pub fn mul_16_64(m: &Matrix, a: &Matrix64) -> Matrix64 {
+    let mut out = [[0; 3]; 3];
+    for (i, row) in out.iter_mut().enumerate() {
+        for (j, x) in row.iter_mut().enumerate() {
+            *x = (0..3).fold(0i64, |s, k| s.wrapping_add((m[i][k] as i64).wrapping_mul(a[k][j]) >> 12));
+        }
+    }
+    out
+}
+
+pub fn transpose(m: &Matrix) -> Matrix {
+    let mut t = [[0; 3]; 3];
+    for (i, row) in m.iter().enumerate() {
+        for (j, x) in row.iter().enumerate() {
+            t[j][i] = *x;
+        }
+    }
+    t
+}
+
 /// MVMVA's sum for one row with no translation: Σ m·v in 64 bits, shifted by
 /// `sf` and kept as the 32-bit MAC register keeps it.
 fn mac_row(row: &[i16; 3], v: [i16; 3], sf: u32) -> i32 {

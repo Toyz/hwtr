@@ -5,6 +5,7 @@
 //! Offsets are named as their use is understood; see
 //! `docs/engine/car-object.md`.
 
+use crate::body;
 use crate::math::{Tables, apply_matrix_lv, div, div_fx, dot, fx};
 use crate::ram::Ram;
 
@@ -24,24 +25,27 @@ pub const BRAKE: u32 = 0x18;
 /// Non-zero while the handbrake is on: the rear wheels lose their sideways
 /// grip.
 pub const HANDBRAKE: u32 = 0x24;
-/// The body's up axis in world space (inferred from its use below).
-pub const UP: u32 = 0xec;
+/// The car's rigid body (see [`crate::body`]); the fields below that are
+/// the body's are named through it.
+pub const BODY: u32 = 0x30;
+/// The direction gravity pulls, world space.
+pub const GRAVITY_DIR: u32 = BODY + body::GRAVITY_DIR;
 /// Where drag acts, relative to the position, world axes.
 pub const DRAG_POINT: u32 = 0xfc;
 /// World position, inches.
-pub const POS: u32 = 0x10c;
+pub const POS: u32 = BODY + body::POS;
 /// Linear velocity, inches per second.
-pub const VEL: u32 = 0x12c;
+pub const VEL: u32 = BODY + body::VEL;
 /// Speed, the length of the velocity.
-pub const SPEED: u32 = 0x13c;
+pub const SPEED: u32 = BODY + body::SPEED;
 /// Body rotation, a libgte MATRIX (only its 3x3 part is read here).
-pub const ROT: u32 = 0x140;
+pub const ROT: u32 = BODY + body::ROT;
 /// Angular velocity.
-pub const SPIN: u32 = 0x1d0;
+pub const SPIN: u32 = BODY + body::SPIN;
 /// Force summed over the step, world axes.
-pub const FORCE: u32 = 0x1e4;
+pub const FORCE: u32 = BODY + body::FORCE;
 /// Torque summed over the step, three 64-bit words.
-pub const TORQUE: u32 = 0x1f8;
+pub const TORQUE: u32 = BODY + body::TORQUE;
 /// The wheels, `WHEEL_SIZE` bytes each.
 pub const WHEELS: u32 = 0x218;
 pub const WHEEL_SIZE: u32 = 0x88;
@@ -52,8 +56,9 @@ pub const GROUNDED: u32 = 0x54b;
 /// How many wheels on the front axle and on the rear.
 pub const FRONT_WHEELS: u32 = 0x549;
 pub const REAR_WHEELS: u32 = 0x54a;
-/// Grounded wheels whose ground faces against the body's up axis.
-pub const GROUNDED_AGAINST: u32 = 0x54c;
+/// Grounded wheels on a floor: ground within 60 degrees of level
+/// (`-(n · gravity) >= 0.5`), not a wall or a ceiling.
+pub const GROUNDED_LEVEL: u32 = 0x54c;
 /// The engine and gearbox, see [`engine`].
 pub const ENGINE: u32 = 0x550;
 /// Mass.
@@ -126,6 +131,8 @@ pub mod wheel {
     pub const SPRING: u32 = 0x74;
     /// Set when the tyre's force passed its grip this step.
     pub const SLIPPING: u32 = 0x78;
+    /// How fast the wheel turns, radians a second, for drawing.
+    pub const SPIN_RATE: u32 = 0x84;
 }
 
 /// Offsets within the engine record at [`ENGINE`]. Speeds of rotation are
@@ -186,7 +193,7 @@ pub fn update_wheels(t: &Tables, ram: &mut Ram, car: u32) {
     let front = sub(a, b);
     let rear = add(a, b);
     ram.set_u8(car + GROUNDED, 0);
-    ram.set_u8(car + GROUNDED_AGAINST, 0);
+    ram.set_u8(car + GROUNDED_LEVEL, 0);
     for i in 0..ram.u8(car + WHEEL_COUNT) as u32 {
         let w = car + WHEELS + i * WHEEL_SIZE;
         let heading = match ram.u8(w + wheel::FLAGS) & 2 {
@@ -215,8 +222,8 @@ pub fn update_wheels(t: &Tables, ram: &mut Ram, car: u32) {
             ram.set_vec3(w + wheel::CONTACT_VEL, add(ram.vec3(car + VEL), cross));
             ram.set_u8(car + GROUNDED, ram.u8(car + GROUNDED).wrapping_add(1));
             let n = ram.vec3(w + wheel::NORMAL);
-            if dot(n, ram.vec3(car + UP)).wrapping_neg() >= 2049 {
-                ram.set_u8(car + GROUNDED_AGAINST, ram.u8(car + GROUNDED_AGAINST).wrapping_add(1));
+            if dot(n, ram.vec3(car + GRAVITY_DIR)).wrapping_neg() >= 2049 {
+                ram.set_u8(car + GROUNDED_LEVEL, ram.u8(car + GROUNDED_LEVEL).wrapping_add(1));
             }
         }
     }
@@ -427,8 +434,8 @@ pub fn drivetrain(t: &Tables, ram: &mut Ram, car: u32) {
 /// times the tyre's friction`, and the wheel marked slipping when it was
 /// cut. Surface 6 also drags the car along the ground. A wheel in the air
 /// adds its axle's share of the downforce instead: down the body at its
-/// mount while other wheels touch the ground, otherwise along the body's
-/// +0xec axis.
+/// mount while other wheels touch the ground, otherwise along gravity's
+/// direction times minus the share.
 pub fn car_physics(t: &Tables, ram: &mut Ram, car: u32) {
     let mut driven = 0i32;
     for i in 0..ram.u8(car + WHEEL_COUNT) as u32 {
@@ -561,7 +568,7 @@ pub fn car_physics(t: &Tables, ram: &mut Ram, car: u32) {
             apply_force(ram, car, at, f);
         } else {
             let down = if rear { rear_down } else { front_down }.wrapping_neg();
-            let f = ram.vec3(car + UP).map(|c| fx(c, down));
+            let f = ram.vec3(car + GRAVITY_DIR).map(|c| fx(c, down));
             let at = if ram.u8(car + 0x86b) != 0 && ram.u8(car + 0x86a) != 0 {
                 let a = ram.i32(w + wheel::MOUNT + 4).wrapping_sub(ram.i32(car + ORIGIN + 4));
                 add(column(1).map(|c| fx(c, a)), ram.vec3(car + POS))
@@ -571,5 +578,45 @@ pub fn car_physics(t: &Tables, ram: &mut Ram, car: u32) {
             };
             apply_force(ram, car, at, f);
         }
+    }
+}
+
+/// 0x80044fc4: how fast each wheel turns, for drawing. A wheel rolling with
+/// grip turns at `2 v / d`, backwards when the car moves against its heading.
+/// Otherwise (in the air, or slipping): wheels from the third on stop under
+/// the handbrake; a driven wheel turns with the engine (`wheel rpm × 2π /
+/// 60`) unless the other pedal is pressed harder than the one driving it,
+/// when it stops; an undriven wheel stops under more than half the brake
+/// and otherwise keeps turning as it was.
+pub fn wheel_spin(ram: &mut Ram, car: u32) {
+    let vel = ram.vec3(car + VEL);
+    let speed = ram.i32(car + SPEED);
+    for i in 0..ram.u8(car + WHEEL_COUNT) as u32 {
+        let w = car + WHEELS + i * WHEEL_SIZE;
+        let rate = if ram.u8(w + wheel::ON_GROUND) != 0 && ram.u8(w + wheel::SLIPPING) == 0 {
+            let rate = fx(0x2000, div_fx(speed, ram.i32(w + wheel::DIAMETER)));
+            if dot(vel, ram.vec3(w + wheel::HEADING)) < 0 { rate.wrapping_neg() } else { rate }
+        } else if i >= 2 && ram.u8(car + HANDBRAKE) != 0 {
+            0
+        } else {
+            let (brake, drive) = if ram.u8(car + ENGINE + engine::REVERSE) != 0 {
+                (ram.i32(car + ACCEL), ram.i32(car + BRAKE))
+            } else {
+                (ram.i32(car + BRAKE), ram.i32(car + ACCEL))
+            };
+            if ram.u8(w + wheel::FLAGS) & wheel::DRIVEN != 0 {
+                if drive < brake {
+                    0
+                } else {
+                    let rpm = ram.i32(car + ENGINE + engine::WHEEL_RPM);
+                    div_fx(fx(rpm, fx(0x2000, 0x3244)), 0x3_c000)
+                }
+            } else if brake < 2049 {
+                continue;
+            } else {
+                0
+            }
+        };
+        ram.set_i32(w + wheel::SPIN_RATE, rate);
     }
 }
