@@ -2,6 +2,7 @@
 //! executable format and the R3000A instruction set with the GTE's commands.
 
 pub mod analysis;
+pub mod decomp;
 pub mod exe;
 pub mod mips;
 pub mod program;

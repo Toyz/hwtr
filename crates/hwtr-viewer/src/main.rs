@@ -167,7 +167,7 @@ impl App {
         };
         let fast = held(KeyCode::ShiftLeft) || pad.held(buttons::R1);
         let speed = if fast { 12000.0 } else { 3000.0 } * dt;
-        let mut fwd = axis(pad.ly) * -1.0;
+        let mut fwd = -axis(pad.ly);
         let mut side = axis(pad.lx);
         let mut up = 0.0;
         if held(KeyCode::KeyW) {

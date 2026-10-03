@@ -177,7 +177,7 @@ fn index_of(off: u32, base: usize, size: usize, n: usize) -> Result<Option<usize
         return Ok(None);
     }
     let off = off as usize;
-    if off < base || (off - base) % size != 0 || (off - base) / size >= n {
+    if off < base || !(off - base).is_multiple_of(size) || (off - base) / size >= n {
         return Err(WorldError(format!("object link {off:#x} is not an object")));
     }
     Ok(Some((off - base) / size))
@@ -355,9 +355,12 @@ impl World {
     }
 }
 
+/// A rectangle of VRAM: x, y, width, height and its halfwords.
+pub type VramBlock = (u16, u16, u16, u16, Vec<u16>);
+
 /// A GLM or GLB texture file: rectangles of VRAM, each `{x, y, w, h}` and
 /// `w * h` halfwords, uploaded with LoadImage by `glm_load` (0x80024604).
-pub fn read_vram_blocks(b: &[u8]) -> Result<Vec<(u16, u16, u16, u16, Vec<u16>)>> {
+pub fn read_vram_blocks(b: &[u8]) -> Result<Vec<VramBlock>> {
     let r = Reader(b);
     let mut out = Vec::new();
     let mut at = 0;

@@ -97,7 +97,10 @@ fn put_xfer(w: &mut hwtr_cpu::state::Writer, t: &Option<(u16, u16, u16, u16, usi
     }
 }
 
-fn get_xfer(r: &mut hwtr_cpu::state::Reader) -> hwtr_cpu::state::Result<Option<(u16, u16, u16, u16, usize)>> {
+/// A VRAM transfer in progress: x, y, width, height and halfwords done.
+type Xfer = (u16, u16, u16, u16, usize);
+
+fn get_xfer(r: &mut hwtr_cpu::state::Reader) -> hwtr_cpu::state::Result<Option<Xfer>> {
     Ok(if r.u8()? != 0 { Some((r.u16()?, r.u16()?, r.u16()?, r.u16()?, r.u32()? as usize)) } else { None })
 }
 

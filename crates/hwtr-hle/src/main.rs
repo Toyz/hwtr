@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 
-fn png(path: &PathBuf, w: usize, h: usize, rgba: &[u8]) {
+fn png(path: &std::path::Path, w: usize, h: usize, rgba: &[u8]) {
     // A tiny PNG writer lives in hwtr-data; this crate stays free of it by
     // writing PPM, which every viewer opens.
     let mut out = format!("P6\n{w} {h}\n255\n").into_bytes();

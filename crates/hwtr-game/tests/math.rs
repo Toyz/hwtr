@@ -14,7 +14,7 @@ fn cos_and_sin_match_the_original() {
     // Every angle in two turns either way, then random ones across i32.
     let mut inputs: Vec<i32> = (-2 * 25736..=2 * 25736).step_by(7).collect();
     inputs.extend([0, 1, -1, 6434, 6435, 12868, 12869, 25735, 25736, 25737, i32::MAX, i32::MIN + 1]);
-    inputs.extend((0..20_000).map(|_| rng.next() as i32));
+    inputs.extend((0..20_000).map(|_| rng.word() as i32));
     for x in inputs {
         let cos = m.call(0x8001_0afc, &[x as u32]).unwrap() as i32;
         assert_eq!(t.cos(x), cos, "cos({x})");
@@ -34,7 +34,7 @@ fn length_matches_the_original() {
     for _ in 0..30_000 {
         // Magnitudes spread over every bit length.
         let bits = rng.below(32);
-        let mut c = || ((rng.next() as i32) >> (31 - bits.min(31)));
+        let mut c = || (rng.word() as i32) >> (31 - bits.min(31));
         cases.push([c(), c(), c()]);
     }
     for v in cases {
@@ -50,17 +50,17 @@ fn length_matches_the_original() {
 fn apply_matrix_lv_matches_the_original() {
     let Some(exe) = common::exe() else { return };
     let mut m = Machine::with_exe(&exe);
-    let mut rng = common::Rng(0x5eed_0f_ab1e);
+    let mut rng = common::Rng(0x005e_ed0f_ab1e);
     let (mat_at, v_at, out_at) = (0x8018_0000, 0x8018_0040, 0x8018_0080);
     for _ in 0..20_000 {
         let mut mat = [[0i16; 3]; 3];
         for row in &mut mat {
             for x in row.iter_mut() {
-                *x = rng.next() as i16;
+                *x = rng.word() as i16;
             }
         }
         let bits = rng.below(32);
-        let v = [0; 3].map(|_: i32| (rng.next() as i32) >> (31 - bits.min(31)));
+        let v = [0; 3].map(|_: i32| (rng.word() as i32) >> (31 - bits.min(31)));
         // A MATRIX is nine halfwords and a pad, then the translation.
         for (k, x) in mat.iter().flatten().enumerate() {
             m.bus.write(mat_at + 2 * k as u32, 2, *x as u16 as u32);

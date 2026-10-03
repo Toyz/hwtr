@@ -71,8 +71,10 @@ const GAMEPAD: [(Button, u16); 16] = [
 /// A stick axis from gilrs (-1 left or down, 1 right or up) as the pad's
 /// byte (0 left or up). `flip` turns gilrs' up-positive into down-positive.
 pub fn axis_byte(v: f32, flip: bool) -> u8 {
-    let v = if flip { -v } else { v };
-    (128.0 + v.clamp(-1.0, 1.0) * 127.5).round().clamp(0.0, 255.0) as u8
+    let v = if flip { -v } else { v }.clamp(-1.0, 1.0);
+    // 128 is centre: 128 steps below it, 127 above.
+    let scale = if v < 0.0 { 128.0 } else { 127.0 };
+    (128.0 + v * scale).round() as u8
 }
 
 /// Keys the keyboard maps to pad buttons, by a name the window layer

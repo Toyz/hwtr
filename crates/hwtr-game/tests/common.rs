@@ -19,7 +19,7 @@ pub fn exe() -> Option<hwtr_psx::Exe> {
 pub struct Rng(pub u64);
 
 impl Rng {
-    pub fn next(&mut self) -> u32 {
+    pub fn word(&mut self) -> u32 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
         self.0 ^= self.0 << 17;
@@ -27,6 +27,6 @@ impl Rng {
     }
 
     pub fn below(&mut self, n: u32) -> u32 {
-        self.next() % n
+        self.word() % n
     }
 }

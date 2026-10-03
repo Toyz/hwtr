@@ -149,7 +149,7 @@ impl Cpu {
         }
         macro_rules! load {
             ($width:expr, $align:expr, $conv:expr) => {{
-                if addr & $align != 0 {
+                if !addr.is_multiple_of($align + 1) {
                     return Err(Fault::Address { pc, addr });
                 }
                 let v = bus.read(addr, $width).ok_or(Fault::Bus { pc, addr })?;
@@ -160,7 +160,7 @@ impl Cpu {
         }
         macro_rules! store {
             ($width:expr, $align:expr) => {{
-                if addr & $align != 0 {
+                if !addr.is_multiple_of($align + 1) {
                     return Err(Fault::Address { pc, addr });
                 }
                 bus.write(addr, $width, t).ok_or(Fault::Bus { pc, addr })?;

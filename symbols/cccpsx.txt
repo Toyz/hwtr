@@ -138,3 +138,17 @@
 0x80012d50 mem_alloc               # (likely)
 0x80012d70 mem_free                # (likely)
 0x800c5ce8 car_names               # (likely) char*[41]
+
+# Math (see crates/hwtr-game/src/math.rs)
+0x80010afc cos                     # (sure) radians 4.12, quarter-wave table at 0x800b5e04; ported
+0x80010adc sin                     # (sure) cos(x - 6434); ported
+0x80026650 vec_length              # (sure) sqrt of the 64-bit sum of squares, table at 0x800b904c; ported
+0x800b5e04 cos_table               # (sure) u16[6435]
+0x800b904c sqrt_table              # (sure) u16[4096], 1024*sqrt(i)
+0x80020888 car_set_pose            # (sure) rotation and doubled position into the three model roots
+0x8004064c cars_update             # (likely) per frame: each car's 0x8003fbe4, then 0x80040494, 0x800408cc, the AI
+0x8003fbe4 car_update              # (likely)
+0x800427a8 car_physics             # (likely) 10 KB, under car_update
+0x8004de6c collision_update        # (likely) per frame
+0x80033ed8 race_frame              # (sure) the race's per-frame function, iface_game+0x18 mode 0
+0x8009b1e0 attract_any_button      # (sure) posts 135 when action 27 (any button) is pressed

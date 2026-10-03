@@ -34,6 +34,7 @@ const USAGE: &str = "usage: hwtr-re <command> ...
                             the tree of callers above a function, through interface slots too
   xrefs FILE ADDR           calls, jumps, data references and pointers to an address
   slots FILE                interface slots: fixed words holding function addresses, and their jalr uses
+  pseudo FILE ADDR|NAME     C-like pseudo-code for a function (a reading aid)
   fsm FILE ADDR             one of the game's state machines: states, their function lists, transitions
   strings FILE              strings the code references, with the functions that use them
 
@@ -824,6 +825,23 @@ fn callers(args: &mut Args, cue: &Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// C-like pseudo-code for a function.
+fn pseudo(args: &mut Args, cue: &Option<String>) -> Result<()> {
+    let target = args.items.get(1).cloned().ok_or("pseudo FILE ADDR|NAME")?;
+    let p = Program::load(args, cue)?;
+    let addr = parse_num(&target)
+        .or_else(|_| p.names.iter().find(|(_, n)| **n == target).map(|(&a, _)| a).ok_or(format!("no symbol {target}")))?;
+    let names = |a: u32| -> Option<String> {
+        if let Some(n) = p.names.get(&a) {
+            return Some(n.clone());
+        }
+        p.mem().cstr(a).filter(|s| s.len() >= 3).map(|s| format!("{:?}", if s.len() > 40 { &s[..40] } else { s }))
+    };
+    let text = hwtr_psx::decomp::decompile(&p.a, addr, &names).ok_or(format!("no function at 0x{addr:08x}"))?;
+    print!("{text}");
+    Ok(())
+}
+
 /// Everything that refers to an address: calls, jumps, data references.
 fn xrefs(args: &mut Args, cue: &Option<String>) -> Result<()> {
     let target = parse_num(args.items.get(1).ok_or("xrefs FILE ADDR")?)?;
@@ -864,6 +882,7 @@ fn main() {
         "calls" => calls(&mut args, &cue),
         "xrefs" => xrefs(&mut args, &cue),
         "fsm" => fsm(&mut args, &cue),
+        "pseudo" => pseudo(&mut args, &cue),
         "callers" => callers(&mut args, &cue),
         "slots" => slots(&mut args, &cue),
         "docs" => docs::run(&root(), &args.items),

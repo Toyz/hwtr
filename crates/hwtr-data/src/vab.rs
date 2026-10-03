@@ -158,7 +158,7 @@ const FILTERS: [(i32, i32); 5] = [(0, 0), (60, 0), (115, -52), (98, -55), (122, 
 pub fn decode_adpcm(data: &[u8]) -> Vec<i16> {
     let mut out = Vec::with_capacity(data.len() / 16 * 28);
     let (mut s1, mut s2) = (0i32, 0i32);
-    for block in data.chunks_exact(16) {
+    for block in data.as_chunks::<16>().0 {
         let shift = (block[0] & 15) as i32;
         let (f0, f1) = FILTERS[((block[0] >> 4) as usize).min(4)];
         let shift = if shift > 12 { 9 } else { shift };
