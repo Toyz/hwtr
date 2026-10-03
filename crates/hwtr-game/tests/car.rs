@@ -100,3 +100,85 @@ fn aero_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn drivetrain_matches_the_original() {
+    use car::engine;
+    let Some(exe) = common::exe() else { return };
+    let t = Tables::from_exe(&exe);
+    let mut rng = common::Rng(0xd21e_7a11_0000_0001);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let cars = m.bus.read_u32(car::CAR_COUNT);
+        let start = m.bus.ram.clone();
+        for round in 0..256 {
+            for k in 0..cars {
+                let at = CARS + k * CAR_SIZE;
+                let e = at + car::ENGINE;
+                m.bus.ram.copy_from_slice(&start);
+                // Cars not under full physics (state 2) have no engine set
+                // up; as saved, only those that are.
+                if round == 0 && m.bus.ram[((at + 0x891) & 0x1f_ffff) as usize] != 2 {
+                    continue;
+                }
+                if round > 0 {
+                    let mut ram = Ram(&mut m.bus.ram);
+                    let big = |rng: &mut common::Rng| (rng.word() as i32) >> (4 + rng.below(28));
+                    for i in 0..4 {
+                        let w = at + WHEELS + i * WHEEL_SIZE;
+                        ram.set_u8(w + car::wheel::FLAGS, rng.word() as u8);
+                        ram.set_u8(w + car::wheel::ON_GROUND, (rng.below(4) != 0) as u8);
+                        ram.set_u8(w + car::wheel::SLIPPING, (rng.below(3) == 0) as u8);
+                        // Never 1: half of it would divide by zero, which
+                        // the game's wheels never ask for.
+                        let d = [0, -5, 2, 2 + rng.below(0x40000) as i32][rng.below(4) as usize];
+                        ram.set_i32(w + car::wheel::DIAMETER, if round % 3 == 0 { 0x1_8000 } else { d });
+                        ram.set_vec3(w + car::wheel::CONTACT, [big(&mut rng), big(&mut rng), big(&mut rng)]);
+                        // Pointing up, so the mean of any of them is not zero
+                        // (the game divides by its length).
+                        let mut n = [0; 3].map(|_| (rng.word() as i32) >> (18 + rng.below(14)));
+                        n[2] = 0x800 + (n[2] & 0x7ff);
+                        ram.set_vec3(w + car::wheel::NORMAL, n);
+                    }
+                    ram.set_vec3(at + car::VEL, [big(&mut rng), big(&mut rng), big(&mut rng)]);
+                    ram.set_vec3(at + car::SPIN, [0; 3].map(|_| (rng.word() as i32) >> (16 + rng.below(16))));
+                    ram.set_i32(at + car::ACCEL, rng.below(4097) as i32);
+                    ram.set_i32(at + car::BRAKE, rng.below(4097) as i32);
+                    ram.set_u8(e + engine::REVERSE, rng.below(2) as u8);
+                    let gears = rng.below(7);
+                    ram.set_i32(e + engine::GEARS, gears as i32);
+                    ram.set_u8(e + engine::GEAR, rng.below(gears.max(1)) as u8);
+                    for g in 0..6 {
+                        ram.set_i32(e + engine::GEAR_RATIOS + 4 * g, 0x800 + rng.below(0x4000) as i32);
+                    }
+                    ram.set_i32(e + engine::REVERSE_RATIO, 0x800 + rng.below(0x4000) as i32);
+                    ram.set_i32(e + engine::FINAL_DRIVE, 0x2000 + rng.below(0x4000) as i32);
+                    let idle = rng.below(2000 << 12) as i32;
+                    ram.set_i32(e + engine::IDLE, idle);
+                    ram.set_i32(e + engine::REDLINE, idle + 0x1000 + rng.below(8000 << 12) as i32);
+                    ram.set_i32(e + engine::RPM, rng.below(9000 << 12) as i32);
+                    // Kept by the in-air path and with no forward gears; the
+                    // game divides by it.
+                    ram.set_i32(e + engine::RATIO, 0x800 + rng.below(0x8000) as i32);
+                    ram.set_i32(e + engine::PEAK_TORQUE, rng.below(500 << 12) as i32);
+                    for b in 0..17 {
+                        ram.set_u8(e + engine::TORQUE_CURVE + b, rng.word() as u8);
+                    }
+                    // Every fourth round, no wheel grips at full throttle:
+                    // the engine sits exactly at the redline.
+                    if round % 4 == 1 {
+                        for i in 0..4 {
+                            ram.set_u8(at + WHEELS + i * WHEEL_SIZE + car::wheel::SLIPPING, 1);
+                        }
+                        ram.set_i32(at + car::ACCEL, 4096);
+                        ram.set_i32(at + car::BRAKE, 4096);
+                    }
+                }
+                let mut port = m.bus.ram.clone();
+                car::drivetrain(&t, &mut Ram(&mut port), at);
+                m.call(0x8006_0138, &[at]).unwrap();
+                common::same_ram(&m.bus.ram, &port, at, &[], &format!("{name} car {k} round {round}"));
+            }
+        }
+    }
+}

@@ -17,6 +17,10 @@ pub const CAR_COUNT: u32 = 0x800d_263c;
 pub const FLAGS: u32 = 0x4;
 /// Steering angle, radians 4.12 (negative steers right).
 pub const STEER: u32 = 0x10;
+/// Accelerator, 0 to 1 (4.12).
+pub const ACCEL: u32 = 0x14;
+/// Brake, 0 to 1; also the throttle in reverse.
+pub const BRAKE: u32 = 0x18;
 /// The body's up axis in world space (inferred from its use below).
 pub const UP: u32 = 0xec;
 /// Where drag acts, relative to the position, world axes.
@@ -44,6 +48,8 @@ pub const WHEEL_COUNT: u32 = 0x548;
 pub const GROUNDED: u32 = 0x54b;
 /// Grounded wheels whose ground faces against the body's up axis.
 pub const GROUNDED_AGAINST: u32 = 0x54c;
+/// The engine and gearbox, see [`engine`].
+pub const ENGINE: u32 = 0x550;
 /// Drag coefficient.
 pub const DRAG: u32 = 0x658;
 /// Downforce: two coefficients and two factors, front and rear (by
@@ -67,7 +73,9 @@ pub const TUNING: u32 = 0x8013_6a18;
 pub mod wheel {
     /// Mount point, body space.
     pub const MOUNT: u32 = 0x00;
-    /// Bit 1: the wheel steers.
+    /// Diameter, inches.
+    pub const DIAMETER: u32 = 0x14;
+    /// Bit 1: the wheel steers. Bit 2: the engine drives it.
     pub const FLAGS: u32 = 0x18;
     /// Rolling direction, world space, unit 4.12.
     pub const HEADING: u32 = 0x1c;
@@ -81,6 +89,38 @@ pub mod wheel {
     pub const CONTACT: u32 = 0x50;
     /// Velocity of the body at the contact point.
     pub const CONTACT_VEL: u32 = 0x60;
+    /// Non-zero when the wheel has lost grip (by inference: when no driven
+    /// wheel has it clear, the engine revs freely).
+    pub const SLIPPING: u32 = 0x78;
+}
+
+/// Offsets within the engine record at [`ENGINE`]. Speeds of rotation are
+/// revolutions per minute, 4.12.
+pub mod engine {
+    pub const RPM: u32 = 0x00;
+    /// The rpm over the overall ratio: the driven wheels' speed.
+    pub const WHEEL_RPM: u32 = 0x04;
+    /// Non-zero when the car rolls backwards along its forward axis.
+    pub const REVERSE: u32 = 0x08;
+    /// The gear in use, from 0.
+    pub const GEAR: u32 = 0x09;
+    /// The overall ratio in use (gear times final drive), negative in
+    /// reverse.
+    pub const RATIO: u32 = 0x0c;
+    /// Force at the driven wheels, 64-bit.
+    pub const DRIVE: u32 = 0x10;
+    pub const REDLINE: u32 = 0x18;
+    pub const IDLE: u32 = 0x1c;
+    /// How many forward gears.
+    pub const GEARS: u32 = 0x20;
+    pub const FINAL_DRIVE: u32 = 0x24;
+    /// The forward gears' ratios, one word each.
+    pub const GEAR_RATIOS: u32 = 0x28;
+    pub const REVERSE_RATIO: u32 = 0x40;
+    /// Peak torque, foot-pounds.
+    pub const PEAK_TORQUE: u32 = 0x44;
+    /// The torque curve: 17 bytes, 255 for the peak, from idle to redline.
+    pub const TORQUE_CURVE: u32 = 0x48;
 }
 
 fn sub(a: [i32; 3], b: [i32; 3]) -> [i32; 3] {
@@ -212,4 +252,117 @@ pub fn aero(ram: &mut Ram, car: u32) -> (i32, i32) {
     }
     ram.set_vec3(car + FORCE, add(ram.vec3(car + FORCE), force));
     (down_a, down_b)
+}
+
+/// libgcc's `__divdi3` (0x800a9f78), 64-bit division truncated toward zero.
+/// A zero divisor never reaches it from the car code (see `drivetrain`); it
+/// gives 0 here.
+fn divdi3(a: i64, b: i64) -> i64 {
+    if b == 0 { 0 } else { a.wrapping_div(b) }
+}
+
+/// 0x80060138: the engine and gearbox. With driven wheels on the ground, the
+/// road speed under them (their mean contact point's velocity, in the mean
+/// ground plane, less its sideways part) turns them at `speed / (π d)`
+/// revolutions a second; that through the overall ratio is the engine's rpm,
+/// in the lowest forward gear that keeps it under the redline (or in
+/// reverse when the car rolls backwards). When no driven wheel grips, the
+/// engine revs to at least the throttle's share of the redline. The torque
+/// curve at that rpm, through the ratio and the wheel radius, times the
+/// throttle, is the drive force. Above the redline the rpm is held there and
+/// there is no drive; in the air the engine revs with the throttle and
+/// there is none either. The rpm never falls below idle.
+pub fn drivetrain(t: &Tables, ram: &mut Ram, car: u32) {
+    let e = car + ENGINE;
+    let (mut contact, mut normal) = ([0i32; 3], [0i32; 3]);
+    let (mut driven, mut gripping, mut diameter) = (0i32, 0, 0i32);
+    for i in 0..ram.u8(car + WHEEL_COUNT) as u32 {
+        let w = car + WHEELS + i * WHEEL_SIZE;
+        if ram.u8(w + wheel::FLAGS) & 4 == 0 || ram.u8(w + wheel::ON_GROUND) == 0 {
+            continue;
+        }
+        contact = add(contact, ram.vec3(w + wheel::CONTACT));
+        normal = add(normal, ram.vec3(w + wheel::NORMAL));
+        if driven == 0 {
+            diameter = ram.i32(w + wheel::DIAMETER);
+        }
+        if ram.u8(w + wheel::SLIPPING) == 0 {
+            gripping += 1;
+        }
+        driven += 1;
+    }
+    let throttle = |ram: &Ram| ram.i32(car + if ram.u8(e + engine::REVERSE) != 0 { BRAKE } else { ACCEL });
+    if driven == 0 || diameter <= 0 {
+        // In the air: the gear stays, and the engine revs with the throttle.
+        let ratio = if ram.u8(e + engine::REVERSE) != 0 {
+            ram.i32(e + engine::REVERSE_RATIO)
+        } else {
+            ram.i32(e + engine::GEAR_RATIOS + 4 * ram.u8(e + engine::GEAR) as u32)
+        };
+        ram.set_i32(e + engine::RATIO, fx(ram.i32(e + engine::FINAL_DRIVE), ratio));
+        ram.set_i32(e + engine::RPM, fx(ram.i32(e + engine::REDLINE), throttle(ram)));
+        ram.set_i64(e + engine::DRIVE, 0);
+    } else {
+        let mean = div_fx(4096, driven << 12);
+        let contact = contact.map(|c| fx(c, mean));
+        let normal = normal.map(|c| fx(c, mean));
+        let len = t.length(normal);
+        let normal = normal.map(|c| div_fx(c, len));
+        let r = sub(contact, ram.vec3(car + POS));
+        let spin = ram.vec3(car + SPIN);
+        let cross = [
+            fx(spin[1], r[2]).wrapping_sub(fx(r[1], spin[2])),
+            fx(r[0], spin[2]).wrapping_sub(fx(spin[0], r[2])),
+            fx(spin[0], r[1]).wrapping_sub(fx(r[0], spin[1])),
+        ];
+        let v = add(ram.vec3(car + VEL), cross);
+        let v = sub(v, normal.map(|c| fx(c, dot(v, normal))));
+        let rot = ram.matrix(car + ROT);
+        let column = |j: usize| rot.map(|row| row[j] as i32);
+        let side = column(0);
+        let v = sub(v, side.map(|c| fx(c, dot(v, side))));
+        let reverse = (dot(v, column(1)) as u32 >> 31) as u8;
+        ram.set_u8(e + engine::REVERSE, reverse);
+        let speed = t.length(v);
+        // Revolutions a minute: speed over circumference (π is 0x3244), times 60.
+        let wheel_rpm = fx(0x3_c000, div_fx(speed, fx(diameter, 0x3244)));
+        let final_drive = ram.i32(e + engine::FINAL_DRIVE);
+        if reverse != 0 {
+            let ratio = fx(final_drive, ram.i32(e + engine::REVERSE_RATIO));
+            ram.set_i32(e + engine::RPM, fx(ratio, wheel_rpm));
+            ram.set_i32(e + engine::RATIO, ratio.wrapping_neg());
+        } else {
+            for g in 0..ram.i32(e + engine::GEARS) as u32 {
+                ram.set_u8(e + engine::GEAR, g as u8);
+                let ratio = fx(final_drive, ram.i32(e + engine::GEAR_RATIOS + 4 * g));
+                ram.set_i32(e + engine::RATIO, ratio);
+                let rpm = fx(ratio, wheel_rpm);
+                ram.set_i32(e + engine::RPM, rpm);
+                if rpm < ram.i32(e + engine::REDLINE) {
+                    break;
+                }
+            }
+        }
+        if gripping == 0 {
+            let free = fx(ram.i32(e + engine::REDLINE), throttle(ram));
+            ram.set_i32(e + engine::RPM, ram.i32(e + engine::RPM).max(free));
+        }
+        let (rpm, redline, idle) = (ram.i32(e + engine::RPM), ram.i32(e + engine::REDLINE), ram.i32(e + engine::IDLE));
+        if redline < rpm {
+            ram.set_i64(e + engine::DRIVE, 0);
+            ram.set_i32(e + engine::RPM, redline);
+        } else {
+            let along = div_fx(rpm.wrapping_sub(idle), redline.wrapping_sub(idle));
+            let k = (fx(along, 0x1_0000) >> 12).clamp(0, 16) as u32;
+            let curve = div((ram.u8(e + engine::TORQUE_CURVE + k) as i32) << 12, 255).0;
+            // Foot-pounds to inch-pounds.
+            let torque = fx(fx(curve, ram.i32(e + engine::PEAK_TORQUE)), 0xc000);
+            let at_axle = ((torque as i64) << 8).wrapping_mul(ram.i32(e + engine::RATIO) as i64) >> 12;
+            let force = divdi3(at_axle.wrapping_shl(20), (fx(diameter, 2048) as i64) << 8);
+            ram.set_i64(e + engine::DRIVE, force.wrapping_mul(throttle(ram) as i64) >> 12);
+        }
+    }
+    let rpm = ram.i32(e + engine::RPM);
+    ram.set_i32(e + engine::WHEEL_RPM, div_fx(rpm, ram.i32(e + engine::RATIO)));
+    ram.set_i32(e + engine::RPM, rpm.max(ram.i32(e + engine::IDLE)));
 }
