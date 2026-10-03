@@ -145,3 +145,48 @@ pub fn centre(w: &World) -> glam::Vec3 {
     }
     (lo + hi) / 2.0
 }
+
+/// Where a race puts car `slot`'s skin and palette in VRAM: the image table
+/// at 0x800bdd30, the CLUT at (384, 464 + slot).
+pub const CAR_TEXTURE: [(u16, u16); 6] = [(960, 256), (704, 0), (768, 0), (832, 0), (896, 0), (640, 256)];
+
+/// The car's skin uploaded for race slot `slot`, and the (clut, tpage) its
+/// faces then use (8-bit page).
+pub fn place_car_texture(vram: &mut Vram, tim: &hwtr_data::Tim, slot: usize) -> (u16, u16) {
+    let (x, y) = CAR_TEXTURE[slot];
+    vram.load(x, y, tim.rect.w, tim.rect.h, &tim.data);
+    let cy = 464 + slot as u16;
+    if let Some((r, colours)) = &tim.clut {
+        vram.load(384, cy, r.w, 1, &colours[..r.w as usize]);
+    }
+    ((cy << 6) | (384 >> 4), (x / 64) | ((y / 256) << 4) | (1 << 7))
+}
+
+/// A car model's triangles at `pos` turned by `rot`. The game draws cars at
+/// half their model's scale (inferred: at full scale the grid's cars would
+/// overlap). Faces are lit at the base colour 0x80, a texel modulation of 1.
+pub fn car_triangles(m: &hwtr_data::car::Model, clut: u16, tpage: u16, pos: glam::Vec3, rot: glam::Quat) -> Vec<Vtx> {
+    let mut out = Vec::new();
+    let root = glam::Vec3::new(m.root.pos[0] as f32, m.root.pos[1] as f32, m.root.pos[2] as f32);
+    let nodes = std::iter::once((&m.root, glam::Vec3::ZERO))
+        .chain(m.children.iter().map(|c| (c, glam::Vec3::new(c.pos[0] as f32, c.pos[1] as f32, c.pos[2] as f32))));
+    for (node, offset) in nodes {
+        for f in &node.faces {
+            let corner = |k: usize| {
+                let v = node.verts[f.v[k] as usize];
+                let local = (glam::Vec3::new(v.x as f32, v.y as f32, v.z as f32) + offset + root) * 0.5;
+                Vtx {
+                    pos: (rot * local + pos).to_array(),
+                    colour: 0x80_80_80,
+                    uv: uv(f.uv[k]),
+                    mode: clut as u32 | (tpage as u32) << 16,
+                }
+            };
+            out.extend([corner(0), corner(1), corner(3)]);
+            if f.v[2] != f.v[3] {
+                out.extend([corner(1), corner(2), corner(3)]);
+            }
+        }
+    }
+    out
+}

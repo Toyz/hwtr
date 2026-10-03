@@ -3,7 +3,7 @@ title: Track collision (SCP)
 status: guess
 discs: US
 covers: US <TRACK>.SCP in the 11 track archives; US CCCPSX.EXE:0x8004c084 collision_scp_load, 0x8004c334 collision_load, 0x800515e0, 0x8005cd38
-worklog: 12
+worklog: 12, 15
 ---
 
 # Track collision (SCP)
@@ -28,6 +28,12 @@ A, a sector, 20 bytes
 C, a plane, 12 bytes
   s16 nx, ny, nz (4.12)   s16 d   u16   u8   u8 (nonzero: skipped)
 ```
+
+The start points are in world units once shifted down 12 bits: DESERT1's
+first is (78, -18524, -216), on the checkered line. The orientations read as
+(x, y, z, w): DESERT1's (-2, -180, 4083, 268) / 4096 turns a car about z by
+about 172 degrees, so its model's +y (forward) faces down the track; drawn
+that way every car on DESERT1's grid faces the first corner.
 
 A sector is inferred to be a convex volume bounded by its planes. B, D, E
 and F are unexplained.

@@ -70,6 +70,16 @@ wheel record, 32 bytes (inferred)
 Axes, inferred from the data: x lateral, y forward (rear axle at y = 0), z up
 (wheel z equals its radius), the same up as [the world](world.md).
 
+## Scale and placement
+
+Cars are drawn at half their model's scale in world units (inferred: the
+start grid's six points are 210 units apart across and 284 along, while the
+Deora model is 146 wide and 358 long; at half scale the grid fits, and the
+wheel records, effect points and car state are all at half scale). In a race
+the skin of car slot n goes to VRAM at the table 0x800bdd30 ((960, 256),
+(704, 0), (768, 0), (832, 0), (896, 0), (640, 256)) as an 8-bit page, its
+palette to (384, 464 + n).
+
 ## Drawing
 
 `car_draw` (0x80022064) picks the detail level by distance. Each face:

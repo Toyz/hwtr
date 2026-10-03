@@ -1,7 +1,7 @@
 //! hwtr-viewer: fly around a track as the game draws it.
 //!
 //! ```text
-//! hwtr-viewer TRACK [--mirror] [--sky] [--cue DISC.cue]
+//! hwtr-viewer TRACK [--mirror] [--sky] [--cue DISC.cue] [--cars A,B,...]
 //!             [--at X,Y,Z] [--look YAW,PITCH] [--shot OUT.png]
 //! ```
 //!
@@ -55,7 +55,7 @@ struct Loaded {
     background: [u8; 3],
 }
 
-fn load(track: &str, ext: &str, cue: Option<PathBuf>) -> Result<Loaded, String> {
+fn load(track: &str, ext: &str, cars: &[String], cue: Option<PathBuf>) -> Result<Loaded, String> {
     let cue = match cue {
         Some(c) => c,
         None => hwtr_disc::Disc::find_cue(&std::env::current_dir().map_err(|e| e.to_string())?.join("work/disc"))
@@ -85,7 +85,7 @@ fn load(track: &str, ext: &str, cue: Option<PathBuf>) -> Result<Loaded, String> 
     // The game's world is right-handed with z up, the viewer's too: no
     // conversion. (The polygons' front faces, by the game's own NCLIP rule,
     // point +z on four horizontal faces in five; worklog 12.)
-    let tris = scene::world_triangles(&world);
+    let mut tris = scene::world_triangles(&world);
     // Start on the race's first grid position (the SCP's first start point,
     // 20.12), a little above the road; otherwise above the middle.
     let start = match get(&format!("{t}SCP")) {
@@ -100,6 +100,31 @@ fn load(track: &str, ext: &str, cue: Option<PathBuf>) -> Result<Loaded, String> 
             Vec3::new(c.x, c.y - 9000.0, c.z + 5000.0)
         }
     };
+    // Cars on the start grid: the SCP's six start points and orientations
+    // (quaternions x, y, z, w with 4096 as 1).
+    if let Ok(scp) = get(&format!("{t}SCP"))
+        && ext != "WLB"
+    {
+        let word = |at: usize| i32::from_le_bytes(scp[at..at + 4].try_into().unwrap()) as f32 / 4096.0;
+        for (slot, name) in cars.iter().take(6).enumerate() {
+            let n = name.to_uppercase();
+            let tim = hwtr_data::Tim::parse(get(&format!("{n}TIM"))?).map_err(|e| e.to_string())?;
+            let bmf = get(&format!("{n}BMF"))?;
+            let model = hwtr_data::car::CarBmf::parse(bmf)
+                .and_then(|b| hwtr_data::car::Model::parse(b.models[0]))
+                .map_err(|e| e.to_string())?;
+            let (clut, tpage) = scene::place_car_texture(&mut vram, &tim, slot);
+            let p = 24 + 16 * slot;
+            let q = 120 + 16 * slot;
+            let mut pos = Vec3::new(word(p), word(p + 4), word(p + 8));
+            let mut rot = glam::Quat::from_xyzw(word(q), word(q + 4), word(q + 8), word(q + 12)).normalize();
+            if ext == "DLW" {
+                pos.x = -pos.x;
+                rot = glam::Quat::from_xyzw(rot.x, -rot.y, -rot.z, rot.w);
+            }
+            tris.extend(scene::car_triangles(&model, clut, tpage, pos, rot));
+        }
+    }
     Ok(Loaded { vram, tris, start, background: world.background })
 }
 
@@ -354,6 +379,8 @@ fn main() {
         .init();
     let mut args = std::env::args().skip(1);
     let (mut track, mut ext, mut cue, mut at, mut look, mut out) = (None, "WLD", None, None, None, None);
+    let mut cars: Vec<String> =
+        ["deora", "twinmill", "rocket", "bisector", "snake", "hw500"].iter().map(|s| s.to_string()).collect();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--mirror" => ext = "DLW",
@@ -362,6 +389,9 @@ fn main() {
             "--at" => at = args.next().and_then(|s| parse3(&s)),
             "--look" => look = args.next().and_then(|s| parse3(&s)),
             "--shot" => out = args.next().map(PathBuf::from),
+            "--cars" => {
+                cars = args.next().map(|s| s.split(',').filter(|c| !c.is_empty()).map(str::to_string).collect()).unwrap_or_default()
+            }
             t if !t.starts_with('-') => track = Some(t.to_string()),
             _ => {
                 eprintln!(
@@ -372,7 +402,7 @@ fn main() {
         }
     }
     let track = track.unwrap_or_else(|| "DESERT1".into());
-    let loaded = match load(&track, ext, cue) {
+    let loaded = match load(&track, ext, &cars, cue) {
         Ok(l) => l,
         Err(e) => {
             tracing::error!("{e}");
