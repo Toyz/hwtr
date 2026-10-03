@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-4 entries: build 1, content 3, decomp 2, design 1, disc 1, format 1, race 1, tooling 3.
+6 entries: build 1, content 3, decomp 4, design 1, disc 1, engine 1, format 1, race 1, test 1, tooling 5.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -16,3 +16,5 @@ The [reference](docs/README.md) says what is true now.
 | 2 | [CCCPSX.BIG is twelve nested archives with a word-and-byte checksum](worklog/0002-cccpsx-big-is-twelve-nested-archives-with-a-word-and-byte.md) | 2026-10-03 | format, content, tooling |
 | 3 | [One executable holds all the code, and a Rust toolbox to read it](worklog/0003-one-executable-holds-all-the-code-and-a-rust-toolbox-to.md) | 2026-10-03 | decomp, tooling, design, build |
 | 4 | [The track tables, and the worlds and track the disc does not ship](worklog/0004-the-track-tables-and-the-worlds-and-track-the-disc-does-not.md) | 2026-10-03 | decomp, content, race |
+| 5 | [Recursive-descent analysis: real function extents, jump tables, and calls through interface slots](worklog/0005-recursive-descent-analysis-real-function-extents-jump.md) | 2026-10-03 | tooling, decomp, test |
+| 6 | [Two table-driven state machines run the game, and modules publish themselves in interface tables](worklog/0006-two-table-driven-state-machines-run-the-game-and-modules.md) | 2026-10-03 | engine, decomp, tooling |

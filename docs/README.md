@@ -27,6 +27,15 @@ The containers and record layouts.
 | --- | --- | --- | --- |
 | [The BIG archive](formats/big.md) | solid | US | US CCCPSX.BIG and the 12 BIG archives nested in it; US CCCPSX.EXE:0x800cd574 "\CCCPSX.BIG;1" |
 
+## Engine
+
+How the game works, subsystem by subsystem.
+
+| Page | Status | Discs | Covers |
+| --- | --- | --- | --- |
+| [How the program is put together](engine/architecture.md) | partial | US | US CCCPSX.EXE:0x8009fc10 _start, 0x80010a5c main, 0x8005fa00 game_init, 0x8005fb3c, 0x8002881c, 0x8001bd88, 0x80019870, 0x8001e3b4, interface tables 0x8011df28, 0x8012fcdc, 0x8012fd30, 0x8012fe54 |
+| [The table-driven state machines](engine/state-machine.md) | solid | US | US CCCPSX.EXE:0x8006ba60 fsm_init, 0x8006baac fsm_post, 0x8006bb18 fsm_tick, 0x800c5bdc fsm_main, 0x800c6640 fsm_second |
+
 ## Content
 
 What is actually on the disc.

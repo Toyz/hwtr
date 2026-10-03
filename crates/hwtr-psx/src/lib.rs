@@ -4,6 +4,7 @@
 pub mod analysis;
 pub mod exe;
 pub mod mips;
+pub mod program;
 
 pub use exe::Exe;
 

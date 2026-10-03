@@ -178,12 +178,20 @@ pub fn find_functions(mem: &Memory, entry: u32) -> Functions {
 }
 
 /// Addresses formed by `lui rX, hi` followed (within a few instructions) by
-/// `addiu rY, rX, lo` or a load/store off rX: the code's references to data.
-pub fn data_refs(mem: &Memory) -> BTreeMap<u32, BTreeSet<u32>> {
+/// `addiu rY, rX, lo` or a load/store off rX, and by `$gp`-relative loads,
+/// stores and `addiu` when `gp` is known: the code's references to data.
+/// `addu rX, rX, rI` between the two keeps the base, as an indexed access.
+pub fn data_refs(mem: &Memory, gp: Option<u32>) -> BTreeMap<u32, BTreeSet<u32>> {
     let mut refs: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
     let mut pc = mem.base;
     while pc + 4 <= mem.end() {
         let insn = decode(mem.u32(pc).unwrap());
+        if let Some(gp) = gp
+            && insn.rs() == 28
+            && (insn.is_load_store() || insn.op == Op::Addiu)
+        {
+            refs.entry(gp.wrapping_add(insn.simm() as u32)).or_default().insert(pc);
+        }
         if insn.op == Op::Lui {
             let reg = insn.rt();
             let hi = (insn.imm() as u32) << 16;
@@ -208,6 +216,9 @@ pub fn data_refs(mem: &Memory) -> BTreeMap<u32, BTreeSet<u32>> {
                     Op::Lui | Op::Addiu | Op::Ori | Op::Andi | Op::Lw | Op::Lh | Op::Lhu | Op::Lb | Op::Lbu => {
                         i.rt() == reg
                     }
+                    // Adding an index to the base keeps it a pointer into the
+                    // same object.
+                    Op::Addu if i.rd() == reg && (i.rs() == reg || i.rt() == reg) => false,
                     Op::Addu | Op::Or | Op::Subu | Op::And | Op::Sll | Op::Srl | Op::Sra => i.rd() == reg,
                     _ => false,
                 };
@@ -219,4 +230,22 @@ pub fn data_refs(mem: &Memory) -> BTreeMap<u32, BTreeSet<u32>> {
         pc += 4;
     }
     refs
+}
+
+/// Finds the `lui gp, hi; addiu gp, gp, lo` that crt0 runs, near the entry.
+pub fn find_gp(mem: &Memory, entry: u32) -> Option<u32> {
+    let mut hi = None;
+    for k in 0..128 {
+        let i = decode(mem.u32(entry + k * 4)?);
+        if i.op == Op::Lui && i.rt() == 28 {
+            hi = Some((i.imm() as u32) << 16);
+        } else if let Some(h) = hi
+            && i.op == Op::Addiu
+            && i.rt() == 28
+            && i.rs() == 28
+        {
+            return Some(h.wrapping_add(i.simm() as u32));
+        }
+    }
+    None
 }

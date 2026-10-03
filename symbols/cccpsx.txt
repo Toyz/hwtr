@@ -12,6 +12,32 @@
 0x800c5bf4 track_archive_names     # (sure) char*[4][3]; Haunted 1 slot is NULL
 0x800c5c24 world_names             # (sure) char*[4] Desert Glacial Haunted Volcano
 0x800c5c34 track_display_names     # (sure) char*[4][3]; Haunted 1 slot is NULL
-0x800d0b48 gp_base                 # (sure) the value of $gp
 0x800d23cc bss_start               # (sure) cleared by _start
 0x80143b44 bss_end                 # (sure) heap starts here
+
+# The table-driven state machines (see docs/engine/state-machine.md)
+0x8006ba60 fsm_init                # (sure) current = states[initial], final_state = states[final], phase 0, no event
+0x8006baac fsm_post                # (sure) fsm_post(machine, event): sets the pending event
+0x8006bb18 fsm_tick                # (sure) runs the phase's function list; returns 2 when the final state is done
+0x80061d78 game_init_fsm           # (sure) inits fsm_main
+0x80061ddc game_tick               # (sure) main loops while it returns nonzero
+0x80061db8 game_shutdown           # (likely)
+0x800c5bdc fsm_main                # (sure) the main machine, 349 states, ticked from main
+0x800c5668 fsm_main_states         # (sure) State*[349]
+0x800c6640 fsm_second              # (sure) the second machine, 37 states, ticked by 0x8009cb74
+0x800c65ac fsm_second_states       # (sure) State*[37]
+
+# Start-up and the interface tables (see docs/engine/architecture.md)
+0x8005fa00 game_init               # (sure) fills the four interface tables, then fsm_init(&fsm_main)
+0x8005fb3c iface_fill_stub         # (sure) points every slot of a table at iface_stub
+0x8005fb6c iface_stub              # (sure) returns 0
+0x8002881c iface_game_fill         # (sure) fills iface_game
+0x8001bd88 iface_b_fill            # (sure) fills iface_b
+0x8001e3b4 iface_general_fill      # (sure) fills iface_general
+0x80019870 iface_sound_fill        # (sure) fills iface_sound
+0x8011df28 iface_game              # (sure) 63 slots: race loading, memory card, TIM loading
+0x8012fcdc iface_b                 # (sure) 21 slots, purpose unknown
+0x8012fd30 iface_general           # (sure) 73 slots
+0x8012fe54 iface_sound             # (sure) 44 slots: engines, effects, dialog
+0x80033304 race_load               # (likely) prints the LOADING ... progress strings
+0x8009cb74 fsm_second_tick         # (sure) fsm_tick(&fsm_second), in iface_general slot 0x8012fe20

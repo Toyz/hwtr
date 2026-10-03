@@ -332,6 +332,20 @@ impl Insn {
         }
     }
 
+    /// The general register the instruction writes, if any (never `zero`).
+    pub fn dest(&self) -> Option<usize> {
+        use Op::*;
+        let r = match self.op {
+            Sll | Srl | Sra | Sllv | Srlv | Srav | Jalr | Mfhi | Mflo | Add | Addu | Sub | Subu | And | Or | Xor
+            | Nor | Slt | Sltu => self.rd(),
+            Addi | Addiu | Slti | Sltiu | Andi | Ori | Xori | Lui | Lb | Lh | Lwl | Lw | Lbu | Lhu | Lwr | Mfc0
+            | Mfc2 | Cfc2 => self.rt(),
+            Jal | Bltzal | Bgezal => 31,
+            _ => return None,
+        };
+        (r != 0).then_some(r)
+    }
+
     pub fn is_load_store(&self) -> bool {
         use Op::*;
         matches!(self.op, Lb | Lh | Lwl | Lw | Lbu | Lhu | Lwr | Sb | Sh | Swl | Sw | Swr | Lwc2 | Swc2)
