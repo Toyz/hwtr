@@ -86,11 +86,19 @@ fn load(track: &str, ext: &str, cue: Option<PathBuf>) -> Result<Loaded, String> 
     // conversion. (The polygons' front faces, by the game's own NCLIP rule,
     // point +z on four horizontal faces in five; worklog 12.)
     let tris = scene::world_triangles(&world);
-    let start = if world.cells.is_empty() {
-        Vec3::ZERO
-    } else {
-        let c = scene::centre(&world);
-        Vec3::new(c.x, c.y - 9000.0, c.z + 5000.0)
+    // Start on the race's first grid position (the SCP's first start point,
+    // 20.12), a little above the road; otherwise above the middle.
+    let start = match get(&format!("{t}SCP")) {
+        Ok(scp) if ext != "WLB" && scp.len() >= 40 => {
+            let c = |k: usize| i32::from_le_bytes(scp[24 + 4 * k..28 + 4 * k].try_into().unwrap()) as f32 / 4096.0;
+            let x = if ext == "DLW" { -c(0) } else { c(0) };
+            Vec3::new(x, c(1), c(2) + 300.0)
+        }
+        _ if world.cells.is_empty() => Vec3::ZERO,
+        _ => {
+            let c = scene::centre(&world);
+            Vec3::new(c.x, c.y - 9000.0, c.z + 5000.0)
+        }
     };
     Ok(Loaded { vram, tris, start, background: world.background })
 }
@@ -371,7 +379,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let mut camera = Camera { pos: loaded.start, yaw: std::f32::consts::FRAC_PI_2, pitch: -0.45 };
+    let mut camera = Camera { pos: loaded.start, yaw: std::f32::consts::FRAC_PI_2, pitch: -0.1 };
     if let Some(p) = at.filter(|p| p.len() == 3) {
         camera.pos = Vec3::new(p[0], p[1], p[2]);
     }

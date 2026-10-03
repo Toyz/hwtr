@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-13 entries: audio 1, build 2, content 5, decomp 5, design 1, disc 1, engine 2, format 4, input 2, race 1, render 5, test 4, tooling 8.
+14 entries: audio 1, bug 1, build 2, content 5, decomp 5, design 1, disc 1, engine 2, format 5, input 2, race 1, render 6, test 4, tooling 8.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -25,3 +25,4 @@ The [reference](docs/README.md) says what is true now.
 | 11 | [The controls module reads libpad buffers and supports digital, DualShock analog, analog joystick and neGcon](worklog/0011-the-controls-module-reads-libpad-buffers-and-supports.md) | 2026-10-03 | input, decomp |
 | 12 | [The world format, decoded and drawn: every track renders in hwtr-viewer, and up is +z](worklog/0012-the-world-format-decoded-and-drawn-every-track-renders-in.md) | 2026-10-03 | format, render, tooling, content |
 | 13 | [The car formats: three detail levels, handling and effect points in one BMF](worklog/0013-the-car-formats-three-detail-levels-handling-and-effect.md) | 2026-10-03 | format, render, content, test |
+| 14 | [Corners c and d had their texture coordinates swapped](worklog/0014-corners-c-and-d-had-their-texture-coordinates-swapped.md) | 2026-10-03 | render, format, bug |

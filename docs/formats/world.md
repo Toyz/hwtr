@@ -64,7 +64,7 @@ cell polygon, 20 bytes
   +4   u8[4]  colour index a, b, c, d
   +8   u8 u, v   of a      +10 u16 clut
   +12  u8 u, v   of b      +14 u8 tpage (low byte)   +15 u8 flags
-  +16  u8 u, v   of d      +18 u8 u, v of c
+  +16  u8 u, v   of c      +18 u8 u, v of d
 
 object, 52 bytes
   +0   s16[3][3] rotation, 4.12

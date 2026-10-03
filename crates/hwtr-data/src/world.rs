@@ -222,7 +222,10 @@ impl World {
                 polys.push(Poly {
                     v,
                     c,
-                    uv: [uv(p + 8)?, uv(p + 12)?, uv(p + 18)?, uv(p + 16)?],
+                    // Corner c's (u, v) is at +16, d's at +18: the packet build at
+                    // 0x80031a34 puts the word's high half in the GPU's third
+                    // slot (corner d) and its low half in the fourth (c).
+                    uv: [uv(p + 8)?, uv(p + 12)?, uv(p + 16)?, uv(p + 18)?],
                     clut: r.u16(p + 10)?,
                     tpage: r.u8(p + 14)?,
                     flags: r.u8(p + 15)?,
