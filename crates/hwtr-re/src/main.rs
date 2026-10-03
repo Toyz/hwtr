@@ -30,6 +30,8 @@ const USAGE: &str = "usage: hwtr-re <command> ...
                             (i indirect calls, u unresolved jr, ! hit invalid, t tail calls)
   calls FILE [ADDR|NAME] [--depth N]
                             the call tree under a function (default the entry)
+  callers FILE ADDR|NAME [--depth N]
+                            the tree of callers above a function, through interface slots too
   xrefs FILE ADDR           calls, jumps, data references and pointers to an address
   slots FILE                interface slots: fixed words holding function addresses, and their jalr uses
   fsm FILE ADDR             one of the game's state machines: states, their function lists, transitions
@@ -775,6 +777,52 @@ fn slots(args: &mut Args, cue: &Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// The tree of callers above a function: who calls it, who calls them.
+/// Calls through resolved interface slots count.
+fn callers(args: &mut Args, cue: &Option<String>) -> Result<()> {
+    let depth = args.take("--depth").map(|s| parse_num(&s)).transpose()?.unwrap_or(4);
+    let target = args.items.get(1).cloned().ok_or("callers FILE ADDR|NAME")?;
+    let p = Program::load(args, cue)?;
+    let root = parse_num(&target).or_else(|_| {
+        p.names.iter().find(|(_, n)| **n == target).map(|(&a, _)| a).ok_or(format!("no symbol {target}"))
+    })?;
+    // Slots a function is stored in, and the jalr sites that call through them.
+    let mut via_slot: std::collections::BTreeMap<u32, Vec<u32>> = Default::default();
+    for (&site, slot) in &p.a.indirect {
+        if let Some(fs) = p.a.slots.get(slot) {
+            for &f in fs {
+                via_slot.entry(f).or_default().push(site);
+            }
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    fn go(
+        p: &Program,
+        via: &std::collections::BTreeMap<u32, Vec<u32>>,
+        f: u32,
+        d: u32,
+        max: u32,
+        seen: &mut std::collections::BTreeSet<u32>,
+    ) {
+        let again = !seen.insert(f);
+        println!("{}{} 0x{f:08x}{}", "  ".repeat(d as usize), p.name(f), if again { " ..." } else { "" });
+        if again || d >= max {
+            return;
+        }
+        let mut up: std::collections::BTreeSet<u32> = Default::default();
+        for &site in p.a.callers.get(&f).into_iter().flatten().chain(via.get(&f).into_iter().flatten()) {
+            if let Some(c) = p.a.func_of(site) {
+                up.insert(c.start);
+            }
+        }
+        for c in up {
+            go(p, via, c, d + 1, max, seen);
+        }
+    }
+    go(&p, &via_slot, root, 0, depth, &mut seen);
+    Ok(())
+}
+
 /// Everything that refers to an address: calls, jumps, data references.
 fn xrefs(args: &mut Args, cue: &Option<String>) -> Result<()> {
     let target = parse_num(args.items.get(1).ok_or("xrefs FILE ADDR")?)?;
@@ -815,6 +863,7 @@ fn main() {
         "calls" => calls(&mut args, &cue),
         "xrefs" => xrefs(&mut args, &cue),
         "fsm" => fsm(&mut args, &cue),
+        "callers" => callers(&mut args, &cue),
         "slots" => slots(&mut args, &cue),
         "docs" => docs::run(&root(), &args.items),
         _ => Err(USAGE.into()),

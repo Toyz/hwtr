@@ -8,3 +8,4 @@ publish.workspace = true
 
 [dependencies]
 gilrs = "0.11.2"
+tracing.workspace = true

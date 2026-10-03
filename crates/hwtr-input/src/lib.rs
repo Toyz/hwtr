@@ -97,7 +97,7 @@ impl Input {
         let gilrs = gilrs::GilrsBuilder::new()
             .with_default_filters(false)
             .build()
-            .map_err(|e| eprintln!("no gamepad support: {e}"))
+            .map_err(|e| tracing::warn!("no gamepad support: {e}"))
             .ok();
         Input { gilrs, active: None, rumble: None, keyboard: Keyboard::default() }
     }
@@ -171,7 +171,7 @@ impl Rumble {
                 })
                 .gamepads(&[id])
                 .finish(gilrs)
-                .map_err(|e| eprintln!("rumble: {e}"))
+                .map_err(|e| tracing::warn!("rumble: {e}"))
                 .ok()
         };
         let strong = effect(BaseEffectType::Strong { magnitude: u16::MAX }, gilrs)?;
@@ -187,7 +187,7 @@ impl Rumble {
         };
         let r = r.and_then(|_| if small { self.weak.play() } else { self.weak.stop() });
         if let Err(e) = r {
-            eprintln!("rumble: {e}");
+            tracing::warn!("rumble: {e}");
         }
     }
 }

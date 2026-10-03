@@ -70,7 +70,14 @@ impl App {
         let pad = self.input.read();
         let pressed = pad.buttons & !self.pad.buttons;
         if pad.buttons != self.pad.buttons {
-            println!("pad {:016b} left ({:3}, {:3}) right ({:3}, {:3})", pad.buttons, pad.lx, pad.ly, pad.rx, pad.ry);
+            tracing::debug!(
+                "pad {:016b} left ({:3}, {:3}) right ({:3}, {:3})",
+                pad.buttons,
+                pad.lx,
+                pad.ly,
+                pad.rx,
+                pad.ry
+            );
         }
         self.pad = pad;
         if pressed & (buttons::CROSS | buttons::START) != 0 {
@@ -146,7 +153,7 @@ impl ApplicationHandler for App {
         match result {
             Ok(d) => self.win = Some(d),
             Err(e) => {
-                eprintln!("no GPU: {e}");
+                tracing::error!("no GPU: {e}");
                 event_loop.exit();
                 return;
             }
@@ -233,6 +240,9 @@ fn screens(cue: Option<PathBuf>) -> Result<Vec<(String, Picture)>, String> {
 }
 
 fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .init();
     let mut args = std::env::args().skip(1);
     let mut cue = None;
     while let Some(a) = args.next() {
@@ -247,13 +257,13 @@ fn main() {
     let screens = match screens(cue) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("{e}");
+            tracing::error!("{e}");
             std::process::exit(1);
         }
     };
     let input = Input::new();
     for name in input.gamepads() {
-        println!("gamepad: {name}");
+        tracing::info!("gamepad: {name}");
     }
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
@@ -269,6 +279,6 @@ fn main() {
         rumbling: false,
     };
     if let Err(e) = event_loop.run_app(&mut app) {
-        eprintln!("{e}");
+        tracing::error!("{e}");
     }
 }
