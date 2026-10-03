@@ -13,6 +13,7 @@ hwtr-psx = { path = "crates/hwtr-psx" }
 hwtr-data = { path = "crates/hwtr-data" }
 hwtr-cpu = { path = "crates/hwtr-cpu" }
 hwtr-game = { path = "crates/hwtr-game" }
+hwtr-input = { path = "crates/hwtr-input" }
 
 [profile.dev]
 opt-level = 1
