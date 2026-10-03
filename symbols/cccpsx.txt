@@ -54,3 +54,87 @@
 0x8011b388 pad_buffer              # (sure) u8[2][34], libpad receive buffers, port 1 then port 2
 0x8011b3d8 control_mapping         # (sure) u32[2][29], per-player action masks, copied from control_mapping_default
 0x800bdc08 control_mapping_default # (sure) u32[29]
+
+# The race's subsystems, by race_load's progress strings (each init follows its string)
+0x800332a4 race_load_progress      # (sure) prints "%s (%dK free)" with the progress string
+0x80034fd0 race_audio_load         # (likely) after "LOADING AUDIO.."
+0x8007eff4 race_anim_load          # (likely) after "LOADING ANIM.."
+0x8007b19c bestline_load           # (likely) after "LOADING BEST LINE..", loads "%s%d.bld"
+0x8005fb74 race_controls_load      # (likely) after "LOADING CONTROLS.."
+0x8004c334 collision_load          # (likely) after "LOADING COLLIS.."
+0x8004c084 collision_scp_load      # (likely) loads "%s%d.scp", next to collision_load
+0x80068228 render_load             # (likely) after "LOADING RENDER.."
+0x800797f0 fakeai_load             # (likely) after "LOADING FAKEAI.."
+0x8003beec cars_load               # (likely) after "LOADING CARS.."
+0x80036830 camera_load             # (likely) after "LOADING CAMERA.."
+0x8006b2a8 worldcollision_load     # (likely) after "LOADING WORLDCOLLIS.."
+0x80067418 powerups_load           # (likely) after "LOADING POWER UPS.."
+0x80061728 gameflow_load           # (likely) after "LOADING GAME FLOW.."
+0x8007c7a0 damage_load             # (likely) after "LOADING DAMAGE MODEL.."
+0x8007fe48 snapshot_init           # (likely) after "INITIALIZING SNAPSHOT MODULE.."
+0x800350d4 race_audio_start        # (likely) after "STARTING AUDIO.."
+
+# The world (see docs/formats/world.md, glm.md)
+0x8001e2c8 race_load_world         # (sure) iface_general+0x50; picks .wld or .dlw by the mirror flag
+0x8001e744 world_load              # (sure) builds the five file names: dlw/wld, glm, wlb, glb
+0x800246d4 world_model_load        # (likely) loads and relocates a world model
+0x80024604 glm_load                # (likely) two LoadImage blocks
+0x80024240 clut_anim_init          # (likely)
+0x800242a4 clut_anim_update        # (likely) cycles CLUT entries with DR_LOAD
+0x8001ef24 world_cull_and_draw_view # (likely)
+0x8001ec50 world_draw_buckets      # (likely)
+0x80031b24 world_cell_draw         # (likely)
+0x80031718 world_cell_transform    # (likely)
+0x800317e0 world_cell_emit_gt4     # (sure) NCLIP on a,b,d then c,b,d; POLY_GT4
+0x800328dc world_draw_near_polys   # (likely)
+0x8001e87c world_object_draw       # (likely) child/sibling recursion
+0x80010344 mesh_draw_gt4           # (likely) 76-byte quads
+0x80031548 world_object_draw_billboard # (likely)
+0x8003133c sky_draw                # (likely)
+0x8005cd38 scp_mirror              # (likely)
+0x80028184 screens_load            # (likely) screens.glm and screens.scr
+
+# Cars (see docs/formats/car.md)
+0x80021b88 car_load_race           # (sure) loads %s.tim, %s.bmf, %s.shd
+0x800240d4 bmf_split               # (likely)
+0x80022b5c car_install_lod         # (likely) detail level -> BMF part
+0x80022c70 car_load_fxp            # (likely)
+0x80022cd0 fxp_parse               # (likely)
+0x80023cb8 model_fixup             # (likely)
+0x80021b58 car_get_model           # (likely)
+0x800241d8 car_get_cwh             # (likely)
+0x80021208 car_read_cwh            # (likely) checks magic 0x0b9757a5
+0x80021888 car_bind_state          # (sure) "Invalid car name"
+0x80088370 car_name_to_id          # (likely) strcmp over the names at 0x800c5ce8
+0x80022064 car_draw                # (likely)
+0x80032b68 model_queue_node        # (likely)
+0x80032af4 model_flush_queue       # (likely)
+0x80033178 model_draw_node         # (likely)
+0x80032d1c model_emit_gt4          # (likely)
+0x80032f8c model_emit_ft4          # (likely)
+0x80029478 car_draw_shadow         # (likely)
+0x80021f60 car_upload_lamp_clut    # (likely)
+0x80023798 decals_load             # (sure) "decals.bmf"
+0x8002388c decal_unpack            # (likely)
+0x8002396c cwhs_load               # (sure) "cwhs.bmf", "HWC file's are wrong version!"
+0x80023270 car_stream_read         # (likely)
+
+# Library and helpers named by the format work
+0x80012a10 tim_upload              # (likely) GetTimInfo, LoadClut, LoadImage, GetTPage
+0x800128dc tim_load_upload         # (likely)
+0x800a438c tim_get_info            # (likely)
+0x800a3714 LoadClut                # (likely)
+0x800a2938 GetTPage                # (likely)
+0x800a2974 GetClut                 # (likely)
+0x800a07b4 LoadImage               # (likely)
+0x800a05a0 DrawSync                # (likely)
+0x800a2ba8 ApplyMatrixLV           # (likely)
+0x80014e5c set_object_matrix       # (likely) composes with the camera at 0x8011a7dc, loads the GTE
+0x800a3adc sprintf                 # (likely)
+0x80012e44 file_open               # (likely) "Opening file %s"
+0x800131ac file_size               # (likely)
+0x80012f90 file_read               # (likely)
+0x80012eac file_close              # (likely)
+0x80012d50 mem_alloc               # (likely)
+0x80012d70 mem_free                # (likely)
+0x800c5ce8 car_names               # (likely) char*[41]

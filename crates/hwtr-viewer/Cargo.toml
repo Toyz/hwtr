@@ -1,0 +1,18 @@
+[package]
+name = "hwtr-viewer"
+version = "0.1.0"
+description = "A viewer for the disc's content: fly around any track as the game draws it, with its textures looked up through VRAM the way the PlayStation does."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hwtr-data.workspace = true
+hwtr-disc.workspace = true
+hwtr-input.workspace = true
+glam = "0.33.3"
+wgpu = "30.0.1"
+winit = "0.30.13"
+pollster = "1.0.1"
+tracing.workspace = true
+tracing-subscriber.workspace = true

@@ -26,8 +26,13 @@ The containers and record layouts.
 | Page | Status | Discs | Covers |
 | --- | --- | --- | --- |
 | [The BIG archive](formats/big.md) | solid | US | US CCCPSX.BIG and the 12 BIG archives nested in it; US CCCPSX.EXE:0x800cd574 "\CCCPSX.BIG;1" |
+| [The best line (BLD)](formats/bld.md) | guess | US | US <TRACK>.BLD in the 11 track archives, TCUP.BLD, SCCUP1.BLD, SCCUP2.BLD; US CCCPSX.EXE:0x8007b19c bestline_load |
+| [Cars (BMF, CAR, SHD, CWH, FXP, DECALS)](formats/car.md) | partial | US | US every <CAR>.BMF, <CAR>.CAR, <CAR>.SHD, <CAR>.TIM, DECALS.BMF, CWHS.BMF; US CCCPSX.EXE:0x80021b88 car_load_race, 0x800240d4 bmf_split, 0x80022b5c car_install_lod, 0x80023cb8 model_fixup, 0x80022064 car_draw, 0x80032d1c model_emit_gt4, 0x80021208 car_read_cwh, 0x80022cd0 fxp_parse, 0x8002388c decal_unpack, 0x80029478 car_draw_shadow |
+| [Track textures (GLM, GLB)](formats/glm.md) | solid | US | US <TRACK>.GLM, <TRACK>.GLB, SFX.GLM in the 11 track archives; SCREENS.GLM; US CCCPSX.EXE:0x80024604 glm_load, 0x80012864, 0x80028184 |
+| [Track collision (SCP)](formats/scp.md) | guess | US | US <TRACK>.SCP in the 11 track archives; US CCCPSX.EXE:0x8004c084 collision_scp_load, 0x8004c334 collision_load, 0x800515e0, 0x8005cd38 |
 | [TIM images](formats/tim.md) | solid | US | US PSXLEGAL.TIM, PSXRFA1.TIM, every *TIM member of CCCPSX.BIG (575 distinct files) |
 | [VAB sound banks](formats/vab.md) | partial | US | US every *VH and *VB member of CCCPSX.BIG (499 banks, 1829 samples); US CCCPSX.EXE:0x8001a0c4 the bank loader |
+| [The world model (WLD, DLW, WLB)](formats/world.md) | partial | US | US <TRACK>.WLD, <TRACK>.DLW, <TRACK>.WLB in the 11 track archives; US CCCPSX.EXE:0x800246d4 world_model_load, 0x8001e744 world_load, 0x8001e2c8 race_load_world, 0x8001ef24 world_cull_and_draw_view, 0x800317e0 world_cell_emit_gt4, 0x8001e87c world_object_draw, 0x80010344 mesh_draw_gt4, 0x800242a4 clut_anim_update |
 
 ## Engine
 
