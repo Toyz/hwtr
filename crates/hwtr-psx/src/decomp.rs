@@ -634,6 +634,8 @@ pub fn decompile(p: &Program, start: u32, namer: &dyn Namer) -> Option<String> {
             after,
             uses: BTreeMap::new(),
             entry: k == 0,
+            inflight: Vec::new(),
+            marks: Vec::new(),
         };
         if k == 0 && frame != 0 {
             // At entry sp is the frame plus its size, so after the prologue's
@@ -660,6 +662,11 @@ struct Emitter<'a, 'b> {
     uses: BTreeMap<(u32, usize), usize>,
     /// Whether this is the function's first block.
     entry: bool,
+    /// Values computed but not yet stored anywhere, kept correct while
+    /// registers are written out.
+    inflight: Vec<Expr>,
+    /// Marks standing for copies of a value being written out.
+    marks: Vec<(Expr, Expr)>,
 }
 
 impl Emitter<'_, '_> {
@@ -675,12 +682,28 @@ impl Emitter<'_, '_> {
         let _ = writeln!(self.out, "    {s}");
     }
 
-    /// Writes register `r`'s pending value out, first writing any other
-    /// register whose pending value still reads the old `r`.
+    /// Writes register `r`'s pending value out. Other pending values that
+    /// still read the old `r` are written first; copies of the value inside
+    /// other pending or in-flight values come to read `r` instead; and an
+    /// in-flight value that reads the old `r` keeps it in a temporary.
     fn materialize(&mut self, r: usize, busy: &mut Vec<usize>) {
-        let Some(e) = self.regs.get(&r).cloned() else { return };
-        if e == Reg(r) || is_frame(r, &e) {
+        let Some(p) = self.regs.get(&r).cloned() else { return };
+        if p == Reg(r) || is_frame(r, &p) {
             return;
+        }
+        // Copies of the value, marked until `r` holds it.
+        let mark = Var(format!("\u{0}{r}"));
+        let share = size(&p) > 2;
+        if share {
+            for (q, x) in self.regs.iter_mut() {
+                if *q != r {
+                    *x = replace(x, &p, &mark);
+                }
+            }
+            for x in self.inflight.iter_mut() {
+                *x = replace(x, &p, &mark);
+            }
+            self.marks.push((mark.clone(), p.clone()));
         }
         busy.push(r);
         let readers: Vec<usize> =
@@ -688,20 +711,68 @@ impl Emitter<'_, '_> {
         for q in readers {
             if busy.contains(&q) {
                 // A cycle: the old value goes to a temporary.
-                let tmp = Var(format!("old_{}", rname(r)));
-                self.line(format!("old_{} = {};", rname(r), rname(r)));
-                for x in self.regs.values_mut() {
-                    *x = replace(x, &Reg(r), &tmp);
-                }
+                self.keep_old(r);
             } else {
                 self.materialize(q, busy);
             }
         }
         busy.pop();
+        if self.inflight.iter().any(|x| mentions(x, &[r])) {
+            self.keep_old(r);
+        }
         let e = self.regs[&r].clone();
-        let text = format!("{} = {};", rname(r), self.ctx.expr(&e));
+        let text = format!("{} = {};", rname(r), self.show(&e));
         self.line(text);
         self.regs.insert(r, Reg(r));
+        if share {
+            self.marks.retain(|(m, _)| *m != mark);
+            for x in self.regs.values_mut() {
+                *x = replace(x, &mark, &Reg(r));
+            }
+            for x in self.inflight.iter_mut() {
+                *x = replace(x, &mark, &Reg(r));
+            }
+        }
+    }
+
+    /// Saves `r` in `old_r` and makes every pending and in-flight read of
+    /// `r` read that.
+    fn keep_old(&mut self, r: usize) {
+        let tmp = Var(format!("old_{}", rname(r)));
+        self.line(format!("old_{} = {};", rname(r), rname(r)));
+        for x in self.regs.values_mut().chain(self.inflight.iter_mut()) {
+            *x = replace(x, &Reg(r), &tmp);
+        }
+    }
+
+    /// A store's target as text, with marked copies spelled out.
+    fn place(&self, addr: &Expr, w: u8) -> String {
+        let mut a = addr.clone();
+        for (m, p) in self.marks.iter().rev() {
+            a = replace(&a, m, p);
+        }
+        self.ctx.place(&a, w, false)
+    }
+
+    /// An expression as text, with marked copies spelled out.
+    fn show(&self, e: &Expr) -> String {
+        let mut e = e.clone();
+        for (m, p) in self.marks.iter().rev() {
+            e = replace(&e, m, p);
+        }
+        self.ctx.expr(&e)
+    }
+
+    /// Writes out `regs` (those still pending) while `values` are in flight:
+    /// built from the registers as they are, and kept correct as registers
+    /// are written. Returns the values.
+    fn materialize_with(&mut self, regs: &[usize], values: Vec<Expr>) -> Vec<Expr> {
+        let base = self.inflight.len();
+        self.inflight.extend(values);
+        for &r in regs {
+            self.materialize(r, &mut vec![]);
+        }
+        self.inflight.split_off(base)
     }
 
     fn set(&mut self, pc: u32, r: usize, e: Expr) {
@@ -713,13 +784,11 @@ impl Emitter<'_, '_> {
         let live = self.after.get(&pc).cloned().unwrap_or_default();
         let readers: Vec<usize> =
             self.regs.iter().filter(|(q, x)| **q != r && mentions(x, &[r])).map(|(q, _)| *q).collect();
-        for q in readers {
-            if live.contains(&q) {
-                self.materialize(q, &mut vec![r]);
-            } else {
-                self.regs.remove(&q);
-            }
+        let (keep, drop): (Vec<usize>, Vec<usize>) = readers.into_iter().partition(|q| live.contains(q));
+        for q in drop {
+            self.regs.remove(&q);
         }
+        let e = self.materialize_with(&keep, vec![e]).pop().unwrap();
         let e = simplify(e);
         let named = self.uses.get(&(pc, r)).is_some_and(|&n| n >= 2) && size(&e) >= 6;
         self.regs.insert(r, e);
@@ -860,8 +929,21 @@ impl Emitter<'_, '_> {
         }
         match i.op {
             Op::Jal | Op::Jalr | Op::Bltzal | Op::Bgezal => {
+                // Values still needed after the call are written out first:
+                // the call may change memory and the registers it clobbers.
+                let live: Vec<usize> = self
+                    .regs
+                    .iter()
+                    .filter(|(r, e)| {
+                        !CLOBBERED.contains(r) && live_end.contains(r) && (contains_load(e) || mentions(e, &CLOBBERED))
+                    })
+                    .map(|(r, _)| *r)
+                    .collect();
+                let mut v = self.materialize_with(&live, vec![s, cond.clone().unwrap_or(Const(0))]);
+                let cond = cond.map(|_| v.pop().unwrap());
+                let s = v.swap_remove(0);
                 let (name, n, result) = match i.op {
-                    Op::Jalr => (format!("(*{})", self.ctx.expr(&s)), 4, format!("r_{pc:x}")),
+                    Op::Jalr => (format!("(*{})", self.show(&s)), 4, format!("r_{pc:x}")),
                     _ => {
                         let a = target.unwrap_or(0);
                         let name = self.ctx.namer.name(a).unwrap_or(format!("fn_{a:08x}"));
@@ -873,19 +955,6 @@ impl Emitter<'_, '_> {
                     }
                 };
                 let args = self.call_args(n);
-                // Values still needed after the call are written out first:
-                // the call may change memory and the registers it clobbers.
-                let live: Vec<usize> = self
-                    .regs
-                    .iter()
-                    .filter(|(r, e)| {
-                        !CLOBBERED.contains(r) && live_end.contains(r) && (contains_load(e) || mentions(e, &CLOBBERED))
-                    })
-                    .map(|(r, _)| *r)
-                    .collect();
-                for r in live {
-                    self.materialize(r, &mut vec![]);
-                }
                 let call = format!("{name}({args})");
                 let used = live_end.contains(&2);
                 match cond {
@@ -1050,21 +1119,13 @@ impl Emitter<'_, '_> {
                 // needed, are written out first.
                 let live = self.after.get(&pc).cloned().unwrap_or_default();
                 let hit: Vec<usize> = self.regs.iter().filter(|(_, e)| aliases(e, &addr)).map(|(r, _)| *r).collect();
-                let (mut addr, mut t) = (addr, t);
-                for r in hit {
-                    if !live.contains(&r) {
-                        self.regs.remove(&r);
-                        continue;
-                    }
-                    if mentions(&addr, &[r]) || mentions(&t, &[r]) {
-                        let tmp = Var(format!("old_{}", rname(r)));
-                        self.line(format!("old_{} = {};", rname(r), rname(r)));
-                        addr = replace(&addr, &Reg(r), &tmp);
-                        t = replace(&t, &Reg(r), &tmp);
-                    }
-                    self.materialize(r, &mut vec![]);
+                let (keep, drop): (Vec<usize>, Vec<usize>) = hit.into_iter().partition(|r| live.contains(r));
+                for r in drop {
+                    self.regs.remove(&r);
                 }
-                let text = format!("{} = {};", self.ctx.place(&addr, w, false), self.ctx.expr(&t));
+                let v = self.materialize_with(&keep, vec![addr, t]);
+                let (addr, t) = (&v[0], &v[1]);
+                let text = format!("{} = {};", self.place(addr, w), self.show(t));
                 self.line(text);
             }
             Op::Mfc2 => self.set(pc, rt, Cop2(GTE_DATA[rd])),

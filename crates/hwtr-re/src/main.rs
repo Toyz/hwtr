@@ -825,19 +825,40 @@ fn callers(args: &mut Args, cue: &Option<String>) -> Result<()> {
     Ok(())
 }
 
-/// C-like pseudo-code for a function.
+/// C-like pseudo-code for a function, or with `--all` a check that every
+/// function decompiles.
 fn pseudo(args: &mut Args, cue: &Option<String>) -> Result<()> {
-    let target = args.items.get(1).cloned().ok_or("pseudo FILE ADDR|NAME")?;
+    let target = args.items.get(1).cloned().ok_or("pseudo FILE ADDR|NAME|--all")?;
     let p = Program::load(args, cue)?;
-    let addr = parse_num(&target).or_else(|_| {
-        p.names.iter().find(|(_, n)| **n == target).map(|(&a, _)| a).ok_or(format!("no symbol {target}"))
-    })?;
     let names = |a: u32| -> Option<String> {
         if let Some(n) = p.names.get(&a) {
             return Some(n.clone());
         }
         p.mem().cstr(a).filter(|s| s.len() >= 3).map(|s| format!("{:?}", if s.len() > 40 { &s[..40] } else { s }))
     };
+    if target == "--all" {
+        let (mut ok, mut bad) = (0, 0);
+        for &f in p.a.funcs.keys() {
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                hwtr_psx::decomp::decompile(&p.a, f, &names)
+            })) {
+                Ok(Some(t)) if !t.contains('\0') => ok += 1,
+                Ok(_) => {
+                    bad += 1;
+                    println!("{f:08x}: unresolved mark in output");
+                }
+                Err(_) => {
+                    bad += 1;
+                    println!("{f:08x}: panicked");
+                }
+            }
+        }
+        println!("{ok} functions decompiled, {bad} failed");
+        return Ok(());
+    }
+    let addr = parse_num(&target).or_else(|_| {
+        p.names.iter().find(|(_, n)| **n == target).map(|(&a, _)| a).ok_or(format!("no symbol {target}"))
+    })?;
     let text = hwtr_psx::decomp::decompile(&p.a, addr, &names).ok_or(format!("no function at 0x{addr:08x}"))?;
     print!("{text}");
     Ok(())
