@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-17 entries: audio 1, bug 1, build 2, content 5, decomp 5, design 1, disc 1, engine 3, format 6, input 3, race 3, render 8, test 6, tooling 10.
+18 entries: audio 1, bug 1, build 2, content 5, decomp 5, design 1, disc 1, engine 3, format 6, input 3, physics 1, race 3, render 8, test 7, tooling 11.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -29,3 +29,4 @@ The [reference](docs/README.md) says what is true now.
 | 15 | [Cars on the start grid: half scale, quaternions x y z w](worklog/0015-cars-on-the-start-grid-half-scale-quaternions-x-y-z-w.md) | 2026-10-03 | render, format, race |
 | 16 | [The original game boots to a race inside the interpreter](worklog/0016-the-original-game-boots-to-a-race-inside-the-interpreter.md) | 2026-10-03 | tooling, engine, test, render |
 | 17 | [Save states and an analog pad for the reference; the race drives](worklog/0017-save-states-and-an-analog-pad-for-the-reference-the-race.md) | 2026-10-03 | tooling, test, input, race |
+| 18 | [A decompiler for reading, and ports checked inside the running game](worklog/0018-a-decompiler-for-reading-and-ports-checked-inside-the.md) | 2026-10-03 | tooling, test, physics |
