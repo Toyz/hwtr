@@ -1,4 +1,4 @@
-//! A track as triangles and a VRAM image, ready for the GPU.
+//! Tracks and cars as triangles, and the VRAM image their textures live in.
 
 use hwtr_data::world::{Vertex, World};
 
@@ -9,6 +9,12 @@ pub struct Vram {
 
 pub const VRAM_W: usize = 1024;
 pub const VRAM_H: usize = 512;
+
+impl Default for Vram {
+    fn default() -> Self {
+        Vram::new()
+    }
+}
 
 impl Vram {
     pub fn new() -> Vram {

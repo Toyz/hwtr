@@ -10,6 +10,7 @@ publish.workspace = true
 hwtr-data.workspace = true
 hwtr-disc.workspace = true
 hwtr-input.workspace = true
+hwtr-render.workspace = true
 glam = "0.33.3"
 wgpu = "30.0.1"
 winit = "0.30.13"

@@ -15,6 +15,7 @@ hwtr-cpu = { path = "crates/hwtr-cpu" }
 hwtr-game = { path = "crates/hwtr-game" }
 hwtr-input = { path = "crates/hwtr-input" }
 hwtr-hle = { path = "crates/hwtr-hle" }
+hwtr-render = { path = "crates/hwtr-render" }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 

@@ -1,7 +1,7 @@
 [package]
-name = "hwtr"
+name = "hwtr-render"
 version = "0.1.0"
-description = "Hot Wheels Turbo Racing on the PC: the window, the renderer and the pad around the ported game."
+description = "Draws the game's tracks and cars with wgpu, texturing through a copy of VRAM the way the PlayStation does."
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
@@ -9,11 +9,7 @@ publish.workspace = true
 [dependencies]
 hwtr-data.workspace = true
 hwtr-disc.workspace = true
-hwtr-input.workspace = true
-hwtr-render.workspace = true
 glam = "0.33.3"
 wgpu = "30.0.1"
-winit = "0.30.13"
 pollster = "1.0.1"
 tracing.workspace = true
-tracing-subscriber.workspace = true

@@ -626,10 +626,11 @@ checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 name = "hwtr"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "hwtr-data",
  "hwtr-disc",
- "hwtr-hle",
  "hwtr-input",
+ "hwtr-render",
  "pollster",
  "tracing",
  "tracing-subscriber",
@@ -694,6 +695,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "hwtr-render"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hwtr-data",
+ "hwtr-disc",
+ "pollster",
+ "tracing",
+ "wgpu",
+]
+
+[[package]]
 name = "hwtr-viewer"
 version = "0.1.0"
 dependencies = [
@@ -701,6 +714,7 @@ dependencies = [
  "hwtr-data",
  "hwtr-disc",
  "hwtr-input",
+ "hwtr-render",
  "pollster",
  "tracing",
  "tracing-subscriber",

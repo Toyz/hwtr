@@ -4,12 +4,21 @@
 //! interpreter, stays in `hwtr-hle` and the tests, where the port is checked
 //! against it.
 //!
-//! So far this is the platform bring-up: it opens the disc, puts a window up,
-//! presents a PlayStation-sized picture at 4:3, and reads the pad. The
-//! pictures are the boot screens read straight from the disc; the ported game
-//! takes over from here as its parts land.
+//! What it does so far: the boot screens from the disc (Start or Cross steps
+//! through them), then the race scene: the track and the cars on the start
+//! grid, drawn natively, with a camera behind the player's car (the right
+//! stick turns it, Select goes back). The cars stand still until the
+//! collision with the track is ported; their physics already is.
+//!
+//! ```text
+//! hwtr [--cue DISC.cue] [--track NAME] [--shot OUT.png]
+//! ```
+//!
+//! `--track` goes straight to a race on that track (DESERT1 by default);
+//! `--shot` renders that race's first frame offscreen as PNG and exits.
 
 mod present;
+mod race;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -23,6 +32,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use present::{Picture, Presenter};
+use race::Race;
 
 /// The PlayStation's NTSC field rate.
 const FRAME: Duration = Duration::from_nanos(1_000_000_000_000 / 59_940);
@@ -46,6 +56,10 @@ struct App {
     screen: usize,
     next_frame: Instant,
     rumbling: bool,
+    cue: PathBuf,
+    track: String,
+    /// The race, once the boot screens are through.
+    race: Option<Race>,
 }
 
 fn key_button(code: KeyCode) -> u16 {
@@ -84,17 +98,44 @@ impl App {
             );
         }
         self.pad = pad;
-        if pressed & (buttons::CROSS | buttons::START) != 0 {
-            self.screen = (self.screen + 1) % self.screens.len();
-            if let Some(w) = &self.win {
-                w.window.set_title(&format!("hwtr - {}", self.screens[self.screen].0));
+        if let Some(race) = &mut self.race {
+            if pressed & buttons::SELECT != 0 {
+                self.race = None;
+                self.screen = 0;
+                self.set_title();
+                return;
             }
+            race.frame(&pad);
+        } else if pressed & (buttons::CROSS | buttons::START) != 0 {
+            if self.screen + 1 == self.screens.len() {
+                self.start_race();
+            } else {
+                self.screen += 1;
+            }
+            self.set_title();
         }
         // Circle runs the motors, to check the pad's rumble end to end.
         let want = pad.held(buttons::CIRCLE);
         if want != self.rumbling {
             self.input.rumble(if want { 0xc0 } else { 0 }, want);
             self.rumbling = want;
+        }
+    }
+
+    fn set_title(&self) {
+        if let Some(w) = &self.win {
+            let title = match &self.race {
+                Some(_) => format!("hwtr - {}", self.track),
+                None => format!("hwtr - {}", self.screens[self.screen].0),
+            };
+            w.window.set_title(&title);
+        }
+    }
+
+    fn start_race(&mut self) {
+        match Race::load(&self.cue, &self.track) {
+            Ok(r) => self.race = Some(r),
+            Err(e) => tracing::error!("{e}"),
         }
     }
 
@@ -107,9 +148,18 @@ impl App {
                 return;
             }
         };
-        let view = frame.texture.create_view(&Default::default());
-        let picture = &self.screens[self.screen].1;
-        let commands = w.presenter.present(&w.device, &w.queue, picture, &view, w.config.width, w.config.height);
+        let commands = if let Some(race) = &mut self.race {
+            // The game's colours are already display-encoded: drawn through a
+            // view that stores them as they are.
+            let plain = w.config.format.remove_srgb_suffix();
+            let view =
+                frame.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(plain), ..Default::default() });
+            race.draw(&w.device, &w.queue, plain, &view, (w.config.width, w.config.height))
+        } else {
+            let view = frame.texture.create_view(&Default::default());
+            let picture = &self.screens[self.screen].1;
+            w.presenter.present(&w.device, &w.queue, picture, &view, w.config.width, w.config.height)
+        };
         w.queue.submit([commands]);
         w.window.pre_present_notify();
         w.queue.present(frame);
@@ -121,9 +171,8 @@ impl ApplicationHandler for App {
         if self.win.is_some() {
             return;
         }
-        let attrs = Window::default_attributes()
-            .with_title(format!("hwtr - {}", self.screens[self.screen].0))
-            .with_inner_size(winit::dpi::LogicalSize::new(960.0, 720.0));
+        let attrs =
+            Window::default_attributes().with_title("hwtr").with_inner_size(winit::dpi::LogicalSize::new(960.0, 720.0));
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
         let instance = self.instance.get_or_insert_with(|| {
             wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(Box::new(self.display.clone())))
@@ -150,6 +199,7 @@ impl ApplicationHandler for App {
                 config.format = *f;
             }
             config.present_mode = wgpu::PresentMode::AutoVsync;
+            config.view_formats = vec![config.format.remove_srgb_suffix()];
             surface.configure(&device, &config);
             let presenter = Presenter::new(&device, config.format);
             Ok(Display { window: window.clone(), surface, config, device, queue, presenter })
@@ -163,6 +213,7 @@ impl ApplicationHandler for App {
             }
         }
         self.next_frame = Instant::now();
+        self.set_title();
         window.request_redraw();
     }
 
@@ -218,15 +269,8 @@ impl ApplicationHandler for App {
 
 /// The boot screens, read off the disc: the legal screen, the title, the
 /// main menu's background.
-fn screens(cue: Option<PathBuf>) -> Result<Vec<(String, Picture)>, String> {
-    let cue = match cue {
-        Some(c) => c,
-        None => {
-            let dir = std::env::current_dir().map_err(|e| e.to_string())?.join("work/disc");
-            hwtr_disc::Disc::find_cue(&dir).map_err(|e| e.to_string())?
-        }
-    };
-    let disc = hwtr_disc::Disc::open(&cue).map_err(|e| e.to_string())?;
+fn screens(cue: &std::path::Path) -> Result<Vec<(String, Picture)>, String> {
+    let disc = hwtr_disc::Disc::open(cue).map_err(|e| e.to_string())?;
     let iso = disc.iso().map_err(|e| e.to_string())?;
     let read = |p: &str| iso.find(p).and_then(|e| iso.read(&e)).map_err(|e| e.to_string());
     let big = read("CCCPSX.BIG")?;
@@ -248,23 +292,40 @@ fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
     let mut args = std::env::args().skip(1);
-    let mut cue = None;
+    let (mut cue, mut track, mut shot) = (None, None, None);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--cue" => cue = args.next().map(PathBuf::from),
+            "--track" => track = args.next(),
+            "--shot" => shot = args.next().map(PathBuf::from),
             _ => {
-                eprintln!("usage: hwtr [--cue DISC.cue]");
+                eprintln!("usage: hwtr [--cue DISC.cue] [--track NAME] [--shot OUT.png]");
                 std::process::exit(2);
             }
         }
     }
-    let screens = match screens(cue) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("{e}");
-            std::process::exit(1);
-        }
+    let fail = |e: String| -> ! {
+        tracing::error!("{e}");
+        std::process::exit(1)
     };
+    let cue = cue
+        .map(Ok)
+        .unwrap_or_else(|| hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).map_err(|e| e.to_string()))
+        .unwrap_or_else(|e| fail(e));
+    let race = track.is_some() || shot.is_some();
+    let track = track.unwrap_or_else(|| "DESERT1".into()).to_uppercase();
+    if let Some(out) = shot {
+        let (w, h) = (1280, 960);
+        let written = Race::load(&cue, &track).and_then(|race| race.shot(w, h)).and_then(|rgba| {
+            std::fs::write(&out, hwtr_data::png::encode(w as usize, h as usize, &rgba)).map_err(|e| e.to_string())
+        });
+        if let Err(e) = written {
+            fail(e);
+        }
+        tracing::info!("-> {}", out.display());
+        return;
+    }
+    let screens = screens(&cue).unwrap_or_else(|e| fail(e));
     let input = Input::new();
     for name in input.gamepads() {
         tracing::info!("gamepad: {name}");
@@ -281,7 +342,13 @@ fn main() {
         screen: 0,
         next_frame: Instant::now(),
         rumbling: false,
+        cue,
+        track,
+        race: None,
     };
+    if race {
+        app.start_race();
+    }
     if let Err(e) = event_loop.run_app(&mut app) {
         tracing::error!("{e}");
     }

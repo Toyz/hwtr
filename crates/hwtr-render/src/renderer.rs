@@ -5,7 +5,7 @@
 
 use wgpu::util::DeviceExt;
 
-use crate::scene::{VRAM_H, VRAM_W, Vram, Vtx};
+use crate::mesh::{VRAM_H, VRAM_W, Vram, Vtx};
 
 const SHADER: &str = r#"
 struct Camera { mvp: mat4x4f }
@@ -74,8 +74,11 @@ pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
     group: wgpu::BindGroup,
     camera: wgpu::Buffer,
+    /// What does not move (the track), uploaded once.
     vertices: wgpu::Buffer,
     count: u32,
+    /// What moves (the cars), replaced each frame by `set_moving`.
+    moving: Option<(wgpu::Buffer, u32)>,
     depth: Option<(wgpu::Texture, u32, u32)>,
     pub clear: [u8; 3],
 }
@@ -197,7 +200,35 @@ impl Renderer {
             contents: Vtx::bytes(tris),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        Renderer { pipeline, group, camera, vertices, count: tris.len() as u32, depth: None, clear: [0, 0, 0] }
+        Renderer {
+            pipeline,
+            group,
+            camera,
+            vertices,
+            count: tris.len() as u32,
+            moving: None,
+            depth: None,
+            clear: [0, 0, 0],
+        }
+    }
+
+    /// The triangles that move, drawn after the fixed ones until replaced.
+    pub fn set_moving(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, tris: &[Vtx]) {
+        let bytes = Vtx::bytes(tris);
+        let fits = self.moving.as_ref().is_some_and(|(b, _)| b.size() >= bytes.len() as u64);
+        if !fits {
+            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("moving"),
+                size: (bytes.len() as u64).max(64).next_power_of_two(),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.moving = Some((buffer, 0));
+        }
+        if let Some((buffer, count)) = &mut self.moving {
+            queue.write_buffer(buffer, 0, bytes);
+            *count = tris.len() as u32;
+        }
     }
 
     /// Draws into `target` with the camera's view-projection matrix.
@@ -252,6 +283,12 @@ impl Renderer {
             pass.set_bind_group(0, &self.group, &[]);
             pass.set_vertex_buffer(0, self.vertices.slice(..));
             pass.draw(0..self.count, 0..1);
+            if let Some((buffer, count)) = &self.moving
+                && *count > 0
+            {
+                pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.draw(0..*count, 0..1);
+            }
         }
         encoder.finish()
     }
