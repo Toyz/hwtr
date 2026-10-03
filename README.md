@@ -4,7 +4,16 @@ A native PC port of Hot Wheels Turbo Racing for the PlayStation (Stormfront
 Studios / Electronic Arts, 1999, `SLUS-00964`), written in Rust from a reverse
 engineering of the game. It plays your own disc.
 
-**Status: reverse engineering has started; nothing plays yet.**
+**Status: early.** The port does not play yet. What runs today:
+
+- `hwtr --original` plays the *original* game, run instruction by instruction
+  in this project's interpreter with the console's libraries supplied by the
+  host, in a window with your pad (no sound, no memory card yet). It is the
+  reference every ported part is checked against.
+- `hwtr-viewer TRACK` flies around any of the eleven tracks, drawn from the
+  disc's data with the game's own texture lookup, cars on the start grid.
+- The game's flow (its table-driven state machine) is ported and agrees with
+  the original step for step.
 
 ## Not an emulator
 
@@ -22,6 +31,12 @@ results. During play nothing from the PlayStation runs and no BIOS is needed.
 | `crates/hwtr-data` | reads the game's data: the BIG archives, and the asset formats as they are decoded |
 | `crates/hwtr-psx` | the PS-X EXE format, an R3000A + GTE disassembler, static analysis |
 | `crates/hwtr-re` | the reverse engineering command line |
+| `crates/hwtr-cpu` | an R3000A + GTE interpreter that runs original functions |
+| `crates/hwtr-hle` | runs the whole original game in it: GPU, DMA, SPU registers, CD and BIOS supplied |
+| `crates/hwtr-game` | the port: the game's systems rewritten in Rust |
+| `crates/hwtr-input` | the pad: DualSense or any gamepad, as a PlayStation pad |
+| `crates/hwtr` | the program: window, renderer, pad; `--original` for the reference |
+| `crates/hwtr-viewer` | flies around the tracks |
 | `symbols/` | names for the executable's functions and data, with confidence notes |
 | `docs/` | the [reference](docs/README.md): what is true about the disc, formats and engine |
 | `docs/cut/` | cut, missing and unreachable content, one page each |
@@ -45,6 +60,10 @@ cargo run -q -p hwtr-re -- big extract work/fs/CCCPSX.BIG    # -> work/big
 cargo run -q -p hwtr-re -- funcs work/fs/CCCPSX.EXE
 cargo run -q -p hwtr-re -- disasm work/fs/CCCPSX.EXE --from 0x80010a5c --count 64
 cargo run -q -p hwtr-re -- strings work/fs/CCCPSX.EXE
+cargo run --release -p hwtr -- --original          # the original game, played
+cargo run --release -p hwtr-viewer -- VOLCANO1     # fly a track
+cargo run --release -p hwtr-hle -- 2400 --press 1300:down,1340:x,1600:start,1800:x
+                                                   # headless, frames to work/hle
 ```
 
 Any file argument may be `disc:NAME` to read straight off the CD.

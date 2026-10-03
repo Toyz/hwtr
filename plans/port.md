@@ -22,16 +22,20 @@ which a few hundred are PsyQ library.
 ### 1. Tooling to read the code (started)
 
 - [x] Disc, ISO 9660, BIG, PS-X EXE, disassembler, function and string scan.
-- [ ] `$gp`-relative reference resolution (gp = 0x800d0b48).
-- [ ] Jump tables and `jalr` targets, so `switch` statements and callbacks
-      are followed.
+- [x] `$gp`-relative reference resolution (gp = 0x800d0b48).
+- [x] Jump tables and `jalr` targets through interface slots.
 - [ ] PsyQ library identification. No signature files are on the machine;
       build our own by recognising each library function by its `$Id`
       string, its BIOS calls, its hardware registers (0x1f801xxx) and its
       shape, then name everything above 0x8009fc10.
-- [ ] A call graph from `main` (0x80010a5c) down, to order the work.
+- [x] A call graph from `main` (0x80010a5c) down, to order the work; the
+      game flow is two state machines (worklog 6), ported (worklog 8).
 
-### 2. An R3000A + GTE interpreter (`hwtr-cpu`)
+### 2. An R3000A + GTE interpreter (`hwtr-cpu`) (done) and the whole game in it (`hwtr-hle`) (done)
+
+`hwtr-hle` boots the original from its entry point to a race (worklog 16):
+ground truth for any frame. Next for it: sound (libsnd/SPU), the analog pad,
+saving and restoring its state to start tests mid-race.
 
 The verification harness. Loads `CCCPSX.EXE`, runs one function with chosen
 arguments and memory, stops at return, and reports memory and register
