@@ -17,18 +17,33 @@ pub struct IoAccess {
     pub write: Option<u32>,
 }
 
+/// Hardware behind the I/O ports. A device sees RAM so it can do DMA.
+pub trait Device {
+    fn read(&mut self, ram: &mut [u8], phys: u32, width: u8) -> u32;
+    fn write(&mut self, ram: &mut [u8], phys: u32, width: u8, value: u32);
+}
+
 pub struct Bus {
     pub ram: Vec<u8>,
     pub scratch: Vec<u8>,
-    /// Every I/O access, in order.
+    /// Every I/O access, in order, when no device is attached.
     pub io: Vec<IoAccess>,
     /// Values I/O reads return, by physical address; 0 otherwise.
     pub io_values: std::collections::HashMap<u32, u32>,
+    /// The hardware model, when one is attached; it then sees every I/O
+    /// access instead of the log.
+    pub device: Option<Box<dyn Device>>,
 }
 
 impl Default for Bus {
     fn default() -> Self {
-        Bus { ram: vec![0; RAM_SIZE], scratch: vec![0; 1024], io: Vec::new(), io_values: Default::default() }
+        Bus {
+            ram: vec![0; RAM_SIZE],
+            scratch: vec![0; 1024],
+            io: Vec::new(),
+            io_values: Default::default(),
+            device: None,
+        }
     }
 }
 
@@ -67,10 +82,13 @@ impl Bus {
         Some(match region(addr)? {
             Region::Ram(at) => get(&self.ram, at),
             Region::Scratch(at) => get(&self.scratch, at),
-            Region::Io(phys) => {
-                self.io.push(IoAccess { addr: phys, width, write: None });
-                self.io_values.get(&phys).copied().unwrap_or(0)
-            }
+            Region::Io(phys) => match &mut self.device {
+                Some(d) => d.read(&mut self.ram, phys, width),
+                None => {
+                    self.io.push(IoAccess { addr: phys, width, write: None });
+                    self.io_values.get(&phys).copied().unwrap_or(0)
+                }
+            },
             Region::Ignore => 0,
         })
     }
@@ -85,7 +103,10 @@ impl Bus {
         match region(addr)? {
             Region::Ram(at) => put(&mut self.ram, at),
             Region::Scratch(at) => put(&mut self.scratch, at),
-            Region::Io(phys) => self.io.push(IoAccess { addr: phys, width, write: Some(value) }),
+            Region::Io(phys) => match &mut self.device {
+                Some(d) => d.write(&mut self.ram, phys, width, value),
+                None => self.io.push(IoAccess { addr: phys, width, write: Some(value) }),
+            },
             Region::Ignore => {}
         }
         Some(())

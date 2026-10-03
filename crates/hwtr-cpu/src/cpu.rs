@@ -46,6 +46,11 @@ pub enum Fault {
         table: u32,
         function: u32,
     },
+    /// A hook asked the machine to stop (through `Machine::halt`); `run`
+    /// carries on from here.
+    Halt {
+        pc: u32,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -144,7 +149,13 @@ impl Cpu {
                 out[rd] = pc.wrapping_add(8);
                 self.next_pc = s;
             }
-            Op::Syscall => return Err(Fault::Syscall { pc, code: (word >> 6) & 0xfffff }),
+            Op::Syscall => {
+                // The instruction is complete when the exception is taken:
+                // registers as they stand (a pending load landed), pc past it.
+                out[0] = 0;
+                self.r = out;
+                return Err(Fault::Syscall { pc, code: (word >> 6) & 0xfffff });
+            }
             Op::Break => return Err(Fault::Break { pc, code: (word >> 6) & 0xfffff }),
             Op::Mfhi => out[rd] = self.hi,
             Op::Mthi => self.hi = s,

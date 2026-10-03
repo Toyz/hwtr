@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-15 entries: audio 1, bug 1, build 2, content 5, decomp 5, design 1, disc 1, engine 2, format 6, input 2, race 2, render 7, test 4, tooling 8.
+16 entries: audio 1, bug 1, build 2, content 5, decomp 5, design 1, disc 1, engine 3, format 6, input 2, race 2, render 8, test 5, tooling 9.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -27,3 +27,4 @@ The [reference](docs/README.md) says what is true now.
 | 13 | [The car formats: three detail levels, handling and effect points in one BMF](worklog/0013-the-car-formats-three-detail-levels-handling-and-effect.md) | 2026-10-03 | format, render, content, test |
 | 14 | [Corners c and d had their texture coordinates swapped](worklog/0014-corners-c-and-d-had-their-texture-coordinates-swapped.md) | 2026-10-03 | render, format, bug |
 | 15 | [Cars on the start grid: half scale, quaternions x y z w](worklog/0015-cars-on-the-start-grid-half-scale-quaternions-x-y-z-w.md) | 2026-10-03 | render, format, race |
+| 16 | [The original game boots to a race inside the interpreter](worklog/0016-the-original-game-boots-to-a-race-inside-the-interpreter.md) | 2026-10-03 | tooling, engine, test, render |

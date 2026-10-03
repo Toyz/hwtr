@@ -1,7 +1,7 @@
 # hwtr
 
-A native PC port of Hot Wheels Turbo Racing for the PlayStation (Stainless
-Games / Electronic Arts, 1999, `SLUS-00964`), written in Rust from a reverse
+A native PC port of Hot Wheels Turbo Racing for the PlayStation (Stormfront
+Studios / Electronic Arts, 1999, `SLUS-00964`), written in Rust from a reverse
 engineering of the game. It plays your own disc.
 
 **Status: reverse engineering has started; nothing plays yet.**
@@ -54,4 +54,4 @@ No game data is in this repository; `original/` and `work/` are ignored.
 ## License
 
 MIT or Apache-2.0, at your option. Hot Wheels is a trademark of Mattel; this
-project is not affiliated with Mattel, Electronic Arts or Stainless Games.
+project is not affiliated with Mattel, Electronic Arts or Stormfront Studios.

@@ -390,7 +390,10 @@ fn main() {
             "--look" => look = args.next().and_then(|s| parse3(&s)),
             "--shot" => out = args.next().map(PathBuf::from),
             "--cars" => {
-                cars = args.next().map(|s| s.split(',').filter(|c| !c.is_empty()).map(str::to_string).collect()).unwrap_or_default()
+                cars = args
+                    .next()
+                    .map(|s| s.split(',').filter(|c| !c.is_empty()).map(str::to_string).collect())
+                    .unwrap_or_default()
             }
             t if !t.starts_with('-') => track = Some(t.to_string()),
             _ => {

@@ -9,7 +9,7 @@ worklog: 1, 3
 # The CD, its tracks and its file system
 
 Hot Wheels Turbo Racing, NTSC-U, `SLUS-00964`, published by Electronic Arts
-(1999), developed by Stainless Games. One CD-ROM XA disc: a Mode 2 data track
+(1999), developed by Stormfront Studios. One CD-ROM XA disc: a Mode 2 data track
 and thirteen Red Book audio tracks that are the in-game music.
 
 ## Tracks

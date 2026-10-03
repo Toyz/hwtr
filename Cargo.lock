@@ -660,6 +660,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "hwtr-hle"
+version = "0.1.0"
+dependencies = [
+ "hwtr-cpu",
+ "hwtr-disc",
+ "hwtr-psx",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "hwtr-input"
 version = "0.1.0"
 dependencies = [

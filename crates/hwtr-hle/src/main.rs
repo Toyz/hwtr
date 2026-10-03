@@ -1,0 +1,201 @@
+//! hwtr-hle: run the original game headless for N frames.
+//!
+//! ```text
+//! hwtr-hle [FRAMES] [--shots DIR] [--every N]
+//! ```
+//!
+//! Writes the displayed picture every N frames (and VRAM at the end) as PNG.
+
+use std::path::PathBuf;
+use std::rc::Rc;
+
+fn png(path: &PathBuf, w: usize, h: usize, rgba: &[u8]) {
+    // A tiny PNG writer lives in hwtr-data; this crate stays free of it by
+    // writing PPM, which every viewer opens.
+    let mut out = format!("P6\n{w} {h}\n255\n").into_bytes();
+    for px in rgba.chunks(4) {
+        out.extend_from_slice(&px[..3]);
+    }
+    std::fs::write(path.with_extension("ppm"), out).expect("write");
+}
+
+/// A button's bit by name.
+fn button(name: &str) -> u16 {
+    match name.to_lowercase().as_str() {
+        "select" => 1 << 0,
+        "l3" => 1 << 1,
+        "r3" => 1 << 2,
+        "start" => 1 << 3,
+        "up" => 1 << 4,
+        "right" => 1 << 5,
+        "down" => 1 << 6,
+        "left" => 1 << 7,
+        "l2" => 1 << 8,
+        "r2" => 1 << 9,
+        "l1" => 1 << 10,
+        "r1" => 1 << 11,
+        "triangle" => 1 << 12,
+        "circle" => 1 << 13,
+        "cross" | "x" => 1 << 14,
+        "square" => 1 << 15,
+        _ => 0,
+    }
+}
+
+fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .init();
+    let mut args = std::env::args().skip(1);
+    let (mut frames, mut shots, mut every) = (120u64, PathBuf::from("work/hle"), 30u64);
+    // --press FRAME:BUTTONS[:LENGTH], buttons by name joined with +.
+    let mut presses: Vec<(u64, u16, u64)> = Vec::new();
+    while let Some(a) = args.next() {
+        match a.as_str() {
+            "--press" => {
+                for p in args.next().unwrap_or_default().split(',') {
+                    let mut it = p.split(':');
+                    let at: u64 = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                    let bits = it.next().unwrap_or("").split('+').map(button).fold(0, |a, b| a | b);
+                    let len: u64 = it.next().and_then(|s| s.parse().ok()).unwrap_or(4);
+                    presses.push((at, bits, len));
+                }
+            }
+            "--shots" => shots = args.next().map(PathBuf::from).unwrap_or(shots),
+            "--every" => every = args.next().and_then(|s| s.parse().ok()).unwrap_or(every),
+            n => frames = n.parse().unwrap_or(frames),
+        }
+    }
+    std::fs::create_dir_all(&shots).expect("shots dir");
+    let cue = hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).expect("cue");
+    let disc = Rc::new(hwtr_disc::Disc::open(&cue).expect("disc"));
+    let mut hle = hwtr_hle::Hle::new(disc).expect("hle");
+    let start = std::time::Instant::now();
+    let mut steps = 0u64;
+    let trace = std::env::var_os("HWTR_TRACE").is_some();
+    hle.m.step_limit = 30_000_000;
+    let sp_guard = std::env::var("HWTR_SPGUARD").ok().and_then(|v| u32::from_str_radix(&v, 16).ok());
+    // HWTR_WATCH=ADDR[,ADDR]: report every change to those words.
+    if let Ok(w) = std::env::var("HWTR_WATCH") {
+        for a in w.split(',') {
+            if let Ok(a) = u32::from_str_radix(a.trim_start_matches("0x"), 16) {
+                hle.m.watch.push((a, 0));
+            }
+        }
+    }
+    for f in 0..frames {
+        if trace {
+            hle.m.trace = Some(Vec::new());
+            if f == 300 {
+                hle.m.sp_guard = sp_guard.unwrap_or(0);
+            }
+            hle.pad = presses.iter().filter(|p| f >= p.0 && f < p.0 + p.2).fold(0, |a, p| a | p.1);
+        }
+        hle.m.trace = Some(Vec::new());
+        if f == 300 {
+            hle.m.sp_guard = sp_guard.unwrap_or(0);
+        }
+        hle.pad = presses.iter().filter(|p| f >= p.0 && f < p.0 + p.2).fold(0, |a, p| a | p.1);
+        if let Err(e) = hle.frame() {
+            tracing::error!("frame {f}: {e:x?} after {} steps", hle.m.steps);
+            let fc = hle.m.fault_cpu.clone().unwrap_or_else(|| hle.m.cpu.clone());
+            let r = &fc.r;
+            let names = hwtr_psx::mips::REG;
+            let regs: Vec<String> = (1..32).map(|i| format!("{}={:08x}", names[i], r[i])).collect();
+            tracing::error!("registers: {}", regs.join(" "));
+            let sp = r[29];
+            let stack: Vec<String> = (0..48).map(|k| format!("{:08x}", hle.m.bus.read_u32(sp + 4 * k))).collect();
+            tracing::error!("stack from {sp:08x}: {}", stack.join(" "));
+            // Code addresses on the handler stack: the call chain.
+            let mut codes = std::collections::BTreeMap::<u32, u32>::new();
+            for a in (0x8000_0000u32..0x8001_0000).step_by(4) {
+                let v = hle.m.bus.read_u32(a);
+                if (0x8001_0000..0x800b_6000).contains(&v) {
+                    *codes.entry(v).or_default() += 1;
+                }
+            }
+            let mut codes: Vec<_> = codes.into_iter().collect();
+            codes.sort_by_key(|&(a, n)| (std::cmp::Reverse(n), a));
+            tracing::error!("code addresses on the handler stack: {:x?}", &codes[..codes.len().min(10)]);
+            let rd = |b: &mut hwtr_cpu::Bus, a: u32| b.read_u32(a);
+            let (head, tail, chcr_ptr) =
+                (rd(&mut hle.m.bus, 0x800c_78c4), rd(&mut hle.m.bus, 0x800c_78c8), rd(&mut hle.m.bus, 0x800c_78b0));
+            let chcr = rd(&mut hle.m.bus, chcr_ptr);
+            tracing::error!("gpu queue head {head} tail {tail}; *0x800c78b0 = {chcr_ptr:08x} -> {chcr:08x}");
+            if let Some(t) = &hle.m.trace {
+                let tail: Vec<String> = t.iter().rev().take(40).rev().map(|pc| format!("{pc:08x}")).collect();
+                tracing::error!("last pcs: {}", tail.join(" "));
+                let mut hist = std::collections::HashMap::<u32, u64>::new();
+                for &pc in t.iter().rev().take(2_000_000) {
+                    *hist.entry(pc & !0xff).or_default() += 1;
+                }
+                let mut hot: Vec<_> = hist.into_iter().collect();
+                hot.sort_by_key(|&(a, n)| (std::cmp::Reverse(n), a));
+                tracing::error!("hot 256-byte blocks: {:x?}", &hot[..hot.len().min(6)]);
+            }
+            break;
+        }
+        steps += hle.m.steps;
+        if f == 150 && std::env::var_os("HWTR_IRQTAB").is_some() {
+            let t = hle.m.bus.read_u32(0x800c_775c);
+            let words: Vec<String> = (0..16).map(|k| format!("{:08x}", hle.m.bus.read_u32(t + 4 * k))).collect();
+            tracing::info!("interrupt table at {t:08x}: {}", words.join(" "));
+        }
+        if std::env::var_os("HWTR_SP").is_some() && f % 25 == 0 {
+            tracing::info!("frame {f}: sp {:08x} pc {:08x}", hle.m.cpu.r[29], hle.m.cpu.pc);
+        }
+        for (pc, addr, old, new) in hle.m.watched.drain(..) {
+            tracing::info!("frame {f}: {pc:08x} wrote {addr:08x}: {old:08x} -> {new:08x}");
+        }
+        if f % every == every - 1 {
+            let (w, h, rgba) = hle.hw.borrow().gpu.screen();
+            png(&shots.join(format!("frame{f:05}")), w, h, &rgba);
+            let hw = hle.hw.borrow();
+            tracing::info!(
+                "frame {f}: {} steps so far, {} primitives drawn, display {:?}",
+                steps,
+                hw.gpu.drawn,
+                hw.gpu.display
+            );
+        }
+    }
+    // What the last frame spent its time in, by function.
+    if let Some(t) = &hle.m.trace {
+        let exe_bytes = {
+            let cue = hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).expect("cue");
+            let disc = hwtr_disc::Disc::open(&cue).expect("disc");
+            let iso = disc.iso().expect("iso");
+            iso.find("CCCPSX.EXE").and_then(|e| iso.read(&e)).expect("exe")
+        };
+        let exe = hwtr_psx::Exe::parse(&exe_bytes).expect("exe");
+        let gp = hwtr_psx::analysis::find_gp(&exe.view(), exe.pc0);
+        let a = hwtr_psx::program::Program::analyze(exe.view(), exe.pc0, gp);
+        let mut by: std::collections::HashMap<u32, u64> = Default::default();
+        for &pc in t {
+            if let Some(f) = a.func_of(pc) {
+                *by.entry(f.start).or_default() += 1;
+            }
+        }
+        let mut by: Vec<_> = by.into_iter().collect();
+        by.sort_by_key(|&(f, n)| (std::cmp::Reverse(n), f));
+        tracing::info!("last frame, {} steps, by function: {:x?}", t.len(), &by[..by.len().min(10)]);
+    }
+    // Where the game's flow is: fsm_main's current state.
+    {
+        let b = &mut hle.m.bus;
+        let table = b.read_u32(0x800c_5bdc);
+        let cur = b.read_u32(0x800c_5bdc + 8);
+        let index = (0..349u32).find(|&i| b.read_u32(table + 4 * i) == cur);
+        let phase = b.read(0x800c_5bdc + 0x14, 2).unwrap_or(0);
+        tracing::info!("fsm_main: state {index:?}, phase {phase}");
+    }
+    let hw = hle.hw.borrow();
+    png(&shots.join("vram"), 1024, 512, &hw.gpu.vram_rgba());
+    tracing::info!(
+        "{} frames in {:.1?}, {} CD reads, unhandled ports {:x?}",
+        hle.frames.get(),
+        start.elapsed(),
+        hle.reads.borrow().len(),
+        hw.unhandled
+    );
+}

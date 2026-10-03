@@ -3,7 +3,7 @@ spec_version = 1
 [project]
 name        = "hwtr"
 slug        = "hwtr"
-description = "Reverse engineering Hot Wheels Turbo Racing for the PlayStation (Stainless Games / Electronic Arts, 1999, SLUS-00964) and porting it natively to the PC, using tools written for the job in Rust. No game data included."
+description = "Reverse engineering Hot Wheels Turbo Racing for the PlayStation (Stormfront Studios / Electronic Arts, 1999, SLUS-00964) and porting it natively to the PC, using tools written for the job in Rust. No game data included."
 
 [docs]
 dir   = "docs"

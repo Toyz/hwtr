@@ -10,7 +10,7 @@ pub mod cpu;
 pub mod gte;
 pub mod machine;
 
-pub use bus::Bus;
+pub use bus::{Bus, Device};
 pub use cpu::{Cpu, Fault};
 pub use gte::Gte;
 pub use machine::Machine;
