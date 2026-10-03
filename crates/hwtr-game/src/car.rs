@@ -3,7 +3,7 @@
 //! it each frame and dispatches on the state byte at +0x891.
 //!
 //! Offsets are named as their use is understood; see
-//! `docs/physics/car-object.md`.
+//! `docs/engine/car-object.md`.
 
 use crate::math::{Tables, apply_matrix_lv, div_fx, dot, fx};
 use crate::ram::Ram;
