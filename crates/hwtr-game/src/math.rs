@@ -83,3 +83,37 @@ impl Tables {
         self.cos(x.wrapping_sub(6434))
     }
 }
+
+/// A rotation (or any) matrix, 4.12, rows as the GTE takes them.
+pub type Matrix = [[i16; 3]; 3];
+
+/// MVMVA's sum for one row with no translation: Σ m·v in 64 bits, shifted by
+/// `sf` and kept as the 32-bit MAC register keeps it.
+fn mac_row(row: &[i16; 3], v: [i16; 3], sf: u32) -> i32 {
+    let s: i64 = row.iter().zip(v).map(|(&m, x)| m as i64 * x as i64).sum();
+    (s >> sf) as i32
+}
+
+/// libgte's ApplyMatrixLV, 0x800a2ba8: `m · v` for a 32-bit vector, done on
+/// the GTE as `m · lo >> 12 + (m · hi) · 8` with each component split into
+/// its magnitude's top bits (`|x| >> 15`) and bottom 15 bits, signs kept.
+/// The top part passes through a 16-bit IR register, so for |x| >= 2^30 it
+/// wraps, as on the console.
+pub fn apply_matrix_lv(m: &Matrix, v: [i32; 3]) -> [i32; 3] {
+    let split = |x: i32| -> (i16, i16) {
+        let mag = x.unsigned_abs();
+        let (hi, lo) = ((mag >> 15) as i32, (mag & 0x7fff) as i32);
+        if x < 0 { ((-hi) as i16, (-lo) as i16) } else { (hi as i16, lo as i16) }
+    };
+    let parts = v.map(split);
+    let hi = [parts[0].0, parts[1].0, parts[2].0];
+    let lo = [parts[0].1, parts[1].1, parts[2].1];
+    let mut out = [0i32; 3];
+    for i in 0..3 {
+        let h = mac_row(&m[i], hi, 0);
+        // The high product, scaled by 8 through its magnitude.
+        let h8 = if h < 0 { (h.wrapping_neg() << 3).wrapping_neg() } else { h << 3 };
+        out[i] = mac_row(&m[i], lo, 12).wrapping_add(h8);
+    }
+    out
+}

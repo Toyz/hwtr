@@ -45,3 +45,31 @@ fn length_matches_the_original() {
         assert_eq!(t.length(v), want, "length({v:?})");
     }
 }
+
+#[test]
+fn apply_matrix_lv_matches_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let mut m = Machine::with_exe(&exe);
+    let mut rng = common::Rng(0x5eed_0f_ab1e);
+    let (mat_at, v_at, out_at) = (0x8018_0000, 0x8018_0040, 0x8018_0080);
+    for _ in 0..20_000 {
+        let mut mat = [[0i16; 3]; 3];
+        for row in &mut mat {
+            for x in row.iter_mut() {
+                *x = rng.next() as i16;
+            }
+        }
+        let bits = rng.below(32);
+        let v = [0; 3].map(|_: i32| (rng.next() as i32) >> (31 - bits.min(31)));
+        // A MATRIX is nine halfwords and a pad, then the translation.
+        for (k, x) in mat.iter().flatten().enumerate() {
+            m.bus.write(mat_at + 2 * k as u32, 2, *x as u16 as u32);
+        }
+        for (k, x) in v.iter().enumerate() {
+            m.bus.write_u32(v_at + 4 * k as u32, *x as u32);
+        }
+        m.call(0x800a_2ba8, &[mat_at, v_at, out_at]).unwrap();
+        let want = [0, 1, 2].map(|k| m.bus.read_u32(out_at + 4 * k) as i32);
+        assert_eq!(hwtr_game::math::apply_matrix_lv(&mat, v), want, "{mat:?} {v:?}");
+    }
+}
