@@ -361,9 +361,16 @@ impl Collision {
         rand: &mut Rand,
         k: usize,
     ) {
-        tracing::trace!("a player's rumble (0x8005fed0): not yet ported");
         self.pair_sound(t, cars, rand, k);
-        self.pair_crashes(t, cars, rand, k);
+        // Each side, a player's car's pad jolted (0x8005fed0), then the
+        // crash check (0x8007e000).
+        let p = self.pairs[k];
+        for (side, other) in [(p.a, p.b), (p.b, p.a)] {
+            if self.objects[side].car.is_some() {
+                self.pair_jolt(t, side, other, tuning, cars);
+                self.crash(t, side, other, cars, rand);
+            }
+        }
         // A steel car's object hits without moving (32), a rubber car's
         // throws the other off (64); both of a kind cancel out.
         let p = self.pairs[k];
@@ -407,6 +414,47 @@ impl Collision {
         if let Some(hit) = crash_hit(t, slot, sub(vel(ca), vel(cb)), rand) {
             self.hits.push(hit);
         }
+    }
+
+    /// 0x8005fed0: a player's car meeting `other` jolts its pad. A prop it
+    /// knocks or one that lifts it gives a set jolt (TUNING +0x30, +0x31);
+    /// unless it is a heavy prop (weight over 10000) and the car is not
+    /// all-terrain, then, as for anything else, the jolt goes by how fast
+    /// they meet (as a wall's), at most every twenty frames.
+    pub fn pair_jolt(
+        &mut self,
+        t: &Tables,
+        side: ObjectId,
+        other: ObjectId,
+        tuning: &crate::car::Tuning,
+        cars: &[Car],
+    ) {
+        let Some(slot) = self.objects[side].car else { return };
+        let Some(car) = cars.get(slot as usize) else { return };
+        if car.flags & 1 == 0 {
+            return;
+        }
+        let o = &self.objects[other];
+        let armoured = car.all_terrain || car.handling.all_terrain;
+        let heavy = o.flags & 2 != 0 && o.heft > 10000;
+        if (!heavy || armoured) && o.flags & 6 != 0 {
+            let level = if o.flags & 2 != 0 { tuning.knock_jolt } else { tuning.lift_jolt };
+            self.jolts.push((slot, level));
+            return;
+        }
+        let Some(wait) = self.jolt_wait.get_mut(slot as usize) else { return };
+        if *wait != 0 {
+            return;
+        }
+        let theirs = o.car.and_then(|s| cars.get(s as usize)).map_or([0; 3], |c| c.body.vel);
+        let speed = t.length(sub(car.body.vel, theirs));
+        if speed <= 0 {
+            return;
+        }
+        let q = (speed / 2304).min(4096);
+        let level = (fx(0xf_f000, q) >> 12).clamp(0, 255) as u8;
+        self.jolts.push((slot, level));
+        *wait = 20;
     }
 
     /// Pair `k`'s crash checks, either side.

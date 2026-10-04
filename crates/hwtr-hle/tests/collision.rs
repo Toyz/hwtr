@@ -519,3 +519,127 @@ fn pairs_match_the_original() {
     eprintln!("pairs {pairs}, cached axes {cached}, wrecks {wrecks}, rounds ended by debris {debris}");
     assert!(pairs > 50, "pairs {pairs}");
 }
+
+/// The pad's jolt (iface_controls+0x28, as the running game fills it),
+/// hooked: (car slot, level) for each call.
+fn hook_jolts(m: &mut hwtr_cpu::Machine) -> std::rc::Rc<std::cell::RefCell<Vec<(u8, u8)>>> {
+    let at = m.bus.read_u32(0x8012_fcdc + 0x28);
+    let log: std::rc::Rc<std::cell::RefCell<Vec<(u8, u8)>>> = Default::default();
+    let l = log.clone();
+    m.hook(at, move |cpu, _| {
+        l.borrow_mut().push((cpu.r[4] as u8, cpu.r[5] as u8));
+        0
+    });
+    log
+}
+
+const JOLT_WAIT: u32 = 0x800d_0e2c;
+const SCRATCH: u32 = 0x801f_8000;
+
+/// A player's car striking a wall jolts its pad (0x8005fd4c): any speed,
+/// any wall, the wait from the last jolt anywhere.
+#[test]
+fn wall_jolts_match_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0x3a11_7017);
+    let (mut jolted, mut not) = (0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let log = hook_jolts(&mut m);
+        let start = m.bus.ram.clone();
+        for round in 0..500 {
+            m.bus.ram.copy_from_slice(&start);
+            log.borrow_mut().clear();
+            let (world, addrs) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+            let id = world.objects.iter().position(|o| o.car == Some(0)).expect("the player's object");
+            let normal = {
+                let t = hwtr_game::math::Tables::from_exe(&exe);
+                t.normalize([0; 3].map(|_| rng.below(8192) as i32 - 4096))
+            };
+            let mut ram = Ram(&mut m.bus.ram);
+            let mut car = Car::read(&ram, CARS);
+            car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (8 + rng.below(6)));
+            car.write(&mut ram, CARS);
+            let waits = [[0, 0], [0, 4], [3, 0], [10, 1]][rng.below(4) as usize];
+            ram.set_i32(JOLT_WAIT, waits[0]);
+            ram.set_i32(JOLT_WAIT + 4, waits[1]);
+            ram.set_i32(SCRATCH, addrs[id] as i32);
+            ram.set_vec3(SCRATCH + 20, normal);
+            let car = Car::read(&ram, CARS);
+            let (mut jolts, mut wait) = (Vec::new(), waits);
+            hwtr_game::collision::walls::wall_jolt(&mut jolts, &mut wait, 0, &car, normal);
+            m.call(0x8005_fd4c, &[SCRATCH]).unwrap();
+            let ram = Ram(&mut m.bus.ram);
+            let what = format!("{name} round {round}: vel {:?} into {normal:?}", car.body.vel);
+            assert_eq!(*log.borrow(), jolts, "{what}: jolts");
+            assert_eq!([ram.i32(JOLT_WAIT), ram.i32(JOLT_WAIT + 4)], wait, "{what}: waits");
+            if jolts.is_empty() { not += 1 } else { jolted += 1 }
+        }
+    }
+    assert!(jolted > 200 && not > 200, "{jolted} jolted, {not} not");
+}
+
+/// A player's car meeting another object jolts its pad (0x8005fed0): any
+/// object of the race, made knockable, lifting, heavy or not, the car
+/// all-terrain or not, any speeds, any tuning, any wait.
+#[test]
+fn pair_jolts_match_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let t = hwtr_game::math::Tables::from_exe(&exe);
+    let mut rng = common::Rng(0x9a12_7017);
+    let (mut set, mut by_speed, mut none) = (0, 0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let log = hook_jolts(&mut m);
+        let start = m.bus.ram.clone();
+        for round in 0..800 {
+            m.bus.ram.copy_from_slice(&start);
+            log.borrow_mut().clear();
+            let (world, addrs) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+            let side = world.objects.iter().position(|o| o.car == Some(0)).expect("the player's object");
+            let other = loop {
+                let k = rng.below(world.objects.len() as u32) as usize;
+                if k != side {
+                    break k;
+                }
+            };
+            let mut ram = Ram(&mut m.bus.ram);
+            let o = addrs[other];
+            let flags = ram.i32(o + 4) & !6 | [0, 2, 4, 6][rng.below(4) as usize];
+            ram.set_i32(o + 4, flags);
+            ram.set_i32(o + 0x8c, [0, 9000, 10000, 10001, 30000][rng.below(5) as usize]);
+            let cars = ram.i32(CAR_COUNT) as u32;
+            for k in 0..cars {
+                let mut c = Car::read(&ram, CARS + k * CAR_SIZE);
+                c.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (8 + rng.below(6)));
+                c.all_terrain = rng.below(4) == 0;
+                c.write(&mut ram, CARS + k * CAR_SIZE);
+            }
+            let h = CARS + 0x6b4;
+            ram.set_u8(h, ram.u8(h) & !1 | rng.below(4).min(1) as u8 * (rng.below(3) == 0) as u8);
+            ram.set_u8(0x8013_6a48, rng.below(256) as u8);
+            ram.set_u8(0x8013_6a49, rng.below(256) as u8);
+            let waits = [[0, 0], [0, 4], [7, 0], [20, 1]][rng.below(4) as usize];
+            ram.set_i32(JOLT_WAIT, waits[0]);
+            ram.set_i32(JOLT_WAIT + 4, waits[1]);
+            ram.set_i32(SCRATCH, addrs[side] as i32);
+            ram.set_i32(SCRATCH + 4, o as i32);
+            let tuning =
+                hwtr_game::car::Tuning::from_prm(&(0..256).map(|k| ram.u8(0x8013_6a18 + k)).collect::<Vec<_>>());
+            let (mut world, _) = hwtr_hle::original::world::collision(&ram);
+            let cars_now = cars_from(&mut m.bus.ram);
+            world.pair_jolt(&t, side, other, &tuning, &cars_now);
+            m.call(0x8005_fed0, &[SCRATCH, 0]).unwrap();
+            let ram = Ram(&mut m.bus.ram);
+            let what = format!("{name} round {round}: other {:?} flags {flags:#x}", world.objects[other].kind);
+            assert_eq!(*log.borrow(), world.jolts, "{what}: jolts");
+            assert_eq!([ram.i32(JOLT_WAIT), ram.i32(JOLT_WAIT + 4)], world.jolt_wait, "{what}: waits");
+            match (world.jolts.len(), world.jolt_wait != waits) {
+                (0, _) => none += 1,
+                (_, true) => by_speed += 1,
+                _ => set += 1,
+            }
+        }
+    }
+    assert!(set > 200 && by_speed > 200 && none > 100, "{set} set, {by_speed} by speed, {none} none");
+}

@@ -2,8 +2,8 @@
 title: Controls and the pad
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8001bec0 controls_frame, 0x8001bf1c, 0x8001c998, 0x8001cee4 controls_read_analog, 0x8001d9ec curve, 0x8001b170 action_level, 0x8011b2b8 action_levels, 0x8001d320 controls_init, 0x8001c344 controls_read_port, 0x8001c480, 0x8001cee4, 0x8001abe8 controls_action_held, 0x8011b388 pad_buffer, 0x8011b3d8 control_mapping, 0x800bdc08 control_mapping_default, interface table 0x8012fcdc
-worklog: 11
+covers: US CCCPSX.EXE:0x8001bec0 controls_frame, 0x8001bf1c, 0x8001c998, 0x8001cee4 controls_read_analog, 0x8001d9ec curve, 0x8001b170 action_level, 0x8011b2b8 action_levels, 0x8001d320 controls_init, 0x8001c344 controls_read_port, 0x8001c480, 0x8001cee4, 0x8001abe8 controls_action_held, 0x8011b388 pad_buffer, 0x8011b3d8 control_mapping, 0x800bdc08 control_mapping_default, interface table 0x8012fcdc, 0x8001b7b4 motors_road, 0x8001b934 motors_jolt, 0x8001ccc4 motors_fade, 0x8005fba8 race_controls_frame, 0x8005fd4c wall_jolt, 0x8005fed0 pair_jolt, 0x800d0e2c jolt_wait
+worklog: 11, 63
 ---
 
 # Controls and the pad
@@ -114,9 +114,43 @@ more than steering (its I, II and L buttons are analog), so a neGcon
 presentation could carry the DualSense's analog triggers; which actions use
 them is in 0x8001cee4.
 
+## Vibration
+
+The controls screen's "Vibration" line (the mapping's last word) turns the
+DualShock's motors on or off. Each port keeps its two actuator bytes
+(0x8011b2b8 +0x18, +0x19): the small motor on or off and the large one's
+power. Five things drive them:
+
+- **The road's feel (0x8001b7b4, from 0x8005fba8 each frame while
+  racing).** Rough ground at more than a crawl runs the large motor.
+- **A jolt (0x8001b934, iface_controls+0x28) of a level.** The large motor
+  runs at 2.5 times the level, and from 110 the small motor too, for half a
+  second.
+  - A player's wreck jolts at TUNING +0x32.
+  - A wall jolts by the speed into it (0x8005fd4c): `-(vel . normal) /
+    2304 * 255 / 4096`, at most 255. It comes at the step's first contact,
+    then not again for 10 frames.
+  - Another object jolts (0x8005fed0):
+    - A prop it knocks over gives TUNING +0x30, and one that lifts it +0x31.
+    - The exception is a heavy prop (knockable, weight over 10000) meeting
+      a car that is not all-terrain (car +0x865 or the handling's flag
+      1). That, and anything else, jolts by the speed between the two, as
+      a wall does, capped at 4096 before the scaling, then not again for
+      20 frames.
+  - The wait is per player (0x800d0e2c), counted down at the top of
+    0x8005fba8 each frame.
+- **The wind-down (0x8001ccc4, at each read of the pad).** The large motor
+  steps down every 8 ms, and the small one stops after half a second.
+
+`hwtr_game::pad::Motors` holds the motors.
+
+- The collision queues the contact jolts (`Collision::jolts`, with
+  `jolt_wait`), and the race applies them.
+- Tests: `wall_jolts_match_the_original` and
+  `pair_jolts_match_the_original` (tests/collision.rs) call 0x8005fd4c and
+  0x8005fed0 with the jolt hooked.
+
 ## Unknown
 
 - The meaning of actions 9 to 12 and 13 to 27 (menus).
 - The neGcon (0x23) path's analog buttons.
-- Vibration: the option string "Vibration" (0x800cf428, used by 0x80094164)
-  shows the game drives the DualShock motors; the code path is untraced.

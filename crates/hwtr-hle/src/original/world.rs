@@ -14,6 +14,8 @@ use hwtr_game::laps::Course;
 pub const HUSHED: u32 = 0x800d_2623;
 /// The race's options (collision_load copies the setup's +0x1c).
 pub const OPTIONS: u32 = 0x800d_2678;
+/// Each player's wait before its next contact jolt (0x8005fd4c).
+pub const JOLT_WAIT: u32 = 0x800d_0e2c;
 pub const SCP: u32 = 0x800d_2658;
 pub const ALL: u32 = 0x800d_265c;
 pub const MOVING: u32 = 0x800d_2660;
@@ -108,6 +110,8 @@ pub fn collision(ram: &Ram) -> (Collision, Vec<u32>) {
             triggers_hit: Vec::new(),
             hushed: ram.u8(HUSHED) == 1,
             options: ram.i32(OPTIONS) as u32,
+            jolts: Vec::new(),
+            jolt_wait: [ram.i32(JOLT_WAIT), ram.i32(JOLT_WAIT + 4)],
             knocked: Vec::new(),
             pairs: (0..ram.i16(PAIR_COUNT) as u16 as u32)
                 .map(|k| {

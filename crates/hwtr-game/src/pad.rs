@@ -130,7 +130,8 @@ const STICK_UP: usize = 7;
 
 impl PadReader {
     /// 0x8001bec0: one frame's read of `pad`, `elapsed_ms` since the last.
-    /// (The vibration timers it also runs are not yet ported.)
+    /// (Its vibration timers, 0x8001ccc4, are [`Motors::fade`], which the
+    /// caller runs with it.)
     pub fn read(&mut self, pad: &PadState, map: &Mapping, elapsed_ms: u32) {
         self.read_held(pad, map);
         match pad.kind {

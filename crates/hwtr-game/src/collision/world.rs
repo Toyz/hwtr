@@ -51,6 +51,11 @@ pub struct Collision {
     /// The race's sounds are shut (set when the race ends, by 0x800364cc):
     /// no hit is heard, and none draws its random number.
     pub hushed: bool,
+    /// The pad jolts this step asked for, by car slot and level
+    /// (iface_controls+0x28), and each player's wait before its next
+    /// contact jolt, in frames (0x800d0e2c).
+    pub jolts: Vec<(u8, u8)>,
+    pub jolt_wait: [i32; 2],
     /// The race's options, its cheats (0x800d2678, collision_load from the
     /// setup's +0x1c): 0x80 shows the players' headlights everywhere.
     pub options: u32,

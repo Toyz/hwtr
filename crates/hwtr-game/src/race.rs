@@ -725,6 +725,14 @@ impl Race {
                 if self.collision.players_touched {
                     self.snapshots.take(self.time, &self.cars, &self.cameras, None);
                 }
+                // The pad jolts the collision asked for (0x8005fd4c,
+                // 0x8005fed0, through iface_controls+0x28).
+                for (slot, level) in std::mem::take(&mut self.collision.jolts) {
+                    let port = slot as usize;
+                    if let Some(m) = self.motors.get_mut(port) {
+                        m.jolt(self.vibration[port], level, self.clock);
+                    }
+                }
                 // 0x8004619c: a player's wreck shakes its camera for 250
                 // ms (0x8003bebc), jolts the pad of its port and sounds
                 // 29; then any wreck stops its engine and sounds where it
@@ -988,6 +996,12 @@ impl Race {
     /// its car (0x80045ff4): the average roughness of the surfaces its
     /// wheels touch (0x800bea7c), and its speed.
     fn rumble(&mut self) {
+        // First each player's wait before its next contact jolt runs down.
+        for w in &mut self.collision.jolt_wait {
+            if *w != 0 {
+                *w -= 1;
+            }
+        }
         if self.phase != Phase::Racing {
             return;
         }

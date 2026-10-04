@@ -59,7 +59,8 @@ impl Collision {
     /// sliding against the surface's friction ([`contact_friction`]); the
     /// object remembers the step and the point. The step's first contact is
     /// heard ([`super::world::Hit::Track`]) and a player's throws a spark.
-    /// The rumble is not yet ported.
+    /// A player's car's first contact of the step jolts its pad
+    /// ([`Collision::wall_jolt`]).
     pub fn contact_impulses(&mut self, t: &Tables, cars: &mut [Car], step: &mut Step) {
         for c in self.contacts.clone() {
             let obj = &mut self.objects[c.object];
@@ -80,6 +81,9 @@ impl Collision {
             if obj.kind == Kind::PlayerCar && !was_wrecked {
                 if first {
                     car.contact_timers(step.clock);
+                    if car.flags & 1 != 0 {
+                        wall_jolt(&mut self.jolts, &mut self.jolt_wait, slot, car, c.normal);
+                    }
                 }
                 if car.hard_impact(c.normal) {
                     car.wreck(false, step.rand);
@@ -230,4 +234,21 @@ impl Collision {
         }
         body.pos = add(body.pos, n.map(|c| fx(c, depth)));
     }
+}
+
+/// 0x8005fd4c: a player's car striking a wall jolts its pad by how
+/// fast it goes into it (the speed over 2304, times 255, over 4096; at
+/// most 255), unless it jolted in the last ten frames.
+pub fn wall_jolt(jolts: &mut Vec<(u8, u8)>, waits: &mut [i32; 2], slot: u8, car: &Car, normal: Vec3) {
+    let Some(wait) = waits.get_mut(slot as usize) else { return };
+    if *wait != 0 {
+        return;
+    }
+    let into = (0..3).fold(0i32, |s, i| s.wrapping_add(fx(car.body.vel[i], normal[i]))).wrapping_neg();
+    if into <= 0 {
+        return;
+    }
+    let level = (fx(0xf_f000, into / 2304) >> 12).clamp(0, 255) as u8;
+    jolts.push((slot, level));
+    *wait = 10;
 }

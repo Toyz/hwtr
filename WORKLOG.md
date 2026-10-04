@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-62 entries: audio 8, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 5, format 7, input 8, physics 11, race 10, render 17, test 14, tooling 13, ui 10, video 1.
+63 entries: audio 8, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 5, format 7, input 9, physics 11, race 10, render 17, test 14, tooling 13, ui 10, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -74,3 +74,4 @@ The [reference](docs/README.md) says what is true now.
 | 60 | [Wreck sounds and camera shake; pause and race end silence the cars](worklog/0060-wreck-sounds-and-camera-shake-pause-and-race-end-silence.md) | 2026-10-04 | audio |
 | 61 | [A boost's end puts the boost flame out](worklog/0061-a-boost-s-end-puts-the-boost-flame-out.md) | 2026-10-04 | engine |
 | 62 | [The track's own sounds: sources, spots, knocks and trigger loops](worklog/0062-the-track-s-own-sounds-sources-spots-knocks-and-trigger.md) | 2026-10-04 | audio |
+| 63 | [Pad jolts from walls and other objects](worklog/0063-pad-jolts-from-walls-and-other-objects.md) | 2026-10-04 | input |

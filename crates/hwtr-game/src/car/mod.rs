@@ -234,6 +234,10 @@ pub struct Tuning {
     /// How hard a player's wreck jolts the pad's motors (TUNING +0x32,
     /// 0x8001b934).
     pub wreck_jolt: u8,
+    /// How hard meeting a knockable prop and a lifting one jolt a player's
+    /// pad (TUNING +0x30, +0x31, 0x8005fed0).
+    pub knock_jolt: u8,
+    pub lift_jolt: u8,
 }
 
 /// Where TUNING.PRM keeps each setting.
@@ -279,6 +283,8 @@ impl Tuning {
             ai: crate::ai::AiTuning::from_prm(&at),
             pair_bounce: [at(42), at(43), at(44), at(45)],
             wreck_jolt: at(0x32),
+            knock_jolt: at(0x30),
+            lift_jolt: at(0x31),
         }
     }
 
