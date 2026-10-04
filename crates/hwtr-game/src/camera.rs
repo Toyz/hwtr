@@ -179,7 +179,8 @@ impl Camera {
             Some(ViewMode::Other(3)) => self.spot_track(t, world.spots, car),
             // Mode 4 (0x8003abe4) does nothing.
             Some(ViewMode::Other(4)) => {}
-            other => tracing::trace!("camera mode {other:?}: not yet ported"),
+            // The original's table (0x800ce0f4) has these five modes only.
+            other => tracing::trace!("camera mode {other:?}: none"),
         }
         if dt_ms < self.shake {
             for k in 0..3 {

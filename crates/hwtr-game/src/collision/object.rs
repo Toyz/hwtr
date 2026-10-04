@@ -44,7 +44,8 @@ pub enum Kind {
     PlayerCar,
     /// 4: a computer car.
     ComputerCar,
-    /// Others, not yet ported.
+    /// The rest by their byte: a world volume 0, 1 (its flag 16) or 2 (its
+    /// flag 8); 5 a pickup; 6 a flying wheel.
     Other(u8),
 }
 
