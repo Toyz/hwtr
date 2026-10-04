@@ -7,7 +7,10 @@
 //! `docs/engine/car-object.md`; where the original keeps all this is in
 //! [`layout`].
 
+pub mod handling;
 pub mod layout;
+
+pub use handling::{Axle, EngineSpec, Handling};
 
 use crate::body::Body;
 use crate::math::{Tables, Vec3, add, apply_matrix_lv, column, cross, div, div_fx, dot, fx, sub};
@@ -32,8 +35,12 @@ const DRAGGING_SURFACE: u8 = 6;
 /// what they mean.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Wheel {
-    /// Mount point, body space.
+    /// Mount point, body space, and the word after it (two halfwords, from
+    /// the handling).
     pub mount: Vec3,
+    pub mount_pad: i32,
+    /// From the handling; meaning not yet known.
+    pub unknown_10: i32,
     pub diameter: i32,
     /// [`Wheel::REAR`], [`Wheel::STEERS`], [`Wheel::DRIVEN`].
     pub flags: u8,
@@ -83,21 +90,6 @@ impl Wheel {
     pub fn is_slipping(&self) -> bool {
         self.slip != 0
     }
-}
-
-/// What differs between the front axle and the rear.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Axle {
-    /// How many wheels are on it.
-    pub wheels: u8,
-    /// Tyre grip.
-    pub grip: i32,
-    /// Suspension damping in compression and in rebound.
-    pub damp_in: i32,
-    pub damp_out: i32,
-    /// Downforce coefficient and factor.
-    pub downforce: i32,
-    pub downforce_scale: i32,
 }
 
 /// The engine and gearbox. Speeds of rotation are revolutions a minute.
@@ -225,8 +217,13 @@ fn divdi3(a: i64, b: i64) -> i64 {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Car {
-    /// Bits 7, 8 and 9 choose a [`TuningSet`].
+    /// The car's place in the race's car array.
+    pub slot: u8,
+    /// Bit 0: player one's, bit 1: player two's; bits 7, 8 and 9 choose a
+    /// [`TuningSet`].
     pub flags: i32,
+    /// Which player drives it.
+    pub player: u8,
     /// Steering angle, radians; negative steers right.
     pub steer: i32,
     /// Pedals, 0 to 1. The brake is the throttle in reverse.
@@ -245,26 +242,25 @@ pub struct Car {
     pub grounded: u8,
     pub grounded_level: u8,
     pub engine: Engine,
-    pub mass: i32,
-    /// The centre of gravity forward and up, as fractions of half the length
-    /// and half the height.
-    pub cg_along: i32,
-    pub cg_up: i32,
-    /// Braking force per unit weight, and the front axle's share.
-    pub brake_grip: i32,
-    pub brake_bias: i32,
-    pub drag: i32,
-    pub front: Axle,
-    pub rear: Axle,
-    /// The point wheel mounts are measured from.
+    /// How many wheels are on the front axle, and on the rear.
+    pub front_wheels: u8,
+    pub rear_wheels: u8,
+    /// The handling, from the car's CWH.
+    pub handling: Handling,
+    /// The point wheel mounts are measured from (the handling's, scaled for
+    /// the race).
     pub origin: Vec3,
+    pub origin_pad: i32,
     pub width: i32,
     pub length: i32,
     pub height: i32,
-    pub air_power: AirPower,
-    /// Bit 0 of the first, or the second non-zero: the dragging surface does
-    /// not drag. Meanings not yet known.
-    pub unknown_6b4: i32,
+    pub size_pad: i32,
+    /// Each spring's force with the car at rest: its weight over its wheels.
+    pub spring_preload: i32,
+    /// How far each axle's springs extend: preload over stiffness, front and
+    /// rear.
+    pub extension: [i32; 2],
+    /// Non-zero: the dragging surface does not drag. Meaning not yet known.
     pub unknown_865: u8,
     /// Non-zero while the stick is turning the car in the air.
     pub air_control: u8,
@@ -279,7 +275,7 @@ impl Car {
     pub const ARMED_ACROSS: u8 = 2;
 
     fn axle(&self, rear: bool) -> &Axle {
-        if rear { &self.rear } else { &self.front }
+        self.handling.axle(rear)
     }
 
     fn handbrake_on(&self) -> bool {
@@ -419,7 +415,7 @@ impl Car {
         let feet = fx(speed, twelfth);
         let pressure = |v: i32| div(fx(HALF, fx(AIR, fx(v, v))), 1000).0;
         let area = fx(fx(self.width, twelfth), fx(self.height, twelfth));
-        let drag = fx(pressure(feet), fx(area, self.drag));
+        let drag = fx(pressure(feet), fx(area, self.handling.drag));
         let q = if self.grounded != 0 {
             let mph = div_fx(176 << 12, 10 << 12);
             let bonus = fx((tuning.downforce_mph as i32) << 12, mph);
@@ -428,7 +424,7 @@ impl Car {
             pressure(feet)
         };
         let on = |axle: &Axle| fx(q, fx(axle.downforce_scale, axle.downforce));
-        let mut down = Downforce { front: on(&self.front), rear: on(&self.rear) };
+        let mut down = Downforce { front: on(&self.handling.front), rear: on(&self.handling.rear) };
         if let Some(set) = tuning.for_flags(self.flags) {
             down.front = fx(down.front, percent(set.downforce_front));
             down.rear = fx(down.rear, percent(set.downforce_rear));
@@ -448,11 +444,12 @@ impl Car {
         self.drivetrain(t);
         let down = self.aero(tuning);
         let share = Downforce {
-            front: div_fx(down.front, (self.front.wheels as i32) << 12),
-            rear: div_fx(down.rear, (self.rear.wheels as i32) << 12),
+            front: div_fx(down.front, (self.front_wheels as i32) << 12),
+            rear: div_fx(down.rear, (self.rear_wheels as i32) << 12),
         };
         let rot = self.body.rot;
-        let offset = [0, fx(self.cg_along, fx(self.length, HALF)), fx(self.cg_up, fx(self.height, HALF))];
+        let offset =
+            [0, fx(self.handling.cg_along, fx(self.length, HALF)), fx(self.handling.cg_up, fx(self.height, HALF))];
         let cg = rot.map(|row| (0..3).fold(0i32, |s, k| s.wrapping_add(fx(row[k] as i32, offset[k]))));
         for i in 0..self.wheels.len() {
             let wheel = &self.wheels[i];
@@ -501,7 +498,7 @@ impl Car {
         } else {
             sub(across, heading.map(|c| fx(c, dot(across, heading))))
         };
-        let per_wheel = fx(8 << 12, div_fx(self.mass, (self.wheels.len() as i32) << 12));
+        let per_wheel = fx(8 << 12, div_fx(self.handling.mass, (self.wheels.len() as i32) << 12));
         let mut f = slide.map(|c| fx(c.wrapping_neg(), per_wheel));
         let brake = self.brake_force(rear);
         f = add(f, heading.map(|c| fx(c, brake)));
@@ -522,9 +519,9 @@ impl Car {
             tangent = tangent.map(|c| fx(c, scale));
         }
         let mut force = add(normal, tangent);
-        if wheel.surface == DRAGGING_SURFACE && self.unknown_865 == 0 && self.unknown_6b4 & 1 == 0 {
+        if wheel.surface == DRAGGING_SURFACE && self.unknown_865 == 0 && self.handling.unknown_78 & 1 == 0 {
             let (pct, k) = (percent(tuning.surface_drag), div_fx(4 << 12, 10 << 12));
-            let x = cv.map(|c| fx(fx(fx(c, self.mass.wrapping_neg()), pct), k));
+            let x = cv.map(|c| fx(fx(fx(c, self.handling.mass.wrapping_neg()), pct), k));
             force = add(force, sub(x, n.map(|c| fx(c, dot(n, x)))));
         }
         (force, slipping)
@@ -534,14 +531,14 @@ impl Car {
     /// pedal and the axle's share, halved (and the rear's halved again with
     /// six wheels); against the motion, so positive in reverse.
     fn brake_force(&self, rear: bool) -> i32 {
-        let mut brake = fx(fx(fx(self.mass, G), self.brake_grip), self.braking());
+        let mut brake = fx(fx(fx(self.handling.mass, G), self.handling.brake_grip), self.braking());
         if rear {
-            brake = fx(brake, ONE.wrapping_sub(self.brake_bias));
+            brake = fx(brake, ONE.wrapping_sub(self.handling.brake_bias));
             if self.wheels.len() == 6 {
                 brake = fx(brake, HALF);
             }
         } else {
-            brake = fx(brake, self.brake_bias);
+            brake = fx(brake, self.handling.brake_bias);
         }
         brake = fx(brake, HALF);
         if self.engine.in_reverse() { brake } else { brake.wrapping_neg() }
@@ -571,9 +568,9 @@ impl Car {
     /// grip plus the set's tenths.
     fn grip(&self, rear: bool, tuning: &Tuning) -> i32 {
         match (rear, tuning.for_flags(self.flags)) {
-            (true, _) => self.rear.grip,
-            (false, None) => self.front.grip,
-            (false, Some(set)) => self.rear.grip.wrapping_add(div_fx((set.grip_front as i32) << 12, 10 << 12)),
+            (true, _) => self.handling.rear.grip,
+            (false, None) => self.handling.front.grip,
+            (false, Some(set)) => self.handling.rear.grip.wrapping_add(div_fx((set.grip_front as i32) << 12, 10 << 12)),
         }
     }
 
@@ -662,11 +659,11 @@ impl Car {
         let (w2, l2, h2) = (square(self.width), square(self.length), square(self.height));
         let (r, y, p) = (roll.wrapping_abs(), yaw.wrapping_abs(), pitch.wrapping_abs());
         let (axis, push, arm) = if y < r && p < r {
-            (1, scale(col(0), w2.wrapping_add(h2)), scale(col(2), force(self.air_power.roll, roll)))
+            (1, scale(col(0), w2.wrapping_add(h2)), scale(col(2), force(self.handling.air_power.roll, roll)))
         } else if r < y && p < y {
-            (2, scale(col(0), w2.wrapping_add(l2)), scale(col(1), force(self.air_power.yaw, yaw)))
+            (2, scale(col(0), w2.wrapping_add(l2)), scale(col(1), force(self.handling.air_power.yaw, yaw)))
         } else if r < p && y < p {
-            (0, scale(col(2), l2.wrapping_add(h2)), scale(col(1), force(self.air_power.pitch, pitch)))
+            (0, scale(col(2), l2.wrapping_add(h2)), scale(col(1), force(self.handling.air_power.pitch, pitch)))
         } else {
             return;
         };

@@ -6,7 +6,8 @@
 //! never sees it. Tests and the reference's shadow checks use it to hold the
 //! port to the original byte for byte.
 
-use super::{AirPower, AxisLock, Axle, Car, Engine, Tuning, TuningSet, Wheel};
+use super::handling::{BLOCK_A, Handling};
+use super::{AxisLock, Car, Engine, Tuning, TuningSet, Wheel};
 use crate::body::{self, Body};
 use crate::ram::Ram;
 
@@ -16,7 +17,9 @@ pub const CAR_COUNT: u32 = 0x800d_263c;
 /// The update state: 2 full physics, 1 and 0 simpler updates.
 pub const STATE: u32 = 0x891;
 
+pub const SLOT: u32 = 0x0;
 pub const FLAGS: u32 = 0x4;
+pub const PLAYER: u32 = 0xc;
 pub const STEER: u32 = 0x10;
 pub const ACCEL: u32 = 0x14;
 pub const BRAKE: u32 = 0x18;
@@ -41,6 +44,8 @@ pub const REAR_WHEELS: u32 = 0x54a;
 pub const GROUNDED: u32 = 0x54b;
 pub const GROUNDED_LEVEL: u32 = 0x54c;
 pub const ENGINE: u32 = 0x550;
+/// CWH block A, the handling, from here to +0x770.
+pub const HANDLING: u32 = 0x63c;
 pub const MASS: u32 = 0x644;
 pub const CG_ALONG: u32 = 0x648;
 pub const CG_UP: u32 = 0x64c;
@@ -65,6 +70,8 @@ pub const ORIGIN: u32 = 0x770;
 pub const WIDTH: u32 = 0x780;
 pub const LENGTH: u32 = 0x784;
 pub const HEIGHT: u32 = 0x788;
+pub const SPRING_PRELOAD: u32 = 0x790;
+pub const EXTENSION: u32 = 0x794;
 pub const UNKNOWN_865: u32 = 0x865;
 pub const AIR_CONTROL: u32 = 0x86a;
 pub const AIR_ARMED: u32 = 0x86b;
@@ -79,6 +86,8 @@ pub const TUNING: u32 = 0x8013_6a18;
 /// Offsets within a wheel.
 pub mod wheel {
     pub const MOUNT: u32 = 0x00;
+    pub const MOUNT_PAD: u32 = 0x0c;
+    pub const UNKNOWN_10: u32 = 0x10;
     pub const DIAMETER: u32 = 0x14;
     pub const FLAGS: u32 = 0x18;
     pub const HEADING: u32 = 0x1c;
@@ -127,6 +136,8 @@ impl Wheel {
         use wheel::*;
         Wheel {
             mount: ram.vec3(w + MOUNT),
+            mount_pad: ram.i32(w + MOUNT_PAD),
+            unknown_10: ram.i32(w + UNKNOWN_10),
             diameter: ram.i32(w + DIAMETER),
             flags: ram.u8(w + FLAGS),
             heading: ram.vec3(w + HEADING),
@@ -146,6 +157,8 @@ impl Wheel {
     pub fn write(&self, ram: &mut Ram, w: u32) {
         use wheel::*;
         ram.set_vec3(w + MOUNT, self.mount);
+        ram.set_i32(w + MOUNT_PAD, self.mount_pad);
+        ram.set_i32(w + UNKNOWN_10, self.unknown_10);
         ram.set_i32(w + DIAMETER, self.diameter);
         ram.set_u8(w + FLAGS, self.flags);
         ram.set_vec3(w + HEADING, self.heading);
@@ -221,34 +234,15 @@ impl Tuning {
     }
 }
 
-fn read_axle(ram: &Ram, at: u32, rear: bool) -> Axle {
-    let pick = |front: u32, back: u32| at + if rear { back } else { front };
-    Axle {
-        wheels: ram.u8(pick(FRONT_WHEELS, REAR_WHEELS)),
-        grip: ram.i32(pick(GRIP_FRONT, GRIP_REAR)),
-        damp_in: ram.i32(pick(DAMP_FRONT_IN, DAMP_REAR_IN)),
-        damp_out: ram.i32(pick(DAMP_FRONT_OUT, DAMP_REAR_OUT)),
-        downforce: ram.i32(pick(DOWNFORCE_FRONT, DOWNFORCE_REAR)),
-        downforce_scale: ram.i32(pick(DOWNFORCE_FRONT_SCALE, DOWNFORCE_REAR_SCALE)),
-    }
-}
-
-fn write_axle(axle: &Axle, ram: &mut Ram, at: u32, rear: bool) {
-    let pick = |front: u32, back: u32| at + if rear { back } else { front };
-    ram.set_u8(pick(FRONT_WHEELS, REAR_WHEELS), axle.wheels);
-    ram.set_i32(pick(GRIP_FRONT, GRIP_REAR), axle.grip);
-    ram.set_i32(pick(DAMP_FRONT_IN, DAMP_REAR_IN), axle.damp_in);
-    ram.set_i32(pick(DAMP_FRONT_OUT, DAMP_REAR_OUT), axle.damp_out);
-    ram.set_i32(pick(DOWNFORCE_FRONT, DOWNFORCE_REAR), axle.downforce);
-    ram.set_i32(pick(DOWNFORCE_FRONT_SCALE, DOWNFORCE_REAR_SCALE), axle.downforce_scale);
-}
-
 impl Car {
     /// The car record at `at`.
     pub fn read(ram: &Ram, at: u32) -> Car {
         let wheels = (0..ram.u8(at + WHEEL_COUNT) as u32).map(|i| Wheel::read(ram, at + WHEELS + i * WHEEL_SIZE));
+        let handling: [u8; BLOCK_A] = std::array::from_fn(|k| ram.u8(at + HANDLING + k as u32));
         Car {
+            slot: ram.u8(at + SLOT),
             flags: ram.i32(at + FLAGS),
+            player: ram.u8(at + PLAYER),
             steer: ram.i32(at + STEER),
             accel: ram.i32(at + ACCEL),
             brake: ram.i32(at + BRAKE),
@@ -260,24 +254,17 @@ impl Car {
             grounded: ram.u8(at + GROUNDED),
             grounded_level: ram.u8(at + GROUNDED_LEVEL),
             engine: Engine::read(ram, at + ENGINE),
-            mass: ram.i32(at + MASS),
-            cg_along: ram.i32(at + CG_ALONG),
-            cg_up: ram.i32(at + CG_UP),
-            brake_grip: ram.i32(at + BRAKE_GRIP),
-            brake_bias: ram.i32(at + BRAKE_BIAS),
-            drag: ram.i32(at + DRAG),
-            front: read_axle(ram, at, false),
-            rear: read_axle(ram, at, true),
+            front_wheels: ram.u8(at + FRONT_WHEELS),
+            rear_wheels: ram.u8(at + REAR_WHEELS),
+            handling: Handling::from_bytes(&handling),
             origin: ram.vec3(at + ORIGIN),
+            origin_pad: ram.i32(at + ORIGIN + 12),
             width: ram.i32(at + WIDTH),
             length: ram.i32(at + LENGTH),
             height: ram.i32(at + HEIGHT),
-            air_power: AirPower {
-                pitch: ram.i32(at + AIR_PITCH),
-                roll: ram.i32(at + AIR_ROLL),
-                yaw: ram.i32(at + AIR_YAW),
-            },
-            unknown_6b4: ram.i32(at + UNKNOWN_6B4),
+            size_pad: ram.i32(at + HEIGHT + 4),
+            spring_preload: ram.i32(at + SPRING_PRELOAD),
+            extension: [ram.i32(at + EXTENSION), ram.i32(at + EXTENSION + 4)],
             unknown_865: ram.u8(at + UNKNOWN_865),
             air_control: ram.u8(at + AIR_CONTROL),
             air_armed: ram.u8(at + AIR_ARMED),
@@ -291,7 +278,9 @@ impl Car {
 
     /// Writes the car back over the record at `at`.
     pub fn write(&self, ram: &mut Ram, at: u32) {
+        ram.set_u8(at + SLOT, self.slot);
         ram.set_i32(at + FLAGS, self.flags);
+        ram.set_u8(at + PLAYER, self.player);
         ram.set_i32(at + STEER, self.steer);
         ram.set_i32(at + ACCEL, self.accel);
         ram.set_i32(at + BRAKE, self.brake);
@@ -307,22 +296,20 @@ impl Car {
         ram.set_u8(at + GROUNDED, self.grounded);
         ram.set_u8(at + GROUNDED_LEVEL, self.grounded_level);
         self.engine.write(ram, at + ENGINE);
-        ram.set_i32(at + MASS, self.mass);
-        ram.set_i32(at + CG_ALONG, self.cg_along);
-        ram.set_i32(at + CG_UP, self.cg_up);
-        ram.set_i32(at + BRAKE_GRIP, self.brake_grip);
-        ram.set_i32(at + BRAKE_BIAS, self.brake_bias);
-        ram.set_i32(at + DRAG, self.drag);
-        write_axle(&self.front, ram, at, false);
-        write_axle(&self.rear, ram, at, true);
+        ram.set_u8(at + FRONT_WHEELS, self.front_wheels);
+        ram.set_u8(at + REAR_WHEELS, self.rear_wheels);
+        for (k, b) in self.handling.to_bytes().iter().enumerate() {
+            ram.set_u8(at + HANDLING + k as u32, *b);
+        }
         ram.set_vec3(at + ORIGIN, self.origin);
+        ram.set_i32(at + ORIGIN + 12, self.origin_pad);
         ram.set_i32(at + WIDTH, self.width);
         ram.set_i32(at + LENGTH, self.length);
         ram.set_i32(at + HEIGHT, self.height);
-        ram.set_i32(at + AIR_PITCH, self.air_power.pitch);
-        ram.set_i32(at + AIR_ROLL, self.air_power.roll);
-        ram.set_i32(at + AIR_YAW, self.air_power.yaw);
-        ram.set_i32(at + UNKNOWN_6B4, self.unknown_6b4);
+        ram.set_i32(at + HEIGHT + 4, self.size_pad);
+        ram.set_i32(at + SPRING_PRELOAD, self.spring_preload);
+        ram.set_i32(at + EXTENSION, self.extension[0]);
+        ram.set_i32(at + EXTENSION + 4, self.extension[1]);
         ram.set_u8(at + UNKNOWN_865, self.unknown_865);
         ram.set_u8(at + AIR_CONTROL, self.air_control);
         ram.set_u8(at + AIR_ARMED, self.air_armed);
