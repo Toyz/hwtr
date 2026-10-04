@@ -174,7 +174,7 @@ impl Renderer {
                 entry_point: Some("vs"),
                 compilation_options: Default::default(),
                 buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Vtx>() as u64,
+                    array_stride: Vtx::SIZE as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &attrs,
                 })],
@@ -205,7 +205,7 @@ impl Renderer {
         });
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("triangles"),
-            contents: Vtx::bytes(tris),
+            contents: &Vtx::bytes(tris),
             usage: wgpu::BufferUsages::VERTEX,
         });
         Renderer {
@@ -234,7 +234,7 @@ impl Renderer {
             self.moving = Some((buffer, 0));
         }
         if let Some((buffer, count)) = &mut self.moving {
-            queue.write_buffer(buffer, 0, bytes);
+            queue.write_buffer(buffer, 0, &bytes);
             *count = tris.len() as u32;
         }
     }

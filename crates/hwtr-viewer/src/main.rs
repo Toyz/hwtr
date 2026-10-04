@@ -11,6 +11,8 @@
 //! pad the left stick moves and the right stick turns. `--shot` renders one
 //! frame offscreen and writes it as PNG.
 
+#![forbid(unsafe_code)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;

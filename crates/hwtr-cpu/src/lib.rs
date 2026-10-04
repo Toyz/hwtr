@@ -5,6 +5,8 @@
 //! and leaves memory and registers for the test to compare with what the
 //! Rust port computes from the same inputs.
 
+#![forbid(unsafe_code)]
+
 pub mod bus;
 pub mod cpu;
 pub mod gte;

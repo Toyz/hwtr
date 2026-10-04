@@ -10,6 +10,8 @@
 //!
 //! Writes the displayed picture every N frames (and VRAM at the end) as PNG.
 
+#![forbid(unsafe_code)]
+
 use std::path::PathBuf;
 use std::rc::Rc;
 

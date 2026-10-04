@@ -5,6 +5,8 @@
 //! sync, header and CD-XA subheader; [`Sector`] exposes them. The file system on
 //! the data track is ISO 9660 with the CD-XA extension ([`iso`]).
 
+#![forbid(unsafe_code)]
+
 pub mod cue;
 pub mod iso;
 

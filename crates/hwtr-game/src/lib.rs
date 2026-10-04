@@ -5,10 +5,13 @@
 //! the original functions in `hwtr-cpu` and hold the port to the same
 //! results.
 
+#![forbid(unsafe_code)]
+
 pub mod body;
 pub mod car;
 pub mod collision;
 pub mod fsm;
 pub mod math;
+pub mod pad;
 pub mod race;
 pub mod ram;

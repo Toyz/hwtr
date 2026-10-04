@@ -5,6 +5,8 @@
 //! sticks as bytes, 0x80 at rest. [`Input`] fills it every frame from the
 //! first connected gamepad and from the keyboard.
 
+#![forbid(unsafe_code)]
+
 use gilrs::{Axis, Button, Gilrs};
 
 /// Button bits as the PlayStation pad reports them (after inversion).
@@ -30,6 +32,9 @@ pub mod buttons {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Pad {
     pub buttons: u16,
+    /// A DualShock in analog mode (its ANALOG light on) rather than a
+    /// digital pad.
+    pub analog: bool,
     /// Left stick x, y and right stick x, y: 0 left/up, 0x80 centre, 0xff right/down.
     pub lx: u8,
     pub ly: u8,
@@ -39,7 +44,7 @@ pub struct Pad {
 
 impl Default for Pad {
     fn default() -> Pad {
-        Pad { buttons: 0, lx: 0x80, ly: 0x80, rx: 0x80, ry: 0x80 }
+        Pad { buttons: 0, analog: false, lx: 0x80, ly: 0x80, rx: 0x80, ry: 0x80 }
     }
 }
 
@@ -90,6 +95,9 @@ pub struct Input {
     active: Option<gilrs::GamepadId>,
     rumble: Option<Rumble>,
     pub keyboard: Keyboard,
+    /// The gamepad's analog mode, which its PS button toggles as the
+    /// DualShock's ANALOG button does. On to start with.
+    pub analog: bool,
 }
 
 impl Input {
@@ -101,7 +109,7 @@ impl Input {
             .build()
             .map_err(|e| tracing::warn!("no gamepad support: {e}"))
             .ok();
-        Input { gilrs, active: None, rumble: None, keyboard: Keyboard::default() }
+        Input { gilrs, active: None, rumble: None, keyboard: Keyboard::default(), analog: true }
     }
 
     /// Whether a gamepad is connected (so the pad is an analog one).
@@ -123,6 +131,10 @@ impl Input {
         let Some(g) = self.gilrs.as_mut() else { return pad };
         while let Some(ev) = g.next_event() {
             self.active = Some(ev.id);
+            if let gilrs::EventType::ButtonPressed(Button::Mode, _) = ev.event {
+                self.analog = !self.analog;
+                tracing::info!("pad: analog mode {}", if self.analog { "on" } else { "off" });
+            }
         }
         let id = self.active.filter(|id| g.connected_gamepad(*id).is_some()).or_else(|| {
             let first = g.gamepads().find(|(_, p)| p.is_connected()).map(|(id, _)| id);
@@ -135,6 +147,7 @@ impl Input {
                 pad.buttons |= bit;
             }
         }
+        pad.analog = self.analog;
         pad.lx = axis_byte(p.value(Axis::LeftStickX), false);
         pad.ly = axis_byte(p.value(Axis::LeftStickY), true);
         pad.rx = axis_byte(p.value(Axis::RightStickX), false);

@@ -1,5 +1,7 @@
 //! hwtr-re: the reverse engineering toolbox for Hot Wheels Turbo Racing.
 
+#![forbid(unsafe_code)]
+
 mod docs;
 
 use std::io::Write as _;

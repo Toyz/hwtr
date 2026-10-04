@@ -20,6 +20,8 @@
 //! `--shot` renders that race offscreen as PNG and exits, after `--steps`
 //! race steps (25 ms each) with the accelerator held.
 
+#![forbid(unsafe_code)]
+
 mod present;
 mod race;
 

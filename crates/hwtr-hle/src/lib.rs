@@ -15,6 +15,8 @@
 //! 0x800a38cc  VSync(int mode)          one call = one frame; the run halts there
 //! ```
 
+#![forbid(unsafe_code)]
+
 pub mod gpu;
 pub mod hw;
 pub mod port;

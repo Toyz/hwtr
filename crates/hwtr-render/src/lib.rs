@@ -2,6 +2,8 @@
 //! disc's data, drawn with wgpu, textured through a copy of VRAM with the
 //! PlayStation's texture pages and CLUTs.
 
+#![forbid(unsafe_code)]
+
 pub mod mesh;
 pub mod renderer;
 pub mod scene;

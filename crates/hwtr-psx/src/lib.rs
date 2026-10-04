@@ -1,6 +1,8 @@
 //! What the PlayStation side of the reverse engineering needs to know: the
 //! executable format and the R3000A instruction set with the GTE's commands.
 
+#![forbid(unsafe_code)]
+
 pub mod analysis;
 pub mod decomp;
 pub mod exe;

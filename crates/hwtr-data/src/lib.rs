@@ -1,5 +1,7 @@
 //! Readers for Hot Wheels Turbo Racing's data files.
 
+#![forbid(unsafe_code)]
+
 pub mod big;
 pub mod car;
 pub mod png;

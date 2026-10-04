@@ -15,6 +15,8 @@
 //! lockstep STATE FRAMES [--replace] [--press F:BUTTONS[:LEN],...] [--stick F:LX,LY[:LEN];...] [--analog]
 //! ```
 
+#![forbid(unsafe_code)]
+
 use std::rc::Rc;
 
 use hwtr_game::car::layout::{CAR_SIZE, CARS};

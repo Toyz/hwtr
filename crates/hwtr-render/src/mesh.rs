@@ -33,7 +33,6 @@ impl Vram {
 }
 
 /// One vertex as the shader takes it.
-#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct Vtx {
     pub pos: [f32; 3],
@@ -46,9 +45,22 @@ pub struct Vtx {
 }
 
 impl Vtx {
-    pub fn bytes(v: &[Vtx]) -> &[u8] {
-        // SAFETY: Vtx is repr(C), plain old data, 24 bytes with no padding.
-        unsafe { std::slice::from_raw_parts(v.as_ptr().cast(), std::mem::size_of_val(v)) }
+    /// The size of one vertex in the vertex buffer.
+    pub const SIZE: usize = 24;
+
+    /// Vertices as the vertex buffer holds them: each field little-endian,
+    /// in order, matching the layout the pipeline declares.
+    pub fn bytes(v: &[Vtx]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(v.len() * Self::SIZE);
+        for x in v {
+            for p in x.pos {
+                out.extend_from_slice(&p.to_le_bytes());
+            }
+            for w in [x.colour, x.uv, x.mode] {
+                out.extend_from_slice(&w.to_le_bytes());
+            }
+        }
+        out
     }
 }
 
