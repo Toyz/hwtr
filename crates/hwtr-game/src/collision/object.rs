@@ -139,7 +139,7 @@ pub mod layout {
             let (local, points, zones_at) =
                 (ram.i32(o + LOCAL) as u32, ram.i32(o + POINTS) as u32, ram.i32(o + POINT_ZONES) as u32);
             let car_at = ram.i32(o + CAR) as u32;
-            let car = (car_at >= CARS && car_at < CARS + 8 * CAR_SIZE).then(|| ((car_at - CARS) / CAR_SIZE) as u8);
+            let car = (CARS..CARS + 8 * CAR_SIZE).contains(&car_at).then(|| ((car_at - CARS) / CAR_SIZE) as u8);
             let list = read_list(ram, o + ZONES);
             CollisionObject {
                 kind: Kind::from_byte(ram.u8(o + KIND)),

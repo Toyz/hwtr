@@ -33,7 +33,7 @@ impl Collision {
                 continue;
             }
             let up = column(&car.body.rot, 2);
-            let radius = |car: &Car, k: usize| fx(car.wheels[k].diameter, 0x800);
+            let radii: Vec<i32> = car.wheels.iter().map(|w| fx(w.diameter, 0x800)).collect();
             let mut touch: Vec<Touch> = car
                 .wheels
                 .iter()
@@ -43,7 +43,6 @@ impl Collision {
                     surface: 0,
                 })
                 .collect();
-            let wheel_points = car.wheels.len().min(obj.points.len());
             // Road zones.
             for zone_id in obj.zones.iter() {
                 let zone = self.scp.zones[zone_id as usize];
@@ -54,22 +53,20 @@ impl Collision {
                 let ends = &self.scp.planes[zone.first_plane as usize..zone.first_plane as usize + 2];
                 let first = zone.param as usize;
                 let (near, far) = (self.scp.sections[first], self.scp.sections[first + 1]);
-                for k in 0..wheel_points {
-                    if obj.point_zones[k] != zone_id {
+                let wheels = obj.points.iter().zip(&obj.point_zones).zip(touch.iter_mut()).zip(&radii);
+                for (((&point, &in_zone), touch), &radius) in wheels {
+                    if in_zone != zone_id {
                         continue;
                     }
-                    let p = sub(obj.points[k], origin);
-                    let Some((n, dist)) = road_surface(t, p, ends[0].distance(p), ends[1].distance(p), &near, &far)
-                    else {
-                        continue;
-                    };
+                    let p = sub(point, origin);
+                    let (n, dist) = road_surface(t, p, ends[0].distance(p), ends[1].distance(p), &near, &far);
                     let facing = dot(up, n);
                     if facing <= div_fx(0x9000, 0xa000) {
                         continue;
                     }
-                    let depth = div_fx(dist.wrapping_sub(radius(car, k)), facing).wrapping_neg();
-                    if touch[k].depth < depth {
-                        touch[k] = Touch { depth, normal: n, surface: zone.surface };
+                    let depth = div_fx(dist.wrapping_sub(radius), facing).wrapping_neg();
+                    if touch.depth < depth {
+                        *touch = Touch { depth, normal: n, surface: zone.surface };
                     }
                 }
             }
@@ -86,18 +83,19 @@ impl Collision {
                         continue;
                     }
                     let n = plane.normal();
-                    for k in 0..wheel_points {
-                        if obj.point_zones[k] != zone_id {
+                    let wheels = obj.points.iter().zip(&obj.point_zones).zip(touch.iter_mut()).zip(&radii);
+                    for (((&point, &in_zone), touch), &radius) in wheels {
+                        if in_zone != zone_id {
                             continue;
                         }
-                        let d = plane.distance(sub(obj.points[k], origin));
+                        let d = plane.distance(sub(point, origin));
                         let facing = dot(up, n);
                         if facing <= 0x1000 - div_fx(0x1000, 0xa000) {
                             continue;
                         }
-                        let depth = div_fx(d.wrapping_sub(radius(car, k)), facing).wrapping_neg();
-                        if touch[k].depth < depth {
-                            touch[k] = Touch { depth, normal: n, surface: plane.kind };
+                        let depth = div_fx(d.wrapping_sub(radius), facing).wrapping_neg();
+                        if touch.depth < depth {
+                            *touch = Touch { depth, normal: n, surface: plane.kind };
                         }
                     }
                 }
@@ -134,7 +132,7 @@ impl Collision {
 /// the point's place across it; the surface's normal (the cross product of
 /// the across and along directions, the across one scaled down a hundred
 /// times first) and the point's height above it.
-fn road_surface(t: &Tables, p: Vec3, a: i32, b: i32, near: &Section, far: &Section) -> Option<(Vec3, i32)> {
+fn road_surface(t: &Tables, p: Vec3, a: i32, b: i32, near: &Section, far: &Section) -> (Vec3, i32) {
     let along_t = div_fx(b, a.wrapping_add(b));
     let mix = |x: Vec3, y: Vec3, k: i32| [0, 1, 2].map(|i| fx(x[i], k).wrapping_add(fx(y[i], 0x1000 - k)));
     let (p0, p1) = (near.edges[0].pos(), near.edges[1].pos());
@@ -151,5 +149,5 @@ fn road_surface(t: &Tables, p: Vec3, a: i32, b: i32, near: &Section, far: &Secti
     let n = cross(across, along);
     let len = t.length(n);
     let n = n.map(|c| div_fx(c, len));
-    Some((n, dot(n, sub(p, left))))
+    (n, dot(n, sub(p, left)))
 }

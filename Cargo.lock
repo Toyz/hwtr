@@ -629,7 +629,9 @@ dependencies = [
  "glam",
  "hwtr-data",
  "hwtr-disc",
+ "hwtr-game",
  "hwtr-input",
+ "hwtr-psx",
  "hwtr-render",
  "pollster",
  "tracing",
@@ -659,6 +661,7 @@ version = "0.1.0"
 dependencies = [
  "hwtr-cpu",
  "hwtr-psx",
+ "tracing",
 ]
 
 [[package]]
