@@ -28,7 +28,12 @@ pub const MODELS: u32 = 0x8011_d3c0;
 
 /// Car `slot`'s full model, if loaded.
 pub fn model(ram: &Ram, slot: u32) -> u32 {
-    ram.i32(MODELS + 12 * slot) as u32
+    model_at(ram, slot, 0)
+}
+
+/// Car `slot`'s model at detail level `lod` (0 full, 1 medium, 2 low).
+pub fn model_at(ram: &Ram, slot: u32, lod: u32) -> u32 {
+    ram.i32(MODELS + 12 * slot + 4 * lod) as u32
 }
 const RECORD: u32 = 56;
 
@@ -160,7 +165,10 @@ pub fn read(ram: &Ram) -> Effects {
             continue;
         }
         let cvs = ram.i32(m + 16) as u32;
-        e.root_colour[slot] = ram.i32(ram.i32(m + 4) as u32 + 0x44) as u32 & 0xff_ffff;
+        for lod in 0..3 {
+            let root = ram.i32(model_at(ram, slot as u32, lod) + 4) as u32;
+            e.root_colour[slot][lod as usize] = ram.i32(root + 0x44) as u32 & 0xff_ffff;
+        }
         e.wrecked[slot] = ram.u8(cvs + 0x28) == 1;
         e.lift[slot] = ram.i32(cvs + 0x18);
         e.flames[slot] = hwtr_game::effects::Flame {
@@ -169,8 +177,33 @@ pub fn read(ram: &Ram) -> Effects {
             count: ram.u8(cvs + 0x1ec),
         };
         e.pulse[slot] = (ram.i32(0x8011_ec14 + 4 * slot as u32), ram.i32(0x8011_ebf4 + 4 * slot as u32) as u32);
+        e.lights[slot] = read_lights(ram, cvs);
     }
     e
+}
+
+/// A car's lights in its view state.
+pub fn read_lights(ram: &Ram, cvs: u32) -> hwtr_game::lights::Lights {
+    hwtr_game::lights::Lights {
+        body_target: ram.u8(cvs + 0x1e9),
+        lamp_target: ram.u8(cvs + 0x1ea),
+        lamp: ram.u8(cvs + 0x1eb),
+        fading: ram.u8(cvs + 0x1f1) != 0,
+        brake: ram.u8(cvs + 0x1f2) != 0,
+        headlights: ram.i32(cvs + 0x20) & 0x20 != 0,
+        glow: ram.i32(cvs + 0x130),
+    }
+}
+
+pub fn write_lights(ram: &mut Ram, cvs: u32, l: &hwtr_game::lights::Lights) {
+    ram.set_u8(cvs + 0x1e9, l.body_target);
+    ram.set_u8(cvs + 0x1ea, l.lamp_target);
+    ram.set_u8(cvs + 0x1eb, l.lamp);
+    ram.set_u8(cvs + 0x1f1, l.fading as u8);
+    ram.set_u8(cvs + 0x1f2, l.brake as u8);
+    let mask = ram.i32(cvs + 0x20) & !0x20;
+    ram.set_i32(cvs + 0x20, mask | if l.headlights { 0x20 } else { 0 });
+    ram.set_i32(cvs + 0x130, l.glow);
 }
 
 pub fn write(e: &Effects, ram: &mut Ram) {

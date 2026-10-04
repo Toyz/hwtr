@@ -304,6 +304,12 @@ pub struct Race {
     pub model_poses: Vec<crate::effects::CarPose>,
     pub drawn_at: Vec<crate::math::Vec3>,
     pub moved: Vec<i32>,
+    /// Each car's lamps (its FXP), and whether its tail lights were lit at
+    /// its last draw (0x80021f60 loads the palette each draw).
+    pub lamps: Vec<crate::lights::Lamps>,
+    pub tail_lights: Vec<Option<bool>>,
+    /// The detail level each car was last drawn at (car_get_model).
+    pub drawn_lod: Vec<usize>,
     /// The computer cars' drivers.
     pub ai: Ai,
     /// The race clock (0x800d0e34), 25 ms a step.
@@ -475,6 +481,9 @@ impl Race {
             model_poses: Vec::new(),
             drawn_at: Vec::new(),
             moved: Vec::new(),
+            lamps: Vec::new(),
+            tail_lights: Vec::new(),
+            drawn_lod: Vec::new(),
             ai,
             time: 0,
             clock: 0,
@@ -1119,6 +1128,14 @@ impl Race {
             self.model_poses = self.cars.iter().map(|c| c.pose()).collect();
             let eyes: Vec<_> = self.cameras.iter().map(|c| c.pos).collect();
             let shown = self.effects.car_pose(&mut self.cars, &eyes);
+            // 0x80049ecc's end for every car: its glows' strength by its
+            // revs and its lights' targets (0x8002bb0c).
+            for (slot, car) in self.cars.iter().enumerate().take(6) {
+                let wrecked = self.effects.wrecked[slot];
+                let lights = &mut self.effects.lights[slot];
+                lights.glow = crate::lights::glow_level(&car.engine, car.wrecked);
+                lights.aim(car.flags_8, car.flags & 1 != 0, wrecked);
+            }
             // 0x80049ecc's wheels: each near car's turn by the frame, and
             // their nodes but a wrecked car's (0x80020a14).
             self.wheel_poses.resize(self.cars.len(), None);
@@ -1143,22 +1160,25 @@ impl Race {
     /// The world draw's cars (0x8001ef24, for each view): each car shown
     /// and within 6777 units of the view's eye (squared distance under
     /// 5400² + 2²⁴, the model placed at the last frame's end) is drawn
-    /// (0x80022064): its shadow, its boost flame, and once wrecked the
+    /// (0x80022064): its shadow, its lamps (crate::lights: the exhaust
+    /// glows draw a random number each), its boost flame, once wrecked the
     /// smoke from its wheels, on frames that are not a multiple of four
     /// from every wheel when its model moved 10 units or more since its
     /// last draw (a player's car), else every seventh frame from wheels 0
-    /// and 3, drawn close enough for its full model (1350 units). (The
-    /// lamp glows, 0x80029fb0, which draw random numbers, are not ported:
-    /// no car seen so far has them.)
+    /// and 3, drawn close enough for its full model (1350 units), and its
+    /// tail lights' palette.
     fn draw_cars(&mut self, fps: i32, paused: bool, shown: &[bool]) -> Vec<crate::effects::EffectQuad> {
         const FAR: i32 = 5400 * 5400 + 0x100_0000;
         const FULL: i32 = 1350 * 1350;
+        const MEDIUM: i32 = 2700 * 2700;
         let mut quads = Vec::new();
         if self.model_poses.len() != self.cars.len() {
             self.model_poses = self.cars.iter().map(|c| c.pose()).collect();
         }
         self.drawn_at.resize(self.cars.len(), [0; 3]);
         self.moved.resize(self.cars.len(), 0);
+        self.tail_lights.resize(self.cars.len(), None);
+        self.drawn_lod.resize(self.cars.len(), 0);
         let eyes: Vec<crate::math::Vec3> = self.cameras.iter().map(|c| c.pos.map(|v| v >> 12)).collect();
         for eye in eyes {
             for slot in 0..self.cars.len().min(6) {
@@ -1174,6 +1194,16 @@ impl Race {
                 if d2 >= FAR {
                     continue;
                 }
+                // car_get_model: the full model to 1350 units, the medium
+                // to 2700, then the low.
+                let lod = if d2 <= FULL {
+                    0
+                } else if d2 <= MEDIUM {
+                    1
+                } else {
+                    2
+                };
+                self.drawn_lod[slot] = lod;
                 let car = &self.cars[slot];
                 if car.flags & 1 != 0 {
                     self.moved[slot] = self.tables.length(crate::math::sub(pose.at, self.drawn_at[slot]));
@@ -1205,8 +1235,32 @@ impl Race {
                         }
                     }
                 }
-                // 0x8002b05c: its boost flame.
+                // Its lamps: the glows (0x80029fb0), and while the
+                // headlights are up their beams (0x8002a81c) and the body's
+                // fade; the headlights' own fade (0x8002ad48).
                 let id = self.setup.cars.get(slot).map_or(0, |e| e.car_id);
+                let wrecked = self.effects.wrecked[slot];
+                if let Some(lamps) = self.lamps.get(slot) {
+                    use crate::lights::{Fade, beams, glows};
+                    let lights = self.effects.lights[slot];
+                    if !wrecked {
+                        let g = glows(&lights, lamps, id, &mut self.rand, &pose, paused || self.frozen);
+                        quads.extend(crate::lights::quads(&self.tables, &g, &pose, None));
+                    }
+                    if lights.lamp != 0 {
+                        if !wrecked {
+                            let b = beams(&lights, lamps, &pose);
+                            quads.extend(crate::lights::quads(&self.tables, &b, &pose, Some(lights.lamp)));
+                        }
+                        let colour = &mut self.effects.root_colour[slot][lod];
+                        self.effects.lights[slot].fade(Fade::Body, colour, wrecked, self.frozen);
+                    }
+                    if self.effects.lights[slot].fading {
+                        let colour = &mut self.effects.root_colour[slot][lod];
+                        self.effects.lights[slot].fade(Fade::Lamps, colour, wrecked, self.frozen);
+                    }
+                }
+                // 0x8002b05c: its boost flame.
                 let exhaust = self.tables.exhausts.get(id as usize).copied().unwrap_or_default();
                 quads.extend(self.effects.draw_flame(
                     &self.tables,
@@ -1227,9 +1281,21 @@ impl Race {
                     self.effects.wreck_smoke(&mut self.rand, fps, slot, &pose, &mounts, self.moved[slot]);
                 }
                 self.drawn_at[slot] = pose.at;
+                // 0x80021f60: its tail lights' palette.
+                self.tail_lights[slot] = Some(self.effects.lights[slot].brake);
             }
         }
         quads
+    }
+
+    /// Each car's lamps, from its FXP (fxp_parse, 0x80022cd0), and its
+    /// lights as they start (0x800291b4).
+    pub fn set_lamps(&mut self, lamps: Vec<crate::lights::Lamps>) {
+        for (slot, l) in lamps.iter().enumerate().take(6) {
+            let human = self.cars.get(slot).is_some_and(|c| c.flags & 1 != 0);
+            self.effects.lights[slot] = crate::lights::Lights::new(human, l);
+        }
+        self.lamps = lamps;
     }
 
     /// The track's moving objects, those a trigger zone names run only

@@ -315,18 +315,21 @@ pub struct Effects {
     /// The chunks' shared colour (the one quad 0x80126c8c they all draw
     /// through), which every chunk drawn fades.
     pub chunk_colour: [u8; 3],
-    /// Each car's model's colour (its root node's, +0x44: grey 0x808080,
-    /// 0x181818 when wrecked, pulsing while it boosts), whether its
+    /// Each car's models' colours by detail level (each root node's +0x44:
+    /// grey 0x808080; the full model's 0x181818 when wrecked and pulsing
+    /// while it boosts; the one drawn fading in the dark), whether its
     /// effects take it as wrecked (cvs +0x28), its boost flame, and the
     /// flame's colour pulse (0x8011ec14 phase, -1 off; 0x8011ebf4 when it
     /// last stepped, by the system clock).
-    pub root_colour: [u32; 6],
+    pub root_colour: [[u32; 3]; 6],
     pub wrecked: [bool; 6],
     /// Twice the last drawn wheel's lift (cvs +0x18, 0x80020a14), added to
     /// the boost flame's tip.
     pub lift: [i32; 6],
     pub flames: [Flame; 6],
     pub pulse: [(i32, u32); 6],
+    /// Each car's lights (crate::lights).
+    pub lights: [crate::lights::Lights; 6],
 }
 
 /// A car's boost flame (cvs +0x1f0 on, +0x24 the frame it began, +0x1ec
@@ -400,22 +403,23 @@ impl Effects {
             columns: [Column { frame: -1, ticks: 0xffff, ..Column::default() }; 5],
             flash: [0; 2],
             chunk_colour: [176; 3],
-            root_colour: [0x80_8080; 6],
+            root_colour: [[0x80_8080; 3]; 6],
             wrecked: [false; 6],
             lift: [0; 6],
             flames: [Flame::default(); 6],
             pulse: [(-1, 0); 6],
+            lights: [crate::lights::Lights::default(); 6],
         }
     }
 
     /// Whether car `slot`'s model is blackened.
     pub fn charred(&self, slot: usize) -> bool {
-        self.root_colour.get(slot) == Some(&0x18_1818)
+        self.root_colour.get(slot).is_some_and(|c| c[0] == 0x18_1818)
     }
 
     /// 0x8002e51c: car `slot`'s model blackened, or grey again.
     fn set_charred(&mut self, slot: u8, on: bool) {
-        if let Some(c) = self.root_colour.get_mut(slot as usize) {
+        if let Some([c, ..]) = self.root_colour.get_mut(slot as usize) {
             *c = if on { 0x18_1818 } else { 0x80_8080 };
         }
     }
@@ -440,7 +444,7 @@ impl Effects {
         }
         self.pulse[s].0 = -1;
         if !self.wrecked[s] {
-            self.root_colour[s] = 0x80_8080;
+            self.root_colour[s][0] = 0x80_8080;
         }
         self.wrecked[s] = false;
         self.flames[s].on = false;
@@ -468,7 +472,7 @@ impl Effects {
             ph = 31 - ph;
         }
         let c = ph * 8 + 128;
-        self.root_colour[slot] = c << 16 | c << 8 | c;
+        self.root_colour[slot][0] = c << 16 | c << 8 | c;
     }
 
     /// 0x8002b05c: car `slot`'s boost flame, for 97 frames from its start:

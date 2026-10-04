@@ -1,6 +1,6 @@
 ---
 title: The chase camera on loops
-status: complete
+status: solid
 discs: US
 covers: US CCCPSX.EXE:0x8005e984 loop_axes, 0x800369e4 camera_step
 worklog: 52

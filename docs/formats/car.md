@@ -3,7 +3,7 @@ title: Cars (BMF, CAR, SHD, CWH, FXP, DECALS)
 status: partial
 discs: US
 covers: US every <CAR>.BMF, <CAR>.CAR, <CAR>.SHD, <CAR>.TIM, DECALS.BMF, CWHS.BMF; US CCCPSX.EXE:0x80021b88 car_load_race, 0x800240d4 bmf_split, 0x80022b5c car_install_lod, 0x80023cb8 model_fixup, 0x80022064 car_draw, 0x80032d1c model_emit_gt4, 0x80021208 car_read_cwh, 0x80022cd0 fxp_parse, 0x8002388c decal_unpack, 0x80029478 car_draw_shadow
-worklog: 13
+worklog: 13, 58
 ---
 
 # Cars (BMF, CAR, SHD, CWH, FXP, DECALS)
@@ -101,10 +101,15 @@ the node colour) are POLY_GT4 (0x3C); unlit ones POLY_FT4 (0x2C).
 
 ```
 +0  u8 a (0-10), u8 b (1, 2, 4), u8 c, u8 0
-A[a]  40 bytes      exhausts (inferred)
-B[b]  48 bytes      headlights (inferred)
-C[b]  44 bytes      tail lights (inferred); only c are used
+A[a]  40 bytes      exhaust glows: s32[3]+pad place, s32[3]+pad stretch, 2 words
+B[b]  48 bytes      headlights: s32[3]+pad place, s32[3]+pad direction, 16 bytes
+C[b]  44 bytes      s32[3]+pad, s32[3]+pad, 3 words; only c are read, and never drawn
 ```
+
+fxp_parse (0x80022cd0) points the car's view state at the records (cvs
++0x30, +0x134, +0x168) and scales the places by the model's scale under
+two cheats. [The car's lights](../engine/car-lights.md) draws the glows and
+headlights.
 
 The part is exactly `4 + 40a + 92b` bytes on every car.
 
@@ -144,5 +149,5 @@ exactly 12288 pixels; CWHS.BMF's 41 parts are all CWH blocks.
 
 ## Unknown
 
-- The meaning of CWH's fields, FXP's records, face flags.
+- The meaning of CWH's fields, the FXP's C records, face flags.
 - How the half-scale car state relates to model scale.

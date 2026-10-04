@@ -19,6 +19,7 @@ pub mod front;
 pub mod fsm;
 pub mod hud;
 pub mod laps;
+pub mod lights;
 pub mod line;
 pub mod math;
 pub mod pad;

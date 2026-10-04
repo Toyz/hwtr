@@ -1,6 +1,6 @@
 ---
 title: The stunt announcement
-status: complete
+status: solid
 discs: US
 covers: US CCCPSX.EXE:0x80064dec stunt_announce, 0x80064724 stunt_text, 0x80063c70 slide_left, 0x80063e5c slide_right, 0x80064d44 text_width, 0x80080d6c stunt_name, 0x800bead0 hud_player, 0x800bf114 stunt_names
 worklog: 50

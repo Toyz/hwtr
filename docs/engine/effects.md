@@ -234,13 +234,16 @@ anything else on this page.
   first measures how far the model moved since its last draw (cvs +0x1c,
   from cvs +0x0). Then it draws:
   - the shadow
-  - the lamp glows
-  - the lights
+  - the exhaust glows
+  - the headlights, and the body's and headlights' fades
   - the boost flame
+  - the tail lights' palette
   - the wheels
   - a wreck's smoke
 
-  It ends by keeping the model's place in cvs +0x0.
+  It ends by keeping the model's place in cvs +0x0. The glows draw a
+  random number for each glow with strength (above half revs) unless
+  paused; [the car's lights](car-lights.md) has them and the rest.
 - **The model.** The distance picks the model: the full model (with its
   wheels) to 1350 units, then the medium model to 2700, then the low.
 - **A wreck's smoke.** With the full model, a wrecked car (cvs +0x28 =
@@ -255,11 +258,6 @@ anything else on this page.
 
 ## Unknown
 
-- The lamp glows (0x80029fb0), which draw a random number per lamp: they
-  run only for a car whose cvs +0x28 is 0. That byte is 2 to 10 on every
-  car seen so far (1 marks a wreck).
-- The lights (0x8002a81c, 0x8002ad48) and 0x80021f60, which draw no
-  random numbers.
 - The wreck flash's POLY_F4 blend mode; the flash is kept but not drawn.
 - The camera-space units of the billboard translation: the draw adds the
   record's acceleration x and y to it.

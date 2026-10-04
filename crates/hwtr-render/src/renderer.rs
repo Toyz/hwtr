@@ -99,6 +99,8 @@ fn fs_semi(i: Out) -> @location(0) vec4f {
 
 pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
+    /// VRAM as the shader reads it.
+    vram: wgpu::Texture,
     group: wgpu::BindGroup,
     camera: wgpu::Buffer,
     /// The HUD over the world, in the screen's pixels, replaced each frame
@@ -260,6 +262,7 @@ impl Renderer {
         });
         Renderer {
             pipeline,
+            vram: vram_tex,
             group,
             camera,
             overlay_pipeline,
@@ -281,6 +284,23 @@ impl Renderer {
             clear: [0, 0, 0],
             screen: SCREEN,
         }
+    }
+
+    /// Replaces VRAM along one row from (`x`, `y`) with `words` (a
+    /// LoadImage of one line, as for a palette).
+    pub fn load_vram(&self, queue: &wgpu::Queue, x: u16, y: u16, words: &[u16]) {
+        let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.vram,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: x as u32, y: y as u32, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &bytes,
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(bytes.len() as u32), rows_per_image: None },
+            wgpu::Extent3d { width: words.len() as u32, height: 1, depth_or_array_layers: 1 },
+        );
     }
 
     /// The triangles that move, drawn after the fixed ones until replaced.

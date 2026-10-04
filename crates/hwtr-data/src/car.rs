@@ -200,6 +200,28 @@ pub fn fxp_counts(b: &[u8]) -> Result<(u8, u8, u8)> {
     Ok((a, bb, c))
 }
 
+/// An FXP's lamps (fxp_parse, 0x80022cd0): each A record (40 bytes) a glow
+/// behind the exhaust, its place and the way it stretches (an s32 vector
+/// at +0 and +16); each B record (48 bytes) a headlight, its place and its
+/// beam's direction (+0, +16). The C records are not read here.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Fxp {
+    pub glows: Vec<([i32; 3], [i32; 3])>,
+    pub headlights: Vec<([i32; 3], [i32; 3])>,
+}
+
+pub fn fxp(b: &[u8]) -> Result<Fxp> {
+    let (a, bb, _) = fxp_counts(b)?;
+    let vec = |at: usize| -> Result<[i32; 3]> {
+        Ok([u32_at(b, at)? as i32, u32_at(b, at + 4)? as i32, u32_at(b, at + 8)? as i32])
+    };
+    let glows = (0..a as usize).map(|k| Ok((vec(4 + 40 * k)?, vec(4 + 40 * k + 16)?))).collect::<Result<_>>()?;
+    let base = 4 + 40 * a as usize;
+    let headlights =
+        (0..bb as usize).map(|k| Ok((vec(base + 48 * k)?, vec(base + 48 * k + 16)?))).collect::<Result<_>>()?;
+    Ok(Fxp { glows, headlights })
+}
+
 /// Unpacks a DECALS.BMF part: u16 words, 0xffff then a count of zero pixels,
 /// anything else a pixel; 192 x 64 pixels.
 pub fn unpack_decal(b: &[u8]) -> Result<Vec<u16>> {

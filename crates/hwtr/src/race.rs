@@ -63,6 +63,10 @@ pub struct Race {
     scene: Scene,
     race: hwtr_game::race::Race,
     renderer: Option<(Renderer, wgpu::TextureFormat)>,
+    /// Each car's tail-light colours (its palette's first seven), and the
+    /// palettes to load before the next draw (slot, colours).
+    skins: Vec<[u16; 7]>,
+    palettes: Vec<(usize, [u16; 7])>,
     /// How far the race's clock runs ahead of the real one, milliseconds
     /// (race_frame, 0x80033ed8, steps while it is behind).
     ahead: i64,
@@ -365,10 +369,13 @@ impl Race {
         let scp = Scp::parse(get(&format!("{t}SCP"))?).ok_or("the SCP does not parse")?;
         let tuning = Tuning::from_prm(get("TUNINGPRM")?);
         let mut parts = Vec::new();
+        let mut lamps = Vec::new();
         for name in &cars {
             let bmf = get(&format!("{}BMF", name.to_uppercase()))?;
-            let cwh = hwtr_data::car::CarBmf::parse(bmf).map_err(|e| e.to_string())?.cwh;
-            parts.push(handling::parse_cwh(cwh).ok_or(format!("{name}'s CWH does not parse"))?);
+            let bmf = hwtr_data::car::CarBmf::parse(bmf).map_err(|e| e.to_string())?;
+            parts.push(handling::parse_cwh(bmf.cwh).ok_or(format!("{name}'s CWH does not parse"))?);
+            let fxp = hwtr_data::car::fxp(bmf.fxp).map_err(|e| format!("{name}'s FXP: {e}"))?;
+            lamps.push(hwtr_game::lights::Lamps { glows: fxp.glows, headlights: fxp.headlights });
         }
         let tables = Tables::from_exe(&exe);
         let mut fonts = Vec::new();
@@ -404,6 +411,12 @@ impl Race {
             (0..4u32).find(|&k| name(word(0x800c_5c24 + 4 * k)).eq_ignore_ascii_case(&setup.track)).unwrap_or(0)
         };
         let mut race = hwtr_game::race::Race::new(setup, scp, line, &parts, tables, tuning);
+        race.set_lamps(lamps);
+        // Each car's tail lights as its skin's palette has them (0x80021b88
+        // keeps its first seven colours), at (384, 464 + slot).
+        let skins = (0..race.cars.len())
+            .map(|slot| std::array::from_fn(|k| scene.vram.words[(464 + slot) * hwtr_render::mesh::VRAM_W + 384 + k]))
+            .collect();
         // 0x80067418: the pickups, each power-up they name loaded once
         // (`<name>.PUP`), and the track's two cars to unlock (the tables at
         // 0x800c5cd0 and 0x800c5cdc, by world and number).
@@ -592,6 +605,8 @@ impl Race {
             scene,
             race,
             renderer: None,
+            skins,
+            palettes: Vec::new(),
             ahead: 0,
             since_read: 0,
             carry_us: 0,
@@ -655,6 +670,17 @@ impl Race {
         self.race.sound_frame(ms);
         self.race.frame(buttons);
         self.effects = self.race.effects_frame(ms);
+        // 0x80021f60: each car drawn loads its tail lights' palette.
+        for (slot, lit) in self.race.tail_lights.iter().enumerate() {
+            if let (Some(lit), Some(skin)) = (lit, self.skins.get(slot)) {
+                let colours = hwtr_game::lights::tail_lights(skin, *lit);
+                let row = (464 + slot) * hwtr_render::mesh::VRAM_W + 384;
+                if self.scene.vram.words[row..row + 7] != colours {
+                    self.scene.vram.words[row..row + 7].copy_from_slice(&colours);
+                    self.palettes.push((slot, colours));
+                }
+            }
+        }
         self.count_ms += ms;
         while self.count_ms >= 33 {
             self.count_ms -= 33;
@@ -800,7 +826,10 @@ impl Race {
                 continue;
             }
             // A wrecked car's model is blackened (0x8002e51c).
-            let rgb = self.race.effects.root_colour.get(k).copied().unwrap_or(0x80_8080);
+            // The colour of the model it was last drawn with (only the
+            // full model is drawn here).
+            let lod = self.race.drawn_lod.get(k).copied().unwrap_or(0);
+            let rgb = self.race.effects.root_colour.get(k).map_or(0x80_8080, |c| c[lod]);
             // Each wheel steered, turned and lifted as last posed
             // (0x80020a14): at twice its record's mount, raised by twice
             // its lift.
@@ -862,6 +891,9 @@ impl Race {
         overlay.extend(self.count.map(|c| self.count_quad(&c)).unwrap_or_default());
         let mvp = camera_matrix(shown.eye, Mat3::from_quat(shown.look), shown.fov, size.0 as f32 / size.1 as f32);
         let (renderer, _) = self.renderer.as_mut().unwrap();
+        for (slot, colours) in self.palettes.drain(..) {
+            renderer.load_vram(queue, 384, 464 + slot as u16, &colours);
+        }
         renderer.set_moving(device, queue, &tris);
         let semi: Vec<_> = semi.into_iter().filter(|v| v.mode >> 31 == 1).collect();
         renderer.set_semi(device, queue, &semi);
