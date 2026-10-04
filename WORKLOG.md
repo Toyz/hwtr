@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-23 entries: audio 1, bug 1, build 2, content 5, decomp 6, design 2, disc 1, engine 3, format 7, input 4, physics 5, race 3, render 8, test 12, tooling 11.
+26 entries: audio 1, bug 1, build 2, content 5, decomp 6, design 2, disc 1, engine 3, format 7, input 7, physics 8, race 4, render 9, test 13, tooling 13, ui 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -35,3 +35,6 @@ The [reference](docs/README.md) says what is true now.
 | 21 | [Ports on native types; the original's layout only in codecs](worklog/0021-ports-on-native-types-the-original-s-layout-only-in-codecs.md) | 2026-10-03 | design, test |
 | 22 | [Air control, and testing it by dropping the car](worklog/0022-air-control-and-testing-it-by-dropping-the-car.md) | 2026-10-03 | physics, test, input |
 | 23 | [Cars built from the disc: the handling, the body, the grid](worklog/0023-cars-built-from-the-disc-the-handling-the-body-the-grid.md) | 2026-10-03 | physics, format, test |
+| 24 | [The track holds the car: collision, the pad, and racecheck](worklog/0024-the-track-holds-the-car-collision-the-pad-and-racecheck.md) | 2026-10-03 | physics, collision, input, test, tooling |
+| 25 | [A port, not an emulator; the camera; the race step's missing pieces](worklog/0025-a-port-not-an-emulator-the-camera-and-the-race-step-s-missing-pieces.md) | 2026-10-04 | architecture, physics, camera, input, tooling |
+| 26 | [A race from flyby to results; the HUD; fences](worklog/0026-a-race-from-flyby-to-results-the-hud-fences.md) | 2026-10-03 | race, ui, physics, render, input |
