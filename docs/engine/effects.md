@@ -3,7 +3,7 @@ title: The race's effects: puffs, skid marks, sparks
 status: partial
 discs: US
 covers: US CCCPSX.EXE:0x8002bdb4 effects_init, 0x8002c0dc pool_init, 0x8002c2b8 pool_alloc, 0x8002f354 particles_update, 0x8002f618 pool_draw, 0x8002b888 trails_emit, 0x80029230 trail_push, 0x800303cc skid_segment_spawn, 0x80030fc8 dust_puff_spawn, 0x8003119c spark_puff_spawn, 0x8002e9f8 collision_sparks, 0x8002c32c spark_spawn, 0x80049ecc car_pose, 0x80068540 view_setup, 0x800d25c0 0x800d25c8 0x800d25d0 0x800d25d8 pools, 0x8011ec2c trails, 0x800d0d98 fx_enable, 0x800d2578 fps, 0x800d0b68 frame_count
-worklog: 45, 46, 47
+worklog: 45, 46, 47, 56
 ---
 
 # The race's effects
@@ -221,10 +221,45 @@ The wreck's and the knock's random numbers are drawn where the original
 draws them: in `Car::wreck` and in the knock, as `WreckDraws` and
 `PropDraws`. The effects use them after the step.
 
+## The cars drawn, and a wreck's smoke
+
+For each view, the world draw (0x8001ef24) draws the cars before
+anything else on this page.
+
+- **Which cars.** Slots 0 to 5 in order. A car is drawn if it is shown
+  and the squared distance from the view's eye to its model is under
+  `5400² + 2²⁴`: about 6778 units, with 5400 returned by 0x800125f0. The
+  model is placed where car_set_pose left it at the last frame's end.
+- **The car draw (0x80022064).** For a player's car (cvs +0x1ee) it
+  first measures how far the model moved since its last draw (cvs +0x1c,
+  from cvs +0x0). Then it draws:
+  - the shadow
+  - the lamp glows
+  - the lights
+  - the boost flame
+  - the wheels
+  - a wreck's smoke
+
+  It ends by keeping the model's place in cvs +0x0.
+- **The model.** The distance picks the model: the full model (with its
+  wheels) to 1350 units, then the medium model to 2700, then the low.
+- **A wreck's smoke.** With the full model, a wrecked car (cvs +0x28 =
+  1) not in the frozen results (draw mode 3) puffs grey smoke (0x80030fc8
+  at frame 10, ground kind 0) from each wheel's mount, last wheel first:
+  - on every frame that is not a multiple of four, when the model moved
+    10 units or more
+  - otherwise on every seventh frame, from wheels 0 and 3 only
+
+  Each puff draws two random numbers, so a wreck changes the game's
+  sequence every few frames.
+
 ## Unknown
 
-- The exhaust puffs from car_draw (0x80022694) and the lamp glows
-  (0x80029fb0, which also draws random numbers) are not ported yet.
+- The lamp glows (0x80029fb0), which draw a random number per lamp: they
+  run only for a car whose cvs +0x28 is 0. That byte is 2 to 10 on every
+  car seen so far (1 marks a wreck).
+- The lights (0x8002a81c, 0x8002ad48) and 0x80021f60, which draw no
+  random numbers.
 - The wreck flash's POLY_F4 blend mode; the flash is kept but not drawn.
 - The camera-space units of the billboard translation: the draw adds the
   record's acceleration x and y to it.

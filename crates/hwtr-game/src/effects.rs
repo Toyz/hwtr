@@ -1103,6 +1103,25 @@ impl Effects {
         shown
     }
 
+    /// 0x80022064's smoke from a wrecked car `slot` drawn with its full
+    /// model at `pose`: from each wheel's mount (last first), on frames that
+    /// are not a multiple of four from every wheel when its model `moved`
+    /// 10 units or more since its last draw, else every seventh frame from
+    /// wheels 0 and 3: a puff of grey smoke at frame 10 (0x80030fc8).
+    pub fn wreck_smoke(&mut self, rand: &mut Rand, fps: i32, slot: usize, pose: &CarPose, mounts: &[Vec3], moved: i32) {
+        if !self.wrecked.get(slot).copied().unwrap_or(false) {
+            return;
+        }
+        let frame = self.frame_count;
+        let fast = moved >> 12 >= 10;
+        for k in (0..mounts.len()).rev() {
+            if (frame & 3 != 0 && fast) || (frame % 7 == 0 && !fast && (k == 0 || k == 3)) {
+                let at = crate::math::add(crate::math::apply_matrix_lv(&pose.rot, mounts[k]), pose.at);
+                self.dust(rand, fps, at, 10, 0, None);
+            }
+        }
+    }
+
     /// 0x8002f618 for each pool: the quads, `cam` the camera's axes (the
     /// puffs face it). Puffs fade 7 a frame (grey smoke 3 every third
     /// frame; all 21 below 22 frames a second) and die at nothing.

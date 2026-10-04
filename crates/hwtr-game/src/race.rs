@@ -298,6 +298,12 @@ pub struct Race {
     pub commentary: Commentary,
     /// Each car's wheels as last drawn (none until first near a camera).
     pub wheel_poses: Vec<Option<Vec<crate::car::draw::WheelPose>>>,
+    /// Each car's model as placed at the last frame's end (car_set_pose),
+    /// where its last draw put it (cvs +0x0), and how far its model moved
+    /// since (cvs +0x1c, for a player's car).
+    pub model_poses: Vec<crate::effects::CarPose>,
+    pub drawn_at: Vec<crate::math::Vec3>,
+    pub moved: Vec<i32>,
     /// The computer cars' drivers.
     pub ai: Ai,
     /// The race clock (0x800d0e34), 25 ms a step.
@@ -466,6 +472,9 @@ impl Race {
             dialog_bank,
             commentary: Commentary::default(),
             wheel_poses: Vec::new(),
+            model_poses: Vec::new(),
+            drawn_at: Vec::new(),
+            moved: Vec::new(),
             ai,
             time: 0,
             clock: 0,
@@ -1088,55 +1097,20 @@ impl Race {
     pub fn effects_frame(&mut self, frame_ms: u32) -> Vec<crate::effects::EffectQuad> {
         let paused = self.paused.is_some();
         let fps = crate::effects::fps(frame_ms);
-        self.effects.update(paused, fps);
         let shown: Vec<bool> = (0..self.cars.len()).map(|k| self.car_shown(k)).collect();
+        let mut quads = self.draw_cars(fps, paused, &shown);
+        self.effects.update(paused, fps);
         self.effects.emit_trails(&mut self.rand, fps, &shown);
         let cam = self.cameras.first().map_or([[4096, 0, 0], [0, 4096, 0], [0, 0, 4096]], |c| c.rot);
-        let mut quads = self.effects.draw(&self.tables, &cam, fps, paused);
+        quads.extend(self.effects.draw(&self.tables, &cam, fps, paused));
         let poses: Vec<_> = self.cars.iter().map(|c| c.pose()).collect();
         quads.extend(self.effects.draw_columns(&self.tables, &mut self.rand, &cam, fps, paused, &poses));
-        // The cars' shadows (0x80029478, from the car draw) on the ground
-        // each is near, subtracted.
-        for (slot, car) in self.cars.iter().enumerate() {
-            let ground = car.ground.nearest;
-            if !shown[slot] || !ground.found {
-                continue;
-            }
-            let id = self.setup.cars.get(slot).map_or(0, |e| e.car_id) as usize;
-            let reach = self.tables.shadows.get(id).copied().unwrap_or_default();
-            let pose = &poses[slot];
-            let Some(shadow) =
-                crate::car::draw::shadow_quads(&car.handling, reach, pose.at, &pose.rot, ground.normal, ground.d)
-            else {
-                continue;
-            };
-            let (clut, tpage) = crate::car::draw::shadow_texture(&self.tables, slot);
-            let column = self.tables.shadow_columns.get(slot).copied().unwrap_or(0);
-            for (corners, uv) in shadow.into_iter().zip(crate::car::draw::shadow_uv(column)) {
-                quads.push(crate::effects::EffectQuad { corners, uv, clut, tpage, colour: [96; 3], semi: true });
-            }
-        }
-        // car_draw's boost flames (0x8002b05c).
-        for slot in 0..self.cars.len() {
-            let id = self.setup.cars.get(slot).map_or(0, |e| e.car_id);
-            let exhaust = self.tables.exhausts.get(id as usize).copied().unwrap_or_default();
-            let special = id == 8 || id == 21;
-            let car = &self.cars[slot];
-            quads.extend(self.effects.draw_flame(
-                &self.tables,
-                &mut self.rand,
-                slot as u8,
-                &poses[slot],
-                &car.handling,
-                exhaust,
-                special,
-                paused,
-                self.clock,
-            ));
-        }
         tracing::trace!("effects: {} quads", quads.len());
         self.effects.frame_done(paused);
         if !paused {
+            // car_set_pose (0x80020888): the models placed where the cars
+            // are now, for the next frame's draw.
+            self.model_poses = self.cars.iter().map(|c| c.pose()).collect();
             let eyes: Vec<_> = self.cameras.iter().map(|c| c.pos).collect();
             let shown = self.effects.car_pose(&mut self.cars, &eyes);
             // 0x80049ecc's wheels: each near car's turn by the frame, and
@@ -1155,6 +1129,98 @@ impl Race {
                     *lift = last.lift.wrapping_mul(2);
                 }
                 self.wheel_poses[slot] = Some(poses);
+            }
+        }
+        quads
+    }
+
+    /// The world draw's cars (0x8001ef24, for each view): each car shown
+    /// and within 6777 units of the view's eye (squared distance under
+    /// 5400² + 2²⁴, the model placed at the last frame's end) is drawn
+    /// (0x80022064): its shadow, its boost flame, and once wrecked the
+    /// smoke from its wheels, on frames that are not a multiple of four
+    /// from every wheel when its model moved 10 units or more since its
+    /// last draw (a player's car), else every seventh frame from wheels 0
+    /// and 3, drawn close enough for its full model (1350 units). (The
+    /// lamp glows, 0x80029fb0, which draw random numbers, are not ported:
+    /// no car seen so far has them.)
+    fn draw_cars(&mut self, fps: i32, paused: bool, shown: &[bool]) -> Vec<crate::effects::EffectQuad> {
+        const FAR: i32 = 5400 * 5400 + 0x100_0000;
+        const FULL: i32 = 1350 * 1350;
+        let mut quads = Vec::new();
+        if self.model_poses.len() != self.cars.len() {
+            self.model_poses = self.cars.iter().map(|c| c.pose()).collect();
+        }
+        self.drawn_at.resize(self.cars.len(), [0; 3]);
+        self.moved.resize(self.cars.len(), 0);
+        let eyes: Vec<crate::math::Vec3> = self.cameras.iter().map(|c| c.pos.map(|v| v >> 12)).collect();
+        for eye in eyes {
+            for slot in 0..self.cars.len().min(6) {
+                if !shown[slot] {
+                    continue;
+                }
+                let pose = self.model_poses[slot];
+                let at = pose.at.map(|v| v >> 12);
+                let d2 = (0..3).fold(0i32, |sum, k| {
+                    let d = at[k].wrapping_sub(eye[k]);
+                    sum.wrapping_add(d.wrapping_mul(d))
+                });
+                if d2 >= FAR {
+                    continue;
+                }
+                let car = &self.cars[slot];
+                if car.flags & 1 != 0 {
+                    self.moved[slot] = self.tables.length(crate::math::sub(pose.at, self.drawn_at[slot]));
+                }
+                // 0x80029478: its shadow on the ground it is near.
+                let ground = car.ground.nearest;
+                if ground.found {
+                    let id = self.setup.cars.get(slot).map_or(0, |e| e.car_id) as usize;
+                    let reach = self.tables.shadows.get(id).copied().unwrap_or_default();
+                    if let Some(shadow) = crate::car::draw::shadow_quads(
+                        &car.handling,
+                        reach,
+                        pose.at,
+                        &pose.rot,
+                        ground.normal,
+                        ground.d,
+                    ) {
+                        let (clut, tpage) = crate::car::draw::shadow_texture(&self.tables, slot);
+                        let column = self.tables.shadow_columns.get(slot).copied().unwrap_or(0);
+                        for (corners, uv) in shadow.into_iter().zip(crate::car::draw::shadow_uv(column)) {
+                            quads.push(crate::effects::EffectQuad {
+                                corners,
+                                uv,
+                                clut,
+                                tpage,
+                                colour: [96; 3],
+                                semi: true,
+                            });
+                        }
+                    }
+                }
+                // 0x8002b05c: its boost flame.
+                let id = self.setup.cars.get(slot).map_or(0, |e| e.car_id);
+                let exhaust = self.tables.exhausts.get(id as usize).copied().unwrap_or_default();
+                quads.extend(self.effects.draw_flame(
+                    &self.tables,
+                    &mut self.rand,
+                    slot as u8,
+                    &pose,
+                    &car.handling,
+                    exhaust,
+                    id == 8 || id == 21,
+                    paused,
+                    self.clock,
+                ));
+                // A wreck's smoke, from each wheel of its full model.
+                if d2 <= FULL && !self.frozen {
+                    let car = &self.cars[slot];
+                    let mounts: Vec<crate::math::Vec3> =
+                        (0..car.wheels.len()).map(|k| car.handling.mounts[k.min(5)]).collect();
+                    self.effects.wreck_smoke(&mut self.rand, fps, slot, &pose, &mounts, self.moved[slot]);
+                }
+                self.drawn_at[slot] = pose.at;
             }
         }
         quads

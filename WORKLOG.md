@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-55 entries: audio 6, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 3, format 7, input 8, physics 11, race 9, render 15, test 14, tooling 13, ui 10, video 1.
+56 entries: audio 6, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 3, format 7, input 8, physics 11, race 9, render 16, test 14, tooling 13, ui 10, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -67,3 +67,4 @@ The [reference](docs/README.md) says what is true now.
 | 53 | [Boost pads and launchers](worklog/0053-boost-pads-and-launchers.md) | 2026-10-04 | physics |
 | 54 | [Wheels steer, roll and ride the suspension](worklog/0054-wheels-steer-roll-and-ride-the-suspension.md) | 2026-10-04 | render |
 | 55 | [Car shadows](worklog/0055-car-shadows.md) | 2026-10-04 | render |
+| 56 | [Cars drawn in the original's order, and a wreck's smoke](worklog/0056-cars-drawn-in-the-original-s-order-and-a-wreck-s-smoke.md) | 2026-10-04 | render |

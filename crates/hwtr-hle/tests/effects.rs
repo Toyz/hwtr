@@ -425,3 +425,88 @@ fn the_car_pose_pass_matches_the_original() {
     }
     assert!(posed > 1000, "{posed} wheels posed");
 }
+
+/// A wrecked car's smoke as the car draw (0x80022064) makes it: the car
+/// drawn near or far, its model moved any distance since its last draw
+/// (measured there for a player's car), any frame; no flame and no
+/// shadow, so the smoke alone draws random numbers. The puffs and the
+/// seed compared.
+#[test]
+fn a_wrecks_smoke_matches_the_original() {
+    use hwtr_hle::original::car::CAR_SIZE;
+    let Some(exe) = common::exe() else { return };
+    let t = hwtr_game::math::Tables::from_exe(&exe);
+    let mut rng = common::Rng(0x5a0c_e5);
+    let mut puffed = 0;
+    for name in ["desert1-race", "desert1-drive"] {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let start = m.bus.ram.clone();
+        let cars = m.bus.read_u32(hwtr_hle::original::car::CAR_COUNT);
+        for round in 0..1500 {
+            m.bus.ram.copy_from_slice(&start);
+            let slot = rng.below(cars);
+            let seed = rng.word();
+            let frame = rng.below(1000);
+            let near = rng.below(4) != 0;
+            let d2 = if near { rng.below(1350 * 1350) } else { 1350 * 1350 + 1 + rng.below(1_000_000) };
+            let player = rng.below(2) == 0;
+            let (pose, moved, car) = {
+                let mut ram = Ram(&mut m.bus.ram);
+                let model = codec::model(&ram, slot);
+                let cvs = ram.i32(model + 16) as u32;
+                let root = ram.i32(model + 4) as u32;
+                ram.set_u8(cvs + 0x28, 1);
+                ram.set_u8(cvs + 0x1f0, 0);
+                ram.set_u8(cvs + 0x1ef, 1);
+                ram.set_u8(cvs + 0x1ee, player as u8);
+                ram.set_u8(0x800d_25a0 + slot, 0);
+                ram.set_u8(0x800d_246c, 0);
+                ram.set_i32(codec::FRAME_COUNT, frame as i32);
+                ram.set_i32(SEED, seed as i32);
+                let at = ram.vec3(root + 20).map(|c| c >> 1);
+                let step = [1 << 12, 9 << 12, 11 << 12, 60 << 12][rng.below(4) as usize];
+                let last: [i32; 3] = std::array::from_fn(|k| at[k] - if k == 0 { step } else { 0 });
+                ram.set_vec3(cvs, last);
+                let stored = rng.below(20 << 12) as i32;
+                ram.set_i32(cvs + 0x1c, stored);
+                let rot: [[i16; 3]; 3] =
+                    std::array::from_fn(|i| std::array::from_fn(|j| ram.i16(root + 6 * i as u32 + 2 * j as u32)));
+                let moved = if player { t.length(hwtr_game::math::sub(at, last)) } else { stored };
+                let car = Car::read(&ram, CARS + CAR_SIZE * slot);
+                (hwtr_game::effects::CarPose { at, rot, origin: [0; 3] }, moved, car)
+            };
+            let mut ours = codec::read(&Ram(&mut m.bus.ram));
+            let identity: [[i16; 3]; 3] = [[4096, 0, 0], [0, 4096, 0], [0, 0, 4096]];
+            {
+                let mut ram = Ram(&mut m.bus.ram);
+                for i in 0..3u32 {
+                    for j in 0..3u32 {
+                        ram.set_i16(ARGS + 6 * i + 2 * j, identity[i as usize][j as usize]);
+                    }
+                }
+                ram.set_vec3(ARGS + 20, [0; 3]);
+            }
+            m.call(0x8002_2064, &[slot, ARGS, d2, 0, 1]).unwrap();
+            let mut rand = Rand { seed };
+            if near {
+                let mounts: Vec<_> = (0..car.wheels.len()).map(|k| car.handling.mounts[k.min(5)]).collect();
+                ours.wreck_smoke(&mut rand, codec_fps(&m), slot as usize, &pose, &mounts, moved);
+            }
+            let theirs = codec::read(&Ram(&mut m.bus.ram));
+            assert_eq!(
+                m.bus.read_u32(SEED),
+                rand.seed,
+                "{name} round {round}: car {slot} frame {frame} near {near} moved {moved}: seed"
+            );
+            assert!(theirs.pools[0] == ours.pools[0], "{name} round {round}: puffs");
+            puffed += (m.bus.read_u32(SEED) != seed) as u32;
+        }
+    }
+    assert!(puffed > 200, "{puffed} rounds puffed");
+}
+
+/// The frames a second the effects run at (0x800d2578), as the state has it.
+fn codec_fps(m: &hwtr_cpu::Machine) -> i32 {
+    let mut ram = m.bus.ram.clone();
+    Ram(&mut ram).i32(0x800d_2578)
+}
