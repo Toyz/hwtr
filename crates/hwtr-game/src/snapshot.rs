@@ -129,11 +129,8 @@ impl CarShot {
     fn put_back(&self, car: &mut Car) {
         car.reset_grace_ms = 0;
         car.flags_8 = self.flags_8 as i32 | 8;
-        tracing::trace!(
-            "car {}: the wreck's smoke {} (0x80029e10 / 0x80029f04): not yet ported",
-            car.slot,
-            if self.wrecked { "again" } else { "cleared" }
-        );
+        // The wreck's look (0x80029e10 / 0x80029f04) is the race's to set
+        // again, from `wrecked`, with its effects.
         car.ground.floor.found = self.floor.is_some();
         if let Some((normal, d)) = self.floor {
             car.ground.floor.normal = normal.map(i32::from);

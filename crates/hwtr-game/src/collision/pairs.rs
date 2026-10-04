@@ -483,7 +483,8 @@ impl Collision {
     /// 0x8007e000: the car of object `side`, hit by `other` faster (relative
     /// to it) than its skill allows, is wrecked. A steel car wrecks any car
     /// it hits, a rubber one any computer car; a steel or rubber car is not
-    /// wrecked by speed. (The props' cases, 0x8006b958, are not yet ported.)
+    /// wrecked by speed. A prop that falls over (flag 2) or a bump (flag 4)
+    /// is knocked (0x8006b958).
     fn crash(&mut self, t: &Tables, side: ObjectId, other: ObjectId, cars: &mut [Car], rand: &mut Rand) {
         let Some(slot) = self.objects[side].car else { return };
         let o = &self.objects[other];

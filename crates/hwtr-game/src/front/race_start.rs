@@ -118,7 +118,9 @@ impl Front {
     /// game's starting difficulty. Its checkpoints are read by the track's
     /// number alone, as if every track were the Desert's (0x8009b380).
     fn set_up_attract(&mut self) {
-        tracing::trace!("0x800836e8 (iface_game+0x98 with 0): not yet ported");
+        // 0x800836e8 with no name: no picture behind (0x80015648 clears
+        // 0x800d2401).
+        self.background = None;
         let (world, number) = loop {
             let world = self.rand.below(4) as u8;
             let number = self.rand.below(3) as u8 + 1;

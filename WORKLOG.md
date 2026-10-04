@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-68 entries: audio 8, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 5, format 7, input 9, physics 13, race 11, render 17, test 15, tooling 14, ui 10, video 1.
+69 entries: audio 8, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 6, format 7, input 9, physics 13, race 11, render 17, test 15, tooling 14, ui 10, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -80,3 +80,4 @@ The [reference](docs/README.md) says what is true now.
 | 66 | [Wrecked and finished computer cars meet the walls as boxes (0x800572f0)](worklog/0066-wrecked-and-finished-computer-cars-meet-the-walls-as-boxes.md) | 2026-10-04 | physics |
 | 67 | [Estimate the unfinished computer cars' times for the standings (0x80061824)](worklog/0067-estimate-the-unfinished-computer-cars-times-for-the.md) | 2026-10-04 | race |
 | 68 | [loadcheck holds the computer cars and their drivers to the original](worklog/0068-loadcheck-holds-the-computer-cars-and-their-drivers-to-the.md) | 2026-10-04 | test |
+| 69 | [Clear stale port gaps; the attract race drops the front end's picture](worklog/0069-clear-stale-port-gaps-the-attract-race-drops-the-front-end.md) | 2026-10-04 | engine |
