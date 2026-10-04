@@ -85,6 +85,14 @@ pub struct Renderer {
 
 pub const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+/// The projection the renderer draws with: right-handed, `fov_y` radians
+/// tall, depth mapped to wgpu's clip range of 0 (near) to 1 (far). (glam
+/// files this convention under its `directx` name; Vulkan and Metal share
+/// it.)
+pub fn projection(fov_y: f32, aspect: f32, near: f32, far: f32) -> glam::Mat4 {
+    glam::camera::rh::proj::directx::perspective(fov_y, aspect, near, far)
+}
+
 impl Renderer {
     pub fn new(
         device: &wgpu::Device,

@@ -39,7 +39,7 @@ impl Camera {
 
     fn matrix(&self, aspect: f32) -> Mat4 {
         let view = glam::camera::rh::view::look_to_mat4(self.pos, self.forward(), Vec3::Z);
-        glam::camera::rh::proj::directx::perspective(60f32.to_radians(), aspect, 16.0, 300_000.0) * view
+        hwtr_render::renderer::projection(60f32.to_radians(), aspect, 16.0, 300_000.0) * view
     }
 }
 

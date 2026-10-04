@@ -30,7 +30,7 @@ impl Chase {
         let back = glam::Quat::from_rotation_z(self.around) * -flat;
         let eye = pos + back * Self::DISTANCE + Vec3::Z * Self::HEIGHT;
         let view = glam::camera::rh::view::look_at_mat4(eye, pos + Vec3::Z * Self::LOOK_ABOVE, Vec3::Z);
-        glam::camera::rh::proj::directx::perspective(60f32.to_radians(), aspect, 16.0, 300_000.0) * view
+        hwtr_render::renderer::projection(60f32.to_radians(), aspect, 16.0, 300_000.0) * view
     }
 }
 
