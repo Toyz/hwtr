@@ -59,3 +59,24 @@ fn reader_buttons(frame: u32, rng: &mut common::Rng) -> u16 {
     }
     if rng.below(50) == 0 { 0 } else { b }
 }
+
+#[test]
+fn front_end_actions_match_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-speed") else { return };
+    let mapping = Mapping::default();
+    let mut rng = common::Rng(0x9ad0_0000_0000_0002);
+    let mut held = 0;
+    for round in 0..2000 {
+        let buttons = if rng.below(2) == 0 { 1 << rng.below(16) } else { rng.word() as u16 };
+        let kind = if rng.below(2) == 0 { PadKind::Digital } else { PadKind::Analog };
+        let pad = PadState { kind, buttons, ..PadState::default() };
+        let b = !buttons;
+        m.bus.load(PAD_BUFFER, &[0x00, if kind == PadKind::Digital { 0x41 } else { 0x73 }, b as u8, (b >> 8) as u8]);
+        let action = 14 + rng.below(14) as u8;
+        let original = m.call(0x8001_aebc, &[0, action as u32]).unwrap() != 0;
+        assert_eq!(original, pad.holds(&mapping, action), "round {round}: action {action}, buttons {buttons:#06x}");
+        held += original as u32;
+    }
+    assert!(held > 100, "{held} held");
+}

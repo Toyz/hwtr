@@ -10,8 +10,8 @@ use rrt::wgpu;
 use hwtr_game::car::{Tuning, handling};
 use hwtr_game::collision::Scp;
 use hwtr_game::math::Tables;
-use hwtr_game::pad::{Mapping, PadKind, PadReader, PadState};
-use hwtr_game::race::{Driver, Entrant, RaceSetup, STEP_MS};
+use hwtr_game::pad::{ACCEPT, Mapping, PadKind, PadReader, PadState, START};
+use hwtr_game::race::{Buttons, Driver, Entrant, RaceSetup, STEP_MS};
 use hwtr_render::scene::Layout;
 use hwtr_render::{Renderer, Scene};
 
@@ -81,18 +81,25 @@ impl Race {
         let cwh = hwtr_data::car::CarBmf::parse(bmf).map_err(|e| e.to_string())?.cwh;
         let parts = handling::parse_cwh(cwh).ok_or("the CWH does not parse")?;
         let (letters, number) = t.split_at(t.len() - 1);
+        let tables = Tables::from_exe(&exe);
+        let world = hwtr_game::race::WORLDS
+            .iter()
+            .find(|w| w.eq_ignore_ascii_case(letters))
+            .map_or(letters.to_string(), |w| w.to_string());
+        let track_number = number.parse().unwrap_or(1);
         let setup = RaceSetup {
             flags: 0,
-            track: letters.to_string(),
-            track_number: number.parse().unwrap_or(1),
+            checkpoints: tables.checkpoints(&world, track_number),
+            track: world,
+            track_number,
             laps: 3,
             options: 0,
             cars: vec![Entrant { name: name.into(), driver: Driver::PlayerOne, car_id: 0, player: 0, grid: 0 }],
             difficulty: 128,
         };
-        let mut race = hwtr_game::race::Race::new(setup, scp, &[parts], Tables::from_exe(&exe), tuning);
-        race.line = hwtr_game::line::BestLine::parse(get(&format!("{t}BLD"))?).ok_or("the best line does not parse")?;
-        tracing::info!("race on {t}: {} car(s) ported", race.cars.len());
+        let line = hwtr_game::line::BestLine::parse(get(&format!("{t}BLD"))?).ok_or("the best line does not parse")?;
+        let race = hwtr_game::race::Race::new(setup, scp, line, &[parts], tables, tuning);
+        tracing::info!("race on {t}: {} car(s) ported, flyby of {} keyframes, countdown from {} ms", race.cars.len(), race.collision.scp.flyby.len(), race.countdown_from);
         Ok(Race {
             scene,
             race,
@@ -119,6 +126,11 @@ impl Race {
             self.reader.read(&state, &self.mapping, std::mem::take(&mut self.since_read));
             self.race.step(&[self.reader.controls()]);
             self.ahead += STEP_MS as i64;
+        }
+        let buttons = Buttons { accept: state.holds(&self.mapping, ACCEPT), start: state.holds(&self.mapping, START) };
+        self.race.frame(buttons);
+        for event in self.race.events.drain(..) {
+            tracing::info!("{event:?} at {} ms", self.race.time);
         }
         // The vertical blank at the frame's end advances the system clock.
         self.race.clock = self.race.clock.wrapping_add(ms);

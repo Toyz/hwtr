@@ -33,13 +33,8 @@ impl Car {
     /// A car whose race is over takes no controls (it steers full right,
     /// the handbrake on, as the original leaves it).
     pub fn apply_controls(&mut self, c: &Controls, tuning: &Tuning) {
-        if self.finished {
-            self.steer = 0x1000;
-            self.accel = 0;
-            self.brake = 0;
-            self.handbrake = true;
-            self.reset_held = false;
-            self.turbo_held = false;
+        if self.laps.finished {
+            self.coast();
             return;
         }
         let over = |a: u8, b: u8| div(((a as i32) - (b as i32)) << 12, 255).0;
@@ -62,5 +57,16 @@ impl Car {
         self.handbrake = c.handbrake;
         self.reset_held = c.reset;
         self.turbo_held = c.turbo;
+    }
+
+    /// The controls of a car out of the race (0x800617c8, and race_frame
+    /// when the race ends): full right, no pedals, the handbrake on.
+    pub fn coast(&mut self) {
+        self.steer = 0x1000;
+        self.accel = 0;
+        self.brake = 0;
+        self.handbrake = true;
+        self.reset_held = false;
+        self.turbo_held = false;
     }
 }

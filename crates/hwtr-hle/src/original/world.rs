@@ -7,6 +7,7 @@ use hwtr_game::collision::object::{CollisionObject, RefSet};
 use hwtr_game::collision::scp::Scp;
 use hwtr_game::collision::walls::Contact;
 use super::{InMemory, Ram};
+use hwtr_game::laps::Course;
 
 pub const SCP: u32 = 0x800d_2658;
 pub const ALL: u32 = 0x800d_265c;
@@ -19,6 +20,30 @@ pub const STEP: u32 = 0x800d_2654;
 pub const CONTACTS: u32 = 0x8012_c6ec;
 pub const CONTACT_COUNT: u32 = 0x800d_2674;
 pub const CONTACT_SIZE: u32 = 40;
+/// gameflow_load's lap rules: the laps, the checkpoints, flags 2, 4, 8.
+pub const LAPS: u32 = 0x800d_0e40;
+pub const CHECKPOINTS: u32 = 0x800d_0e44;
+pub const QUIET: u32 = 0x800d_0e4e;
+pub const ENDLESS: u32 = 0x800d_0e4d;
+pub const FLYING: u32 = 0x800d_0e4c;
+/// collision_load's lap length, checkpoint count and checkpoint starts.
+pub const LAP_LENGTH: u32 = 0x800d_267c;
+pub const START_COUNT: u32 = 0x800d_2680;
+pub const STARTS: u32 = 0x8012_dcac;
+
+/// The race's lap rules and the track's checkpoints as the original keeps
+/// them.
+pub fn course(ram: &Ram) -> Course {
+    Course {
+        laps: ram.u8(LAPS),
+        checkpoints: ram.u8(CHECKPOINTS),
+        quiet: ram.flag(QUIET),
+        endless: ram.flag(ENDLESS),
+        flying: ram.flag(FLYING),
+        lap_length: ram.i32(LAP_LENGTH),
+        starts: (0..ram.i32(START_COUNT) as u32).map(|k| ram.i32(STARTS + 4 * k)).collect(),
+    }
+}
 
 /// The SCP's bytes as loaded, and where.
 pub fn scp_bytes(ram: &Ram) -> (u32, Vec<u8>) {
@@ -63,6 +88,8 @@ pub fn collision(ram: &Ram) -> (Collision, Vec<u32>) {
                     }
                 })
                 .collect(),
+            course: course(ram),
+            lap_events: Vec::new(),
         };
         (world, addresses)
     }

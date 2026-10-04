@@ -70,7 +70,7 @@ impl Collision {
         }
         self.cars.add(id);
         for &z in &zones {
-            self.zone_effects(car, z, true);
+            self.zone_effects(car, z, None);
         }
         id
     }
@@ -78,21 +78,22 @@ impl Collision {
     /// 0x8005c3a4: what the zone `zone` does to a car entering it: track
     /// flags into the car's, the lap distance, gravity's direction (reset to
     /// straight down unless the zone keeps it) and strength (scaled by the
-    /// zone's parameter where it says so). `initial` (placing the car) skips
-    /// the lap trigger. The laps, power-ups and special zones are not yet
-    /// ported.
-    pub fn zone_effects(&self, car: &mut Car, zone: u16, initial: bool) {
+    /// zone's parameter where it says so). A checkpoint zone counts toward
+    /// the car's laps when the car drove in, at race time `driven` (not when
+    /// it is put there). Power-ups and special zones are not yet ported.
+    pub fn zone_effects(&self, car: &mut Car, zone: u16, driven: Option<u32>) -> Option<crate::laps::LapEvent> {
         if car.wrecked {
-            return;
+            return None;
         }
         let z = self.scp.zones[zone as usize];
         let f = z.flags;
         let bit = |zone_bit: u16, car_bit: i32, flags: &mut i32| {
             if f & zone_bit != 0 { *flags |= car_bit } else { *flags &= !car_bit }
         };
-        if f & 1 != 0 && !initial {
-            tracing::trace!("zone {zone}: lap trigger {} (not yet ported)", z.param as u8);
-        }
+        let event = match driven {
+            Some(time) if f & 1 != 0 => car.laps.pass(&self.course, z.param as u8, time),
+            _ => None,
+        };
         bit(0x10, 1, &mut car.flags_8);
         // The race's flag 0x80 (0x800d2678) also sets bit 1; not yet ported.
         bit(0x8, 2, &mut car.flags_8);
@@ -112,9 +113,11 @@ impl Collision {
             car.flags |= 0x4000;
         } else {
             car.flags &= !0x4000;
-            // Past a lap's end the distance carries on from the lap length;
-            // not yet ported.
-            car.lap_distance = (z.distance as i32) * 10;
+            // Short of the next checkpoint, the zone is on the lap ahead:
+            // the distance carries on past the lap's length.
+            let distance = (z.distance as i32) * 10;
+            let ahead = (distance as u32) < self.course.next_start(car.laps.passed_count) as u32;
+            car.lap_distance = if ahead { distance.wrapping_add(self.course.lap_length) } else { distance };
         }
         if f & 0x2000 != 0 {
             car.flags |= 0x400;
@@ -129,6 +132,7 @@ impl Collision {
         if f & 2 != 0 {
             tracing::trace!("zone {zone}: power-up {} (not yet ported)", z.param);
         }
+        event
     }
 }
 
@@ -147,6 +151,6 @@ impl Collision {
             self.members[zone as usize].add(id);
             self.objects[id].zones.add(zone);
         }
-        self.zone_effects(car, zone, true);
+        self.zone_effects(car, zone, None);
     }
 }

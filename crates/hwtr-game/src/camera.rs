@@ -130,6 +130,9 @@ pub struct Camera {
 const SPRING_SPEED: i32 = 30_000 << 12;
 const SPRING_ACCEL: i32 = 10_000 << 12;
 
+/// How long the opening sweep takes, ms.
+pub const INTRO_MS: i32 = 5000;
+
 impl Camera {
     /// `camera_load`'s camera for player `slot`, at the first view.
     pub fn new(slot: u8, views: &[View; 5]) -> Camera {
@@ -146,7 +149,7 @@ impl Camera {
     /// flyby while it lasts, else its view's mode, then shake and the view
     /// button.
     pub fn step(&mut self, world: &Surroundings, car: &mut Car, dt_ms: u32, rand: &mut Rand) {
-        let Surroundings { tables: t, tuning, views, count, racing, time, flyby, collision } = *world;
+        let Surroundings { tables: t, views, count, time, flyby, collision, .. } = *world;
         if self.flyby && self.fly(t, flyby, time) {
             return;
         }
@@ -154,7 +157,7 @@ impl Camera {
         let view = views[self.view as usize % 5];
         match self.mode {
             Some(ViewMode::Mounted) => self.mount(t, collision, car, view),
-            Some(ViewMode::Chase) => self.chase(t, tuning, collision, car, view, racing, rate),
+            Some(ViewMode::Chase) => self.chase(world, car, view, dt_ms, rate),
             other => tracing::trace!("camera mode {other:?}: not yet ported"),
         }
         if dt_ms < self.shake {
@@ -221,8 +224,8 @@ impl Camera {
     }
 
     /// Mode 1: the chase view.
-    #[allow(clippy::too_many_arguments)]
-    fn chase(&mut self, t: &Tables, tuning: &Tuning, collision: &Collision, car: &Car, view: View, racing: bool, rate: i32) {
+    fn chase(&mut self, world: &Surroundings, car: &Car, view: View, dt_ms: u32, rate: i32) {
+        let Surroundings { tables: t, tuning, racing, flyby, collision, .. } = *world;
         let body = &car.body;
         let rot = body.rot;
         let (car_forward, car_up) = (column(&rot, 1), column(&rot, 2));
@@ -297,7 +300,8 @@ impl Camera {
         let distance = reach.min(length);
         let pos = sub(centre, look.map(|c| fx(c, distance)));
         if self.intro_ms != 0 {
-            tracing::trace!("the opening sweep: not yet ported");
+            self.sweep(t, flyby, pos, centre);
+            self.intro_ms = self.intro_ms.wrapping_sub(dt_ms as i32);
             return;
         }
         // Snapped, it takes the car's travel (level unless banked).
@@ -307,6 +311,25 @@ impl Camera {
             *row = [right[i] as i16, look[i] as i16, up[i] as i16];
         }
         self.fov = fx(0x3244, 0x800);
+    }
+
+    /// The sweep that opens a race: over [`INTRO_MS`] the eye eases (a
+    /// half sine) from the flyby's last keyframe to the chase view's `pos`,
+    /// and what it looks at from the keyframe's target to the car's
+    /// `centre`.
+    fn sweep(&mut self, t: &Tables, flyby: &[Keyframe], pos: Vec3, centre: Vec3) {
+        let Some(from) = flyby.last() else { return };
+        let done = (INTRO_MS - self.intro_ms) * 0x1000 / INTRO_MS;
+        let ease = fx(t.sin(fx(done - 0x800, 0x3244)) + 0x1000, 0x800);
+        let mix = |a: Vec3, b: Vec3| [0, 1, 2].map(|k| fx(a[k], 0x1000 - ease).wrapping_add(fx(b[k], ease)));
+        let eye = mix(from.eye, pos);
+        let look = t.normalize(sub(mix(from.target, centre), eye));
+        let right = t.normalize([look[1], look[0].wrapping_neg(), 0]);
+        let up = cross(right, look);
+        self.pos = eye;
+        for (i, row) in self.rot.iter_mut().enumerate() {
+            *row = [right[i] as i16, look[i] as i16, up[i] as i16];
+        }
     }
 
     /// 0x80039d54: the camera moves toward `target`, its velocity heading

@@ -36,6 +36,19 @@ impl Default for PadState {
 }
 
 impl PadState {
+    /// 0x8001aebc: whether the pad holds front-end action `action`: the
+    /// d-pad and Start (14 to 17, 26) on the low byte, the face buttons and
+    /// shoulders (18 to 25) on the high, any button (27) on either.
+    pub fn holds(&self, map: &Mapping, action: u8) -> bool {
+        let Some(&mask) = map.0.get(action as usize) else { return false };
+        match action {
+            14..=17 | 26 => self.low() & mask != 0,
+            18..=25 => self.high() & mask != 0,
+            27 => (self.high() | self.low()) & mask != 0,
+            _ => false,
+        }
+    }
+
     /// The low byte of the buttons: Select, L3, R3, Start, and the d-pad.
     fn low(&self) -> u32 {
         (self.buttons & 0xff) as u32
@@ -46,6 +59,10 @@ impl PadState {
         (self.buttons >> 8) as u32
     }
 }
+
+/// The front-end actions: accept (Cross) and start (Start).
+pub const ACCEPT: u8 = 18;
+pub const START: u8 = 26;
 
 /// A player's button mapping: each action's mask on its byte of the
 /// buttons (the low byte for steering and the stick, actions 0, 1 and 4 to

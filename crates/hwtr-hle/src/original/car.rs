@@ -10,6 +10,7 @@ use hwtr_game::car::handling::{BLOCK_A, Handling};
 use hwtr_game::car::{Armed, AxisLock, Car, Respawn, Engine, Ground, GroundPlane, Tuning, Wheel};
 use super::body;
 use hwtr_game::body::Body;
+use hwtr_game::laps::Laps;
 use super::{InMemory, Ram};
 
 pub const CARS: u32 = 0x8012_8fcc;
@@ -80,6 +81,12 @@ pub const WRECK_VIEW: u32 = 0x62d;
 pub const RESET_HELD: u32 = 0x25;
 pub const TURBO_HELD: u32 = 0x27;
 pub const FINISHED: u32 = 0x5e3;
+pub const LAP_START: u32 = 0x5a8;
+pub const PASSED: u32 = 0x5ac;
+pub const LAP_ENDS: u32 = 0x5b8;
+pub const BEST_LAP: u32 = 0x5d8;
+pub const LAPS_DONE: u32 = 0x5e0;
+pub const PASSED_COUNT: u32 = 0x5e1;
 pub const LAP_DISTANCE: u32 = 0x5dc;
 /// The ground: the floor (found +0x8b2, origin +0x8b4, normal +0x8c4, d
 /// +0x8d4) and the nearest surface (found +0x8f0, normal +0x8f4, d +0x904).
@@ -298,7 +305,7 @@ impl InMemory for Car {
             turbo_before: ram.flag(at + TURBO_BEFORE),
             strong_brakes: ram.flag(at + STRONG_BRAKES),
             stuck_ms: ram.i32(at + STUCK_MS) as u32,
-            finished: ram.flag(at + FINISHED),
+            laps: laps(ram, at),
             lap_distance: ram.i32(at + LAP_DISTANCE),
             ground: Ground {
                 floor: GroundPlane {
@@ -386,7 +393,7 @@ impl InMemory for Car {
         ram.set_flag(at + TURBO_BEFORE, self.turbo_before);
         ram.set_flag(at + STRONG_BRAKES, self.strong_brakes);
         ram.set_i32(at + STUCK_MS, self.stuck_ms as i32);
-        ram.set_flag(at + FINISHED, self.finished);
+        write_laps(ram, at, &self.laps);
         ram.set_i32(at + LAP_DISTANCE, self.lap_distance);
         let g = &self.ground;
         ram.set_flag(at + FLOOR[0], g.floor.found);
@@ -482,4 +489,35 @@ fn write_handling(ram: &mut Ram, at: u32, h: &Handling) {
     for (k, d) in h.diameters.iter().enumerate() {
         ram.set_i32(at + DIAMETERS + 4 * k as u32, *d);
     }
+}
+
+/// A car's laps. The lap ends are eight words; the laps done tell how many
+/// are in use (one in a flying-lap race, which keeps the count at one).
+fn laps(ram: &Ram, at: u32) -> Laps {
+    let done = ram.u8(at + LAPS_DONE);
+    let used = (done as u32).clamp(1, 8);
+    let ends: Vec<u32> = (0..used).map(|k| ram.i32(at + LAP_ENDS + 4 * k) as u32).collect();
+    Laps {
+        start: ram.i32(at + LAP_START) as u32,
+        done,
+        passed: std::array::from_fn(|k| ram.u8(at + PASSED + k as u32) != 0),
+        passed_count: ram.u8(at + PASSED_COUNT),
+        ends: if done == 0 && ends == [0] { Vec::new() } else { ends },
+        best: ram.i32(at + BEST_LAP) as u32,
+        finished: ram.flag(at + FINISHED),
+    }
+}
+
+fn write_laps(ram: &mut Ram, at: u32, laps: &Laps) {
+    ram.set_i32(at + LAP_START, laps.start as i32);
+    ram.set_u8(at + LAPS_DONE, laps.done);
+    for (k, &p) in laps.passed.iter().enumerate() {
+        ram.set_u8(at + PASSED + k as u32, p as u8);
+    }
+    ram.set_u8(at + PASSED_COUNT, laps.passed_count);
+    for k in 0..8 {
+        ram.set_i32(at + LAP_ENDS + 4 * k, laps.ends.get(k as usize).copied().unwrap_or(0) as i32);
+    }
+    ram.set_i32(at + BEST_LAP, laps.best as i32);
+    ram.set_flag(at + FINISHED, laps.finished);
 }

@@ -368,9 +368,9 @@ pub struct Car {
     /// Milliseconds it has been stuck (pressing on, steering hard, slow,
     /// touching something).
     pub stuck_ms: u32,
-    /// The race is over for it (its laps run, 0x8006137c): it drives
-    /// itself, the controls ignored.
-    pub finished: bool,
+    /// Its checkpoints and laps; once they are run it drives itself, the
+    /// controls ignored.
+    pub laps: crate::laps::Laps,
     /// The distance along the lap of the zone the car is in, from the
     /// zone's distance (tenths).
     pub lap_distance: i32,

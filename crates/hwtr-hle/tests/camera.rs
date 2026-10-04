@@ -42,6 +42,8 @@ fn camera_steps_match_the_original() {
             cam.zoom = if rng.below(3) == 0 { (rng.word() as i32) >> 20 } else { 0 };
             cam.shake = [0, 0, 0, 250, rng.below(300)][rng.below(5) as usize];
             cam.button = rng.below(10) == 0;
+            // Now and then mid-way through the opening sweep.
+            cam.intro_ms = if rng.below(4) == 0 { 1 + rng.below(5000) as i32 } else { 0 };
             car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (8 + rng.below(10)));
             car.body.speed = t.length(car.body.vel);
             car.boost = (rng.below(4) == 0).then(|| (rng.word() as i32) >> 9);

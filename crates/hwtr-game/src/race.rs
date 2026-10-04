@@ -50,6 +50,9 @@ pub struct Entrant {
     pub grid: u8,
 }
 
+/// The worlds, as the front end names them (0x800c5c24).
+pub const WORLDS: [&str; 4] = ["Desert", "Glacial", "Haunted", "Volcano"];
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RaceSetup {
     /// Bit 6: the mirrored track.
@@ -57,8 +60,9 @@ pub struct RaceSetup {
     /// "Desert", "Glacial", "Volcano", "Haunted", and which of its three.
     pub track: String,
     pub track_number: u8,
-    /// Laps to run.
+    /// Laps to run, and checkpoints a lap.
     pub laps: u8,
+    pub checkpoints: u8,
     /// Bit 2: cars at a third of their size; bit 5: wheels at half.
     pub options: u32,
     pub cars: Vec<Entrant>,
@@ -70,6 +74,7 @@ use crate::camera::{Camera, Surroundings};
 use crate::car::Respawn;
 use crate::car::stunt::Award;
 use crate::car::update::Drive;
+use crate::laps::{Course, LapEvent, Laps};
 use crate::line::BestLine;
 use crate::math::div_fx;
 use crate::collision::world::Step;
@@ -81,8 +86,69 @@ use crate::math::Tables;
 /// 0x80033ed8), whatever the display does.
 pub const STEP_MS: i32 = 25;
 
+/// Where a race is (0x800d0de9).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Phase {
+    /// The flyby over the track, then the countdown; the cars wait.
+    #[default]
+    Starting,
+    /// Under way.
+    Racing,
+    /// Over: the results.
+    Finished,
+}
+
+/// What happened in a race that the sounds and the HUD show.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RaceEvent {
+    /// The countdown calls 3, 2, 1 (sounds 6 to 8).
+    Count(u8),
+    /// The start (sound 9).
+    Go,
+    /// Car `car` passed a checkpoint.
+    Lap { car: u8, event: LapEvent },
+    /// The race is over; the results follow.
+    Finish,
+    /// The results have been up four seconds: the race stands still.
+    Results,
+}
+
+/// A car's result.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Standing {
+    pub car: u8,
+    /// Its race time (0 if it did not finish) and best lap, milliseconds.
+    pub time: u32,
+    pub best: u32,
+    /// The championship points its place earns.
+    pub points: u8,
+}
+
+/// The front end's actions race_frame reads besides the driving: held on a
+/// player's pad.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Buttons {
+    /// Action 18 (Cross): skips the flyby, leaves the results.
+    pub accept: bool,
+    /// Action 26 (Start): leaves the results.
+    pub start: bool,
+}
+
+/// When the countdown calls 3, 2 and 1, and starts the race, after the
+/// flyby: milliseconds.
+const COUNTDOWN: [(u32, u8); 3] = [(1200, 3), (2550, 2), (3800, 1)];
+const GO_MS: u32 = 5000;
+/// The longest race: past this the race ends, milliseconds.
+const LONGEST_MS: u32 = 0x1b_773f;
+/// How long the results run before the race stands still, and before they
+/// leave by themselves.
+const RESULTS_MS: u32 = 4000;
+const RESULTS_LEAVE_MS: u32 = 30_000;
+/// The championship points for first to sixth.
+const POINTS: [u8; 6] = [10, 8, 7, 6, 5, 4];
+
 /// A race in progress: what is ported of it so far. The players' cars
-/// drive on the track; computer cars, walls, laps and the rest follow.
+/// drive on the track; computer cars and the rest follow.
 pub struct Race {
     pub setup: RaceSetup,
     pub tables: Tables,
@@ -102,6 +168,26 @@ pub struct Race {
     pub line: BestLine,
     /// The last stunt landed by each car, for the HUD.
     pub stunts: Vec<Option<Award>>,
+    pub phase: Phase,
+    /// When the flyby ends and the countdown starts, by the race clock
+    /// (0x800d2600).
+    pub countdown_from: u32,
+    /// The last number the countdown called.
+    pub called: Option<u8>,
+    /// How long the race ran before the start (0x800d0e38), when the clock
+    /// went back to 0.
+    pub before_start: u32,
+    /// The results: when they began, by the system clock (0x800d25e8); the
+    /// race standing still (0x800d2607); Cross let go since (0x800d2609);
+    /// the standings, best first.
+    pub results_from: u32,
+    pub frozen: bool,
+    pub accept_released: bool,
+    pub standings: Vec<Standing>,
+    /// Done: back to the front end (0x800d261c).
+    pub over: bool,
+    /// What happened since the host last took them.
+    pub events: Vec<RaceEvent>,
 }
 
 /// How many of the views a player cycles through (the fifth, the side view,
@@ -114,11 +200,14 @@ impl Race {
     pub fn new(
         setup: RaceSetup,
         scp: Scp,
+        line: BestLine,
         handling: &[(Handling, EngineSpec)],
         tables: Tables,
         tuning: Tuning,
     ) -> Race {
+        let course = Course::new(&setup, &scp, line.lap_length);
         let mut collision = Collision::new(scp);
+        collision.course = course;
         let mut cars = Vec::new();
         for (slot, entrant) in setup.cars.iter().enumerate() {
             if !entrant.driver.is_player() {
@@ -130,7 +219,13 @@ impl Race {
             collision.add_car(&tables, &mut car);
             cars.push(car);
         }
-        let cameras = cars.iter().map(|c| Camera::new(c.slot, &tables.views.one)).collect();
+        // The cameras fly over the track first (0x8003ac30); the countdown
+        // starts when the flyby ends (0x8003abec).
+        let mut cameras: Vec<Camera> = cars.iter().map(|c| Camera::new(c.slot, &tables.views.one)).collect();
+        for camera in &mut cameras {
+            camera.flyby = true;
+        }
+        let countdown_from = (collision.scp.flyby.len() as u32).saturating_sub(1) * 200;
         let stunts = vec![None; cars.len()];
         Race {
             setup,
@@ -142,8 +237,18 @@ impl Race {
             time: 0,
             clock: 0,
             cameras,
-            line: BestLine::default(),
+            line,
             stunts,
+            phase: Phase::Starting,
+            countdown_from,
+            called: None,
+            before_start: 0,
+            results_from: 0,
+            frozen: false,
+            accept_released: false,
+            standings: Vec::new(),
+            over: false,
+            events: Vec::new(),
         }
     }
 
@@ -217,33 +322,181 @@ impl Race {
         car.air_lock.active = false;
     }
 
-    /// One step of `STEP_MS`, with each player's controls (in car order).
+    /// One step of `STEP_MS` (race_frame's inner loop), with each player's
+    /// controls (in car order): before the results the controls go to the
+    /// cars; once under way the cars and the collision step; the cameras
+    /// step until the race stands still; the race clock always runs.
     pub fn step(&mut self, controls: &[Controls]) {
         let dt = (STEP_MS << 12) / 1000;
-        for (car, c) in self.cars.iter_mut().zip(controls) {
-            car.apply_controls(c, &self.tuning);
+        if self.phase != Phase::Finished {
+            for (car, c) in self.cars.iter_mut().zip(controls) {
+                car.apply_controls(c, &self.tuning);
+            }
         }
-        self.cars_update(dt);
-        let mut step =
-            Step { tuning: &self.tuning, rand: &mut self.rand, time: self.time, clock: self.clock };
-        self.collision.update(&self.tables, &mut self.cars, &mut step);
-        let around = Surroundings {
-            tables: &self.tables,
-            tuning: &self.tuning,
-            views: &self.tables.views.one,
-            count: VIEWS_OFFERED,
-            racing: true,
-            time: self.time,
-            flyby: &self.collision.scp.flyby,
-            collision: &self.collision,
-        };
-        for (camera, c) in self.cameras.iter_mut().zip(controls) {
-            camera.button = c.view;
-            if let Some(car) = self.cars.get_mut(camera.car as usize) {
-                camera.step(&around, car, STEP_MS as u32, &mut self.rand);
+        if !self.frozen {
+            let racing = self.phase != Phase::Starting;
+            if racing {
+                self.cars_update(dt);
+                let mut step =
+                    Step { tuning: &self.tuning, rand: &mut self.rand, time: self.time, clock: self.clock };
+                self.collision.update(&self.tables, &mut self.cars, &mut step);
+                let laps = self.collision.lap_events.iter().filter(|(slot, _)| {
+                    self.cars.get(*slot as usize).is_some_and(|c| c.flags & 1 != 0) && !self.collision.course.quiet
+                });
+                self.events.extend(laps.map(|&(car, event)| RaceEvent::Lap { car, event }));
+                tracing::trace!("the race's effects and debris (0x8006b754, 0x8007c894): not yet ported");
+            }
+            let around = Surroundings {
+                tables: &self.tables,
+                tuning: &self.tuning,
+                views: &self.tables.views.one,
+                count: VIEWS_OFFERED,
+                racing,
+                time: self.time,
+                flyby: &self.collision.scp.flyby,
+                collision: &self.collision,
+            };
+            for (camera, c) in self.cameras.iter_mut().zip(controls) {
+                camera.button = c.view;
+                if let Some(car) = self.cars.get_mut(camera.car as usize) {
+                    camera.step(&around, car, STEP_MS as u32, &mut self.rand);
+                }
             }
         }
         self.time = self.time.wrapping_add(STEP_MS as u32);
+    }
+
+    /// The rest of race_frame (0x80033ed8), once a display frame after its
+    /// steps, with the front end's buttons: the race's phase moves on.
+    pub fn frame(&mut self, buttons: Buttons) {
+        match self.phase {
+            Phase::Starting => self.starting(buttons),
+            Phase::Racing => {
+                if self.race_over() {
+                    self.finish();
+                }
+            }
+            Phase::Finished => self.results(buttons),
+        }
+    }
+
+    /// Before the start: the flyby until its time is up (Cross cuts it
+    /// short), then the cameras sweep down to the cars (0x8003ac6c) while
+    /// the countdown calls 3, 2, 1 (one a frame at most) and starts the
+    /// race.
+    fn starting(&mut self, buttons: Buttons) {
+        if self.time >= self.countdown_from {
+            for camera in self.cameras.iter_mut().filter(|c| c.flyby) {
+                camera.intro_ms = crate::camera::INTRO_MS;
+                camera.flyby = false;
+            }
+        } else if buttons.accept {
+            self.countdown_from = self.time;
+        }
+        for (at, number) in COUNTDOWN {
+            if self.time >= self.countdown_from.wrapping_add(at) && self.called.is_none_or(|n| n > number) {
+                self.called = Some(number);
+                self.events.push(RaceEvent::Count(number));
+                return;
+            }
+        }
+        if self.time >= self.countdown_from.wrapping_add(GO_MS) {
+            self.go();
+        }
+    }
+
+    /// The start (0x80033a78 with 0x80061264): the race clock goes back to
+    /// 0 and every car's laps start.
+    fn go(&mut self) {
+        tracing::trace!("the replay's snapshots (0x8007feb0): not yet ported");
+        self.events.push(RaceEvent::Go);
+        self.before_start = self.time;
+        self.time = 0;
+        for car in &mut self.cars {
+            car.laps = Laps::new(&self.collision.course, self.time);
+        }
+        self.phase = Phase::Racing;
+        self.called = None;
+    }
+
+    /// 0x8003485c: the race is over past its longest time, or when every
+    /// player's car has run its laps (each then coasts, 0x800617c8). (The
+    /// races with a time limit are not yet ported.)
+    fn race_over(&mut self) -> bool {
+        if self.time > LONGEST_MS {
+            return true;
+        }
+        let mut all = true;
+        for car in self.cars.iter_mut().filter(|c| c.flags & 1 != 0) {
+            if car.laps.finished {
+                car.coast();
+            } else {
+                all = false;
+            }
+        }
+        all
+    }
+
+    /// The race ends: the standings (0x80033aa0) and every racing car
+    /// coasting.
+    fn finish(&mut self) {
+        tracing::trace!("the replay's snapshots (0x8007feb0): not yet ported");
+        self.results_from = self.clock;
+        self.accept_released = false;
+        self.standings = self.standings();
+        self.phase = Phase::Finished;
+        self.events.push(RaceEvent::Finish);
+        for car in self.cars.iter_mut().filter(|c| c.flags & 3 != 0) {
+            car.coast();
+        }
+    }
+
+    /// 0x80033aa0's standings: each car's race time (the end of its last
+    /// lap) and best lap, ordered by time with those without one last, and
+    /// the points for the first six with a time. (Computer cars short of the
+    /// line, whose times the original estimates, are not yet ported.)
+    fn standings(&self) -> Vec<Standing> {
+        let laps = self.collision.course.laps as usize;
+        let mut standings: Vec<Standing> = self
+            .cars
+            .iter()
+            .map(|c| Standing {
+                car: c.slot,
+                time: laps.checked_sub(1).and_then(|k| c.laps.ends.get(k)).copied().unwrap_or(0),
+                best: c.laps.best,
+                points: 0,
+            })
+            .collect();
+        standings.sort_by_key(|s| (s.time == 0, s.time));
+        for (place, s) in standings.iter_mut().enumerate() {
+            s.points = if s.time != 0 { POINTS.get(place).copied().unwrap_or(0) } else { 0 };
+        }
+        standings
+    }
+
+    /// The results: after four seconds the race stands still (the replay
+    /// that then plays is not yet ported); they leave after thirty, or on
+    /// Cross pressed afresh, or on Start.
+    fn results(&mut self, buttons: Buttons) {
+        if !self.accept_released {
+            self.accept_released = !buttons.accept;
+        }
+        let since = self.clock.wrapping_sub(self.results_from);
+        if since <= RESULTS_MS {
+            return;
+        }
+        if !self.frozen {
+            self.events.push(RaceEvent::Results);
+        }
+        self.frozen = true;
+        if since > RESULTS_LEAVE_MS || (self.accept_released && buttons.accept) || buttons.start {
+            self.over = true;
+        }
+    }
+
+    /// The countdown's number showing, if any.
+    pub fn countdown(&self) -> Option<u8> {
+        (self.phase == Phase::Starting).then_some(self.called).flatten()
     }
 
     /// `cars_update` (0x8004064c): each car's timers, then its update by its

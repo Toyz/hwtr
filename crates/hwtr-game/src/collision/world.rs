@@ -28,6 +28,10 @@ pub struct Collision {
     pub step: u32,
     /// This step's contacts with the track (0x8012c6ec, count 0x800d2674).
     pub contacts: Vec<super::walls::Contact>,
+    /// The race's laps and the track's checkpoints.
+    pub course: crate::laps::Course,
+    /// What the cars' checkpoints did this step, by car slot.
+    pub lap_events: Vec<(u8, crate::laps::LapEvent)>,
 }
 
 /// What a race step's collision needs besides the world and the cars.
@@ -174,6 +178,7 @@ impl Collision {
     /// (Contacts between cars, 0x8004e938, are not yet ported.)
     pub fn update(&mut self, t: &crate::math::Tables, cars: &mut [Car], step: &mut Step) {
         self.contacts.clear();
+        self.lap_events.clear();
         self.step = self.step.wrapping_add(1);
         self.update_points(cars);
         self.stages(t, cars, step);
@@ -197,7 +202,9 @@ impl Collision {
             }
             if let Some(slot) = self.objects[id].car {
                 let zone = self.objects[id].point_zones[0];
-                self.zone_effects(&mut cars[slot as usize], zone, false);
+                if let Some(event) = self.zone_effects(&mut cars[slot as usize], zone, Some(step.time)) {
+                    self.lap_events.push((slot, event));
+                }
             }
             self.objects[id].flags &= !ZONE_CHANGED;
         }

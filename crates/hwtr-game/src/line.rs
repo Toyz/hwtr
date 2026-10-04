@@ -19,8 +19,9 @@ pub struct LinePoint {
 /// A track's best line.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BestLine {
-    /// A lap time, milliseconds (inferred).
-    pub lap_ms: u32,
+    /// The lap's length, in the units of a car's lap distance
+    /// (`bestline_load` keeps it at 0x801323d8 for the laps and results).
+    pub lap_length: i32,
     /// The first stream, not yet understood.
     pub stream: Vec<u8>,
     pub points: Vec<LinePoint>,
@@ -29,7 +30,7 @@ pub struct BestLine {
 impl BestLine {
     const MAGIC: u16 = 0xdf00;
 
-    /// Parses a BLD file: a 22-byte header (magic, lap time, the two
+    /// Parses a BLD file: a 22-byte header (magic, lap length, the two
     /// streams' lengths, six counts), a stream not yet understood, then the
     /// points, 16 bytes each.
     pub fn parse(b: &[u8]) -> Option<BestLine> {
@@ -38,7 +39,7 @@ impl BestLine {
         if u16_at(0)? != Self::MAGIC {
             return None;
         }
-        let lap_ms = u32::from_le_bytes(b.get(2..6)?.try_into().ok()?);
+        let lap_length = i32::from_le_bytes(b.get(2..6)?.try_into().ok()?);
         let (first, second) = (u16_at(6)? as usize, u16_at(8)? as usize);
         let stream = b.get(22..22 + first)?.to_vec();
         let points = (0..second / 16)
@@ -52,7 +53,7 @@ impl BestLine {
                 })
             })
             .collect::<Option<Vec<_>>>()?;
-        Some(BestLine { lap_ms, stream, points })
+        Some(BestLine { lap_length, stream, points })
     }
 
     /// 0x8007c418: the first point at or past `lap_distance` (wrapping to

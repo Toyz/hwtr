@@ -31,7 +31,13 @@ pub struct Tables {
     pub stunts: crate::car::stunt::StuntTable,
     /// The race camera's views.
     pub views: crate::camera::Views,
+    /// Each track's checkpoints a lap, by world (in [`crate::race::WORLDS`]
+    /// order) and number (0x800c5c64, which the front end copies into the
+    /// race it sets up).
+    pub checkpoints: [[u8; 3]; 4],
 }
+
+const CHECKPOINT_TABLE: u32 = 0x800c_5c64;
 
 impl Tables {
     pub fn from_exe(exe: &Exe) -> Tables {
@@ -47,7 +53,15 @@ impl Tables {
         let surface_friction = (0..FRICTION_ENTRIES as u32).map(|i| byte(FRICTION_TABLE + i)).collect();
         let stunts = crate::car::stunt::StuntTable::read(&byte);
         let views = crate::camera::Views::read(&byte);
-        Tables { cos, sqrt, surface_friction, stunts, views }
+        let checkpoints = std::array::from_fn(|w| std::array::from_fn(|n| byte(CHECKPOINT_TABLE + 3 * w as u32 + n as u32)));
+        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints }
+    }
+
+    /// The checkpoints a lap of `world` (a name from [`crate::race::WORLDS`])
+    /// track `number` (1 to 3) has; 0 for a track not in the table.
+    pub fn checkpoints(&self, world: &str, number: u8) -> u8 {
+        let w = crate::race::WORLDS.iter().position(|&n| n.eq_ignore_ascii_case(world));
+        w.zip((number as usize).checked_sub(1)).and_then(|(w, n)| self.checkpoints[w].get(n).copied()).unwrap_or(0)
     }
 
     /// cos(x), 0x80010afc.
