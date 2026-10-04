@@ -238,19 +238,27 @@ pub mod layout {
 }
 
 impl Collision {
-    /// The part of `collision_update` (0x8004de6c) ported so far: the
-    /// points, the zones, the players' wheels, the ground under each car, the
-    /// walls and the impulses of their contacts, and the effects of the zones
-    /// cars' lead points entered.
+    /// The part of `collision_update` (0x8004de6c) ported so far: the step
+    /// counted, the points moved, the stages, then each contact's impulse.
+    /// (Contacts between cars, 0x8004e938, are not yet ported.)
     pub fn update(&mut self, t: &crate::math::Tables, cars: &mut [Car]) {
         self.contacts.clear();
         self.step = self.step.wrapping_add(1);
         self.update_points(cars);
+        self.stages(t, cars);
+        self.contact_impulses(t, cars);
+    }
+
+    /// The part of 0x8005148c ported so far: the zones, the players'
+    /// wheels, the ground under each car, the walls, then the effects of
+    /// the zones cars' lead points entered. (The computer cars' walls,
+    /// 0x800572f0, the players' zone edges, 0x8005a4cc, and the crashes
+    /// the walls flag are not yet ported.)
+    pub fn stages(&mut self, t: &crate::math::Tables, cars: &mut [Car]) {
         self.track_zones(cars);
         self.wheels(t, cars);
         self.ground(t, cars);
         self.walls(t, cars);
-        self.contact_impulses(t, cars);
         for id in self.cars.iter().collect::<Vec<_>>() {
             if self.objects[id].flags & ZONE_CHANGED == 0 {
                 continue;

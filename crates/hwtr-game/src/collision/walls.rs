@@ -32,14 +32,21 @@ pub const HIT_KIND_3: i32 = 0x2000;
 pub const HIT_KIND_4: i32 = 0x1000;
 pub const THROUGH_WALL: i32 = 0x800;
 
+/// A contact's friction: the surface table's percentage (0x800beac0), four
+/// times that for a computer car still racing.
+pub fn contact_friction(t: &Tables, surface: u8, computer: bool) -> i32 {
+    let percent = t.surface_friction.get(surface as usize).copied().unwrap_or(0) as i32;
+    let friction = div_fx(percent << 12, 100 << 12);
+    if computer { fx(friction, 0x4000) } else { friction }
+}
+
 /// The share of a point's inward speed a contact takes away.
 const BOUNCE: i32 = 0x800;
 
 impl Collision {
     /// The contacts' part of `collision_update` (0x8004de6c): each pushes its
     /// body back with an impulse, sliding against the surface's friction
-    /// (the surface table over 400, a computer car's four times that); the
-    /// object remembers the step and the point. The hit's sounds, sparks and
+    /// ([`contact_friction`]); the object remembers the step and the point. The hit's sounds, sparks and
     /// damage are not yet ported.
     pub fn contact_impulses(&mut self, t: &Tables, cars: &mut [Car]) {
         for c in self.contacts.clone() {
@@ -52,11 +59,7 @@ impl Collision {
             }
             obj.stamp = step;
             obj.contact_point = c.point;
-            let table = t.surface_friction.get(c.surface as usize).copied().unwrap_or(0) as i32;
-            let mut friction = div_fx(table << 12, 400 << 12);
-            if obj.kind == Kind::ComputerCar && car.unknown_62c == 0 {
-                friction = fx(friction, 0x4000);
-            }
+            let friction = contact_friction(t, c.surface, obj.kind == Kind::ComputerCar && car.unknown_62c == 0);
             car.body.impulse(t, c.point, c.normal, BOUNCE, friction);
         }
     }

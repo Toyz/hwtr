@@ -329,8 +329,7 @@ fn contact_impulses_match_the_original() {
             let mut port = cars.clone();
             for (k, c) in world.contacts.iter().enumerate() {
                 let slot = world.objects[c.object].car.unwrap() as usize;
-                let table = t.surface_friction[c.surface as usize] as i32;
-                let friction = hwtr_game::math::div_fx(table << 12, 400 << 12);
+                let friction = hwtr_game::collision::walls::contact_friction(&t, c.surface, false);
                 let size = port[slot].body.impulse(&t, c.point, c.normal, 0x800, friction);
                 let original = m.call(0x8006_dc08, &[CONTACTS + k as u32 * CONTACT_SIZE, friction as u32]).unwrap();
                 assert_eq!(original as i32, size, "{name} step {step}: contact {k} impulse");
@@ -345,4 +344,7 @@ fn contact_impulses_match_the_original() {
         }
     }
     assert!(pushed > 0 && sliding > 0, "pushed {pushed}, sliding {sliding}");
+    // As the original passes it for a player's car on the road's floor
+    // (seen in 0x8006dc08's argument during a race).
+    assert_eq!(hwtr_game::collision::walls::contact_friction(&t, 2, false), 0x400);
 }

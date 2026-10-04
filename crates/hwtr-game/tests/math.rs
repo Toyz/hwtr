@@ -108,3 +108,19 @@ fn orthonormalize_matches_the_original() {
         assert_eq!(got, want, "orthonormalize({mat:?})");
     }
 }
+
+#[test]
+fn length_matches_vec_length() {
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-race") else { return };
+    let t = hwtr_game::math::Tables::from_exe(&exe);
+    let mut rng = common::Rng(0x1e9_0000_0000_0003);
+    let at = 0x801f_8000u32;
+    for k in 0..4000 {
+        let v = [0; 3].map(|_| (rng.word() as i32) >> rng.below(31));
+        let bytes: Vec<u8> = v.iter().flat_map(|c| c.to_le_bytes()).collect();
+        m.bus.load(at, &bytes);
+        let original = m.call(0x8002_6650, &[at]).unwrap() as i32;
+        assert_eq!(original, t.length(v), "case {k}: {v:?}");
+    }
+}

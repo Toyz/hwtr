@@ -36,6 +36,7 @@ pub const PORTED: &[(u32, &str, Adapter)] = &[
     (0x8003_d71c, "air_control", air_control),
     (0x8007_1bc0, "align", align),
     (0x8003_d5cc, "damp_spin", damp_spin),
+    (0x8006_dc08, "impulse", impulse),
 ];
 
 /// Runs `f` on the car at `at`, read out of RAM and written back.
@@ -85,6 +86,21 @@ fn integrate(t: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
 fn air_control(_: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
     on_car(bus, cpu.r[4], |car, _| car.air_control());
     0
+}
+
+/// The contact at a0 (its object's body, point and normal) takes an
+/// impulse with friction a1, the bounce as for a car.
+fn impulse(t: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
+    let contact = cpu.r[4];
+    let (body, point, normal, kind) = {
+        let ram = Ram(&mut bus.ram);
+        let object = ram.i32(contact) as u32;
+        (ram.i32(object + 0x64) as u32, ram.vec3(contact + 4), ram.vec3(contact + 0x14), ram.u8(object + 0x60))
+    };
+    let bounce = if kind == 6 { 0x14cc } else { 0x800 };
+    let mut size = 0;
+    on_body(bus, body, |b| size = b.impulse(t, point, normal, bounce, cpu.r[5] as i32));
+    size as u32
 }
 
 /// Runs `f` on the body at `at`, read out of RAM and written back.

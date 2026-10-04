@@ -18,7 +18,10 @@
 
 #![forbid(unsafe_code)]
 
+use std::cell::RefCell;
 use std::rc::Rc;
+
+use hwtr_game::body::Body;
 
 use hwtr_game::car::Car;
 use hwtr_game::car::layout::{CAR_COUNT, CAR_SIZE, CARS};
@@ -79,13 +82,40 @@ fn main() {
     hle.load(&std::fs::read(&state).expect("state file")).expect("state");
     hle.m.step_limit = 30_000_000;
     let tables = Tables::from_ram(&hle.m.bus.ram);
+    tracing::info!("friction table {:?}", &tables.surface_friction[..12]);
     let tuning = hwtr_game::car::Tuning::read(&Ram(&mut hle.m.bus.ram));
     let dt = (hwtr_game::race::STEP_MS << 12) / 1000;
+    // The player's body as each impulse the original applies finds it.
+    let entries: Rc<RefCell<Vec<Body>>> = Rc::default();
+    let exits: Rc<RefCell<Vec<Body>>> = Rc::default();
+    let log = entries.clone();
+    let exit_log = exits.clone();
+    hle.m.check(0x8006_dc08, move |cpu, bus| {
+        let ram = &bus.ram;
+        let at = |a: u32| (a & 0x1f_ffff) as usize;
+        let word = |a: u32| u32::from_le_bytes(ram[at(a)..at(a) + 4].try_into().unwrap());
+        let body = word(word(cpu.r[4]) + 0x64);
+        if body == CARS + 0x30 {
+            let mut copy = ram.clone();
+            log.borrow_mut().push(Body::read(&Ram(&mut copy), body));
+            tracing::warn!("  original impulse: friction {:#x}, surface {}", cpu.r[5], ram[at(cpu.r[4] + 0x24)]);
+        }
+        let exit_log = exit_log.clone();
+        Box::new(move |_, bus| {
+            if body == CARS + 0x30 {
+                let mut copy = bus.ram.clone();
+                exit_log.borrow_mut().push(Body::read(&Ram(&mut copy), body));
+            }
+            Ok(())
+        })
+    });
     let (mut steps, mut same, mut reported) = (0u32, 0u32, 0u32);
     for f in 0..frames {
         let (mut world, _) = Collision::read(&Ram(&mut hle.m.bus.ram));
         let mut native = cars(&mut hle.m.bus.ram);
         let before = Ram(&mut hle.m.bus.ram).i32(STEP);
+        entries.borrow_mut().clear();
+        exits.borrow_mut().clear();
         script.apply(&mut hle, f);
         hle.frame().expect("frame");
         let ran = Ram(&mut hle.m.bus.ram).i32(STEP).wrapping_sub(before);
@@ -98,7 +128,12 @@ fn main() {
         (n.steer, n.accel, n.brake, n.stick, n.handbrake) = (o.steer, o.accel, o.brake, o.stick, o.handbrake);
         (n.unknown_25, n.unknown_26, n.unknown_27) = (o.unknown_25, o.unknown_26, o.unknown_27);
         n.update(&tables, &tuning, dt);
-        world.update(&tables, &mut native);
+        world.contacts.clear();
+        world.step = world.step.wrapping_add(1);
+        world.update_points(&mut native);
+        world.stages(&tables, &mut native);
+        let at_impulse = native[0].body.clone();
+        world.contact_impulses(&tables, &mut native);
         let d = diff(&original[0], &native[0]);
         if d.is_empty() {
             same += 1;
@@ -117,6 +152,35 @@ fn main() {
                 world.contacts.len(),
                 world.contacts.iter().map(|c| (c.object, c.surface)).collect::<Vec<_>>(),
             );
+            tracing::warn!("  the original's impulses on the player: {}", entries.borrow().len());
+            if let Some(entry) = entries.borrow().first() {
+                for line in diff(entry, &at_impulse) {
+                    tracing::warn!("  at the first impulse: {line}");
+                }
+                if let [c] = world.contacts.as_slice() {
+                    let mut b = entry.clone();
+                    let friction = hwtr_game::collision::walls::contact_friction(&tables, c.surface, false);
+                    b.impulse(&tables, c.point, c.normal, 0x800, friction);
+                    tracing::warn!("  entry + port impulse vs original: {:?}", diff(&original[0].body, &b));
+                    tracing::warn!("  entry + port impulse vs native: {:?}", diff(&native[0].body, &b));
+                    if let Some(exit) = exits.borrow().first() {
+                        tracing::warn!("  entry + port impulse vs original exit: {:?}", diff(exit, &b));
+                        tracing::warn!("  original exit vs original final: {:?}", diff(&original[0].body, exit));
+                        let d = |x: &Body| hwtr_game::math::sub(x.momentum, entry.momentum);
+                        let mut nf = entry.clone();
+                        nf.impulse(&tables, c.point, c.normal, 0x800, 0);
+                        tracing::warn!(
+                            "  momentum change: original {:?}, port {:?}, port without friction {:?}; normal {:?}, vel {:?}, spin {:?}",
+                            d(exit), d(&b), d(&nf), c.normal, entry.vel, entry.spin
+                        );
+                    }
+                }
+            }
+            for (k, (a, b)) in original_world.contacts.iter().zip(&world.contacts).enumerate() {
+                if a != b {
+                    tracing::warn!("  contact {k}: original {a:?}, port {b:?}");
+                }
+            }
             for line in d.iter().take(40) {
                 tracing::warn!("  {line}");
             }
