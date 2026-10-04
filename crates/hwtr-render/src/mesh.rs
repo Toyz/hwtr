@@ -47,20 +47,30 @@ pub struct Vtx {
 impl Vtx {
     /// The size of one vertex in the vertex buffer.
     pub const SIZE: usize = 24;
+}
 
-    /// Vertices as the vertex buffer holds them: each field little-endian,
-    /// in order, matching the layout the pipeline declares.
-    pub fn bytes(v: &[Vtx]) -> Vec<u8> {
-        let mut out = Vec::with_capacity(v.len() * Self::SIZE);
-        for x in v {
+/// Vertices packed as the vertex buffer holds them (each field
+/// little-endian, in order, matching the layout the pipeline declares),
+/// into a buffer reused from frame to frame.
+#[derive(Debug, Default)]
+pub struct VertexStaging {
+    buf: Vec<u8>,
+}
+
+impl VertexStaging {
+    /// Packs `vertices`, reallocating only when they outgrow the buffer.
+    pub fn pack(&mut self, vertices: &[Vtx]) -> &[u8] {
+        self.buf.clear();
+        self.buf.reserve(vertices.len() * Vtx::SIZE);
+        for x in vertices {
             for p in x.pos {
-                out.extend_from_slice(&p.to_le_bytes());
+                self.buf.extend_from_slice(&p.to_le_bytes());
             }
             for w in [x.colour, x.uv, x.mode] {
-                out.extend_from_slice(&w.to_le_bytes());
+                self.buf.extend_from_slice(&w.to_le_bytes());
             }
         }
-        out
+        &self.buf
     }
 }
 

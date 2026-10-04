@@ -5,7 +5,7 @@
 
 use wgpu::util::DeviceExt;
 
-use crate::mesh::{VRAM_H, VRAM_W, Vram, Vtx};
+use crate::mesh::{VRAM_H, VRAM_W, VertexStaging, Vram, Vtx};
 
 const SHADER: &str = r#"
 struct Camera { mvp: mat4x4f }
@@ -79,6 +79,8 @@ pub struct Renderer {
     count: u32,
     /// What moves (the cars), replaced each frame by `set_moving`.
     moving: Option<(wgpu::Buffer, u32)>,
+    /// Where the moving triangles are packed each frame.
+    staging: VertexStaging,
     depth: Option<(wgpu::Texture, u32, u32)>,
     pub clear: [u8; 3],
 }
@@ -205,7 +207,7 @@ impl Renderer {
         });
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("triangles"),
-            contents: &Vtx::bytes(tris),
+            contents: VertexStaging::default().pack(tris),
             usage: wgpu::BufferUsages::VERTEX,
         });
         Renderer {
@@ -215,6 +217,7 @@ impl Renderer {
             vertices,
             count: tris.len() as u32,
             moving: None,
+            staging: VertexStaging::default(),
             depth: None,
             clear: [0, 0, 0],
         }
@@ -222,7 +225,7 @@ impl Renderer {
 
     /// The triangles that move, drawn after the fixed ones until replaced.
     pub fn set_moving(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, tris: &[Vtx]) {
-        let bytes = Vtx::bytes(tris);
+        let bytes = self.staging.pack(tris);
         let fits = self.moving.as_ref().is_some_and(|(b, _)| b.size() >= bytes.len() as u64);
         if !fits {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -234,7 +237,7 @@ impl Renderer {
             self.moving = Some((buffer, 0));
         }
         if let Some((buffer, count)) = &mut self.moving {
-            queue.write_buffer(buffer, 0, &bytes);
+            queue.write_buffer(buffer, 0, bytes);
             *count = tris.len() as u32;
         }
     }
