@@ -54,13 +54,16 @@ pub struct Race {
     /// Player one's controller, read once a frame as the game reads it.
     reader: PadReader,
     mapping: Mapping,
+    /// The pad in analog mode (the DualShock's ANALOG light on).
+    pub analog: bool,
 }
 
 /// The pad as the original's controller read takes it: a DualShock in
-/// analog mode or a digital pad, by the pad's ANALOG state.
-fn pad_state(pad: &Pad) -> PadState {
+/// analog mode (when asked for, and a gamepad's sticks are there) or a
+/// digital pad, as a DualShock is when switched on.
+fn pad_state(pad: &Pad, analog: bool) -> PadState {
     PadState {
-        kind: if pad.analog { PadKind::Analog } else { PadKind::Digital },
+        kind: if analog && pad.analog { PadKind::Analog } else { PadKind::Digital },
         buttons: pad.buttons.bits(),
         left: [pad.left.x, pad.left.y],
         right: [pad.right.x, pad.right.y],
@@ -110,6 +113,7 @@ impl Race {
             since_read: 0,
             reader: PadReader::default(),
             mapping: Mapping::default(),
+            analog: false,
         })
     }
 
@@ -122,7 +126,7 @@ impl Race {
         let ms = elapsed.as_millis().min(u32::MAX as u128) as u32;
         self.since_read = self.since_read.saturating_add(ms);
         self.ahead -= ms.min(50) as i64;
-        let state = pad_state(pad);
+        let state = pad_state(pad, self.analog);
         while self.ahead < 0 {
             self.reader.read(&state, &self.mapping, std::mem::take(&mut self.since_read));
             self.race.step(&[self.reader.controls()]);

@@ -9,13 +9,14 @@
 //! through them), then the race: the track and the cars on the start grid,
 //! drawn natively, with a camera behind the player's car (Select goes back).
 //! The player's car drives on the ported physics and collision, through the
-//! original's controller read: with a gamepad, a DualShock in analog mode
-//! (left stick steers, right stick accelerates and brakes); with the
-//! keyboard, a digital pad (the arrows steer, Z accelerates, A brakes, 1 is
-//! the handbrake). The other cars wait until computer cars are ported.
+//! original's controller read, as a digital pad by default (the d-pad
+//! steers, Cross accelerates, Square brakes, L2 is the handbrake; on the
+//! keyboard the arrows, Z, A and 1), or with `--analog` a DualShock in
+//! analog mode (the left stick steers, the right stick accelerates and
+//! brakes). The other cars wait until computer cars are ported.
 //!
 //! ```text
-//! hwtr [--cue DISC.cue] [--track NAME] [--shot OUT.png [--frames N] [--press SCRIPT]]
+//! hwtr [--cue DISC.cue] [--track NAME] [--analog] [--shot OUT.png [--frames N] [--press SCRIPT]]
 //! ```
 //!
 //! `--track` goes straight to a race on that track (DESERT1 by default);
@@ -46,6 +47,8 @@ struct Hwtr {
     track: String,
     /// The race, once the boot screens are through.
     race: Option<Race>,
+    /// The pad in analog mode.
+    analog: bool,
     /// The window's format without sRGB: the game's colours are already
     /// display-encoded.
     plain_format: wgpu::TextureFormat,
@@ -61,7 +64,10 @@ impl Hwtr {
 
     fn start_race(&mut self) {
         match Race::load(&self.cue, &self.track) {
-            Ok(r) => self.race = Some(r),
+            Ok(mut r) => {
+                r.analog = self.analog;
+                self.race = Some(r);
+            }
             Err(e) => rrt::tracing::error!("{e}"),
         }
     }
@@ -129,15 +135,17 @@ fn main() {
     let mut config = Config::default().title("hwtr").hz(rrt::app::rate::NTSC);
     let mut args = std::env::args().skip(1);
     let (mut cue, mut track, mut shot, mut frames, mut press) = (None, None, None, 0u64, None);
+    let mut analog = false;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--cue" => cue = args.next().map(PathBuf::from),
             "--track" => track = args.next(),
+            "--analog" => analog = true,
             "--shot" => shot = args.next().map(PathBuf::from),
             "--frames" => frames = args.next().and_then(|s| s.parse().ok()).unwrap_or(0),
             "--press" => press = args.next(),
             _ => {
-                eprintln!("usage: hwtr [--cue DISC.cue] [--track NAME] [--shot OUT.png [--frames N] [--press SCRIPT]]");
+                eprintln!("usage: hwtr [--cue DISC.cue] [--track NAME] [--analog] [--shot OUT.png [--frames N] [--press SCRIPT]]");
                 std::process::exit(2);
             }
         }
@@ -155,6 +163,7 @@ fn main() {
             cue,
             track,
             race: None,
+            analog,
             plain_format: wgpu::TextureFormat::Rgba8Unorm,
         };
         if race {
