@@ -748,6 +748,11 @@ impl Race {
             for (car, c) in self.cars.iter_mut().zip(controls) {
                 car.apply_controls(c, &self.tuning);
             }
+            // 0x80034940 ends each player's read with the HUD button
+            // (0x8006545c).
+            for (k, c) in controls.iter().enumerate().take(2) {
+                self.hud.hud_button(k, c.hud);
+            }
         }
         if !self.frozen {
             let racing = self.phase != Phase::Starting;

@@ -2,8 +2,8 @@
 title: Controls and the pad
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8001bec0 controls_frame, 0x8001bf1c, 0x8001c998, 0x8001cee4 controls_read_analog, 0x8001d9ec curve, 0x8001b170 action_level, 0x8011b2b8 action_levels, 0x8001d320 controls_init, 0x8001c344 controls_read_port, 0x8001c480, 0x8001cee4, 0x8001abe8 controls_action_held, 0x8011b388 pad_buffer, 0x8011b3d8 control_mapping, 0x800bdc08 control_mapping_default, interface table 0x8012fcdc, 0x8001b7b4 motors_road, 0x8001b934 motors_jolt, 0x8001ccc4 motors_fade, 0x8005fba8 race_controls_frame, 0x8005fd4c wall_jolt, 0x8005fed0 pair_jolt, 0x800d0e2c jolt_wait
-worklog: 11, 63
+covers: US CCCPSX.EXE:0x8001bec0 controls_frame, 0x8001bf1c, 0x8001c998, 0x8001cee4 controls_read_analog, 0x8001d9ec curve, 0x8001b170 action_level, 0x8011b2b8 action_levels, 0x8001d320 controls_init, 0x8001c344 controls_read_port, 0x8001c480, 0x8001cee4, 0x8001abe8 controls_action_held, 0x8011b388 pad_buffer, 0x8011b3d8 control_mapping, 0x800bdc08 control_mapping_default, interface table 0x8012fcdc, 0x8001b7b4 motors_road, 0x8001b934 motors_jolt, 0x8001ccc4 motors_fade, 0x8005fba8 race_controls_frame, 0x8005fd4c wall_jolt, 0x8005fed0 pair_jolt, 0x800d0e2c jolt_wait, 0x8006545c hud_button
+worklog: 11, 63, 79
 ---
 
 # Controls and the pad
@@ -79,7 +79,7 @@ the original and reading the car's control fields:
 | 9 reset (back on the road) | R1 (0x08) | +0x11 | +0x25 |
 | 10 turbo | R2 (0x02) | +0x12 | +0x26, +0x27 (held) |
 | 11 change view | Circle | +0x13 | the camera's view button |
-| 12 | Triangle | +0x14 | |
+| 12 HUD on/off | Triangle | +0x14 | the HUD's show mask (0x8006545c) |
 
 ## The levels
 
@@ -114,6 +114,19 @@ DualShock in analog mode (type 0x73). The neGcon path reads analog values for
 more than steering (its I, II and L buttons are analog), so a neGcon
 presentation could carry the DualSense's analog triggers; which actions use
 them is in 0x8001cee4.
+
+## The HUD button (0x8006545c)
+
+The race's pad read (0x80034940) ends each player's read with action 12.
+
+- **No change.** Its level is kept per player at 0x800d0e60; if the level
+  is unchanged, nothing happens.
+- **A press.** The player's show mask (0x800d0e58) goes to 0 if it showed
+  everything the HUD shows when on (0x800d0e5c, set with it at the race's
+  setup), and back to that otherwise.
+- **Any change.** Press or release, all three lines of the player's stunt
+  announcement are marked done, both halves (0x800beae4 + 32 a line, +0xd),
+  so one under way is cut short.
 
 ## Vibration
 

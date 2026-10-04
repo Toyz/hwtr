@@ -207,8 +207,11 @@ pub struct Hud {
     pub laps: u8,
     /// A race against the clock: its limit, ms.
     pub limit: Option<u32>,
-    /// What each player's HUD shows.
+    /// What each player's HUD shows (0x800d0e58), what it shows when on
+    /// (0x800d0e5c), and the HUD button's level last step (0x800d0e60).
     pub show: [u16; 2],
+    pub show_on: [u16; 2],
+    hud_button: [u8; 2],
     pub meter: MeterTables,
     flashes: [Option<LapFlash>; 2],
     meters: [Meter; 2],
@@ -364,6 +367,8 @@ impl Hud {
             laps,
             limit,
             show: [show; 2],
+            show_on: [show; 2],
+            hud_button: [0; 2],
             meter,
             flashes: [None; 2],
             meters: [Meter::default(); 2],
@@ -642,6 +647,32 @@ impl Hud {
             && elapsed < *limit
         {
             *limit = elapsed;
+        }
+    }
+
+    /// The HUD button's last level forgotten (as the HUD's setup leaves
+    /// it, 0x80061e04).
+    pub fn reset_hud_button(&mut self) {
+        self.hud_button = [0; 2];
+    }
+
+    /// 0x8006545c: player `player`'s HUD button at `level` this step. On
+    /// a change, a press turns the HUD off if it shows all it shows when
+    /// on, else on again; a press or a release cancels any stunt
+    /// announcement on the way (every line's halves done).
+    pub fn hud_button(&mut self, player: usize, level: u8) {
+        let (Some(last), Some(&on)) = (self.hud_button.get(player), self.show_on.get(player)) else { return };
+        if *last == level {
+            return;
+        }
+        if level != 0 {
+            self.show[player] = if self.show[player] == on { 0 } else { on };
+        }
+        self.hud_button[player] = level;
+        for line in &mut self.announcements[player].slides {
+            for half in line {
+                half.done = true;
+            }
         }
     }
 

@@ -23,6 +23,8 @@ pub struct Controls {
     pub reset: bool,
     pub turbo: bool,
     pub view: bool,
+    /// Action 12 (Triangle): the HUD on or off, its level 0 or 255.
+    pub hud: u8,
 }
 
 impl Car {

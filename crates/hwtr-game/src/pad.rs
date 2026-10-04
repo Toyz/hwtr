@@ -237,6 +237,7 @@ impl PadReader {
             reset: l(9) != 0,
             turbo: l(10) != 0,
             view: l(11) != 0,
+            hud: l(12),
         }
     }
 }
