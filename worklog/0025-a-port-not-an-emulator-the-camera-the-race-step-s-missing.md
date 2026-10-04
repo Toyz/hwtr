@@ -2,7 +2,7 @@
 number: 25
 title: A port, not an emulator; the camera; the race step's missing pieces
 date: 2026-10-04
-area: architecture, physics, camera, input, tooling
+area: design, physics, render, input, tooling
 files: crates/hwtr-game/src/camera.rs, crates/hwtr-game/src/collision/camera.rs, crates/hwtr-game/src/car/righting.rs, crates/hwtr-game/src/car/wreck.rs, crates/hwtr-game/src/car/impact.rs, crates/hwtr-game/src/car/stunt.rs, crates/hwtr-game/src/rand.rs, crates/hwtr-hle/src/original/, crates/hwtr-hle/tests/, crates/hwtr/src/race.rs
 ---
 
@@ -77,3 +77,5 @@ the game is playable.
 **Next.** car_update's turbo (R2) and reset (R1), the respawn point, the
 opening sweep, then computer cars, laps and the countdown, the HUD, the
 menus and sound.
+
+**Still unknown:** nothing beyond the work listed under Next.

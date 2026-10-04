@@ -2,7 +2,7 @@
 number: 24
 title: The track holds the car: collision, the pad, and racecheck
 date: 2026-10-03
-area: physics, collision, input, test, tooling
+area: physics, input, test, tooling
 files: crates/hwtr-game/src/collision/ground.rs, crates/hwtr-game/src/collision/walls.rs, crates/hwtr-game/src/collision/world.rs, crates/hwtr-game/src/body.rs, crates/hwtr-game/src/pad.rs, crates/hwtr-hle/src/bin/racecheck.rs, crates/hwtr-hle/src/port.rs, crates/hwtr/src/race.rs, crates/hwtr-render/src/mesh.rs, docs/engine/controls.md
 ---
 
@@ -106,3 +106,5 @@ original gave a turbo for an air).
 - car-to-car contacts.
 
 Then computer cars driving, laps, and the HUD.
+
+**Still unknown:** nothing beyond the pieces listed above as still to port.
