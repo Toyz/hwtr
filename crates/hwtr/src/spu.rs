@@ -7,13 +7,13 @@
 //! output; the game sets voices and keys them on between ticks.
 //!
 //! The sample format and the chip's 4-point Gaussian interpolation are
-//! rrt's (`rrt::emu::spu`); the voices, envelopes and mixing are here.
+//! rrt's (`rrt::kit::adpcm::spu`); the voices, envelopes and mixing are here.
 //! There is no reverb.
 
 use std::sync::Arc;
 
 use rrt::audio::Source;
-use rrt::emu::spu::{self as adpcm, History, PER_FRAME};
+use rrt::kit::adpcm::spu::{self as adpcm, History, PER_FRAME};
 
 const VOICES: usize = 24;
 

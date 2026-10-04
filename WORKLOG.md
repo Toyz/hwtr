@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-76 entries: audio 9, bug 1, build 2, content 5, decomp 7, design 3, disc 1, engine 6, format 7, input 9, physics 14, race 11, render 18, test 16, tooling 15, ui 13, video 1.
+77 entries: audio 9, bug 1, build 3, content 5, decomp 7, design 3, disc 1, engine 6, format 7, input 9, physics 14, race 11, render 18, test 16, tooling 15, ui 13, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -88,3 +88,4 @@ The [reference](docs/README.md) says what is true now.
 | 74 | [One tap steps the garage's car once](worklog/0074-one-tap-steps-the-garage-s-car-once.md) | 2026-10-04 | ui |
 | 75 | [Closing the questions later work answered](worklog/0075-closing-the-questions-later-work-answered.md) | 2026-10-04 | tooling |
 | 76 | [Sound levels: the menu's effects, the music volume and CdMix](worklog/0076-sound-levels-the-menu-s-effects-the-music-volume-and-cdmix.md) | 2026-10-04 | audio |
+| 77 | [The sound chip takes ADPCM from rrt-kit; no emulator in the game binary](worklog/0077-the-sound-chip-takes-adpcm-from-rrt-kit-no-emulator-in-the.md) | 2026-10-04 | build |
