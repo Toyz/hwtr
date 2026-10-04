@@ -211,9 +211,9 @@ fn place(obj: &mut CollisionObject) {
     obj.points = obj.local.iter().map(|&p| add(apply_matrix_lv(&rot, p), centre)).collect::<Vec<Vec3>>();
 }
 impl Collision {
-    /// The part of `collision_update` (0x8004de6c) ported so far: the step
-    /// counted, the points moved, the stages, then each contact's impulse.
-    /// (Contacts between cars, 0x8004e938, are not yet ported.)
+    /// `collision_update` (0x8004de6c): the step counted, the points
+    /// moved, the pairs found (0x8004e938), the stages, then each contact's
+    /// impulse and each pair's.
     pub fn update(&mut self, t: &crate::math::Tables, cars: &mut [Car], step: &mut Step) {
         self.contacts.clear();
         self.pairs.clear();

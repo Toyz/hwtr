@@ -196,8 +196,23 @@ impl Car {
             && drive.time.wrapping_sub(self.contact_time) < 100;
         self.stuck_ms = if stuck { self.stuck_ms + 25 } else { 0 };
         if self.stuck_ms > 500 {
-            tracing::trace!("car {}: unsticking (0x8004b478), not yet ported", self.slot);
+            self.unstick();
         }
         stepped
+    }
+
+    /// 0x8004b478: a car stuck half a second turns where it stands: two
+    /// opposite sideways forces, the steering times the square of its
+    /// width and length, act at its mass's distance ahead of and behind
+    /// its centre, for the next step's sums.
+    pub fn unstick(&mut self) {
+        let b = &mut self.body;
+        let centre = crate::math::add(b.pos, b.centre);
+        let ahead = column(&b.rot, 1).map(|c| fx(c, fx(b.mass, 4096)));
+        let push = fx(fx(self.width, self.width).wrapping_add(fx(self.length, self.length)), self.steer);
+        let side = column(&b.rot, 0).map(|c| fx(c, push));
+        b.apply_force(crate::math::add(centre, ahead), side);
+        let (behind, back) = (ahead.map(|c| fx(c, -4096)), side.map(|c| fx(c, -4096)));
+        b.apply_force(crate::math::add(centre, behind), back);
     }
 }

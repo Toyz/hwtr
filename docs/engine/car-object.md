@@ -2,8 +2,8 @@
 title: The car object and its physics step
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x80128fcc the car array, 0x800d263c the car count, 0x8004064c cars_update, 0x8003fbe4 car_update, 0x800427a8 car_physics, 0x80040a90 update_wheels, 0x80041af0 aero, 0x80060138 drivetrain, 0x80044fc4 wheel spin, 0x8003d71c air control, 0x80136a18 the tuning bytes
-worklog: 18, 19, 20, 22
+covers: US CCCPSX.EXE:0x80128fcc the car array, 0x800d263c the car count, 0x8004064c cars_update, 0x8003fbe4 car_update, 0x800427a8 car_physics, 0x80040a90 update_wheels, 0x80041af0 aero, 0x80060138 drivetrain, 0x80044fc4 wheel spin, 0x8003d71c air control, 0x8004b478 unstick, 0x80136a18 the tuning bytes
+worklog: 18, 19, 20, 22, 49
 ---
 
 # The car object and its physics step
@@ -225,6 +225,29 @@ against the heading. Otherwise wheels from the third on stop under the
 handbrake; a driven wheel follows the engine (`wheel rpm × 2π / 60`) unless
 braked harder than driven; an undriven wheel stops under more than half
 brake and otherwise keeps its rate.
+
+## Unsticking (0x8004b478)
+
+At the end of `car_update`, the stuck timer (+0x91c) grows by 25 ms
+each step that all of these hold, and is cleared otherwise:
+
+- the accelerator is pressed past half (`accel >= 2049`)
+- the steering is past half either way
+- every wheel is down
+- the car is slower than 5 mph
+- the car touched something in the last 100 ms of race time
+
+Past 500 ms, 0x8004b478 adds a couple to the step's force and torque
+sums. The car turns where it stands, and its momentum does not change.
+
+- The side force is the car's x axis (rotation column 0) times
+  `steer * (width² + length²)`, with width at +0x780 and length at
+  +0x784.
+- It acts at the centre (position plus centre of mass), moved forward by
+  the y axis (column 1) times the body's mass.
+- The same force, negated, acts at the point as far behind.
+- Each force goes through the torque sum's 64-bit product
+  (`Body::apply_force`).
 
 ## Unknown
 

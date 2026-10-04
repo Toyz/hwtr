@@ -622,3 +622,35 @@ fn road_feel_matches_the_original() {
     }
     assert!(felt > 300, "{felt} rough rounds");
 }
+
+#[test]
+fn unsticking_matches_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0x0275_71c4);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let cars = m.bus.read_u32(car::CAR_COUNT);
+        let start = m.bus.ram.clone();
+        for round in 0..512 {
+            let k = rng.below(cars);
+            let at = CARS + k * CAR_SIZE;
+            m.bus.ram.copy_from_slice(&start);
+            if round > 0 {
+                // Any steering, size, mass, sums and place.
+                let mut ram = Ram(&mut m.bus.ram);
+                let big = |rng: &mut common::Rng| (rng.word() as i32) >> (6 + rng.below(24));
+                ram.set_i32(at + car::STEER, rng.below(8193) as i32 - 4096);
+                ram.set_i32(at + car::WIDTH, big(&mut rng).abs());
+                ram.set_i32(at + car::LENGTH, big(&mut rng).abs());
+                ram.set_i32(at + car::BODY + hwtr_hle::original::body::MASS, big(&mut rng).abs());
+                ram.set_vec3(at + car::FORCE, [big(&mut rng), big(&mut rng), big(&mut rng)]);
+                ram.set_vec3(at + car::POS, [big(&mut rng), big(&mut rng), big(&mut rng)]);
+                ram.set_vec3(at + car::DRAG_POINT, [big(&mut rng), big(&mut rng), big(&mut rng)]);
+            }
+            let mut port = m.bus.ram.clone();
+            on_car(&mut port, at, |car, _| car.unstick());
+            m.call(0x8004_b478, &[at]).unwrap();
+            common::same_ram(&m.bus.ram, &port, at, &[], &format!("{name} car {k} round {round}"));
+        }
+    }
+}
