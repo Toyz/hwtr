@@ -736,6 +736,10 @@ impl Race {
                         }
                     }
                 }
+                // 0x8006a200: the triggers the cars drove into.
+                for (trigger, slot) in std::mem::take(&mut self.collision.triggers_hit) {
+                    self.fire_trigger(trigger, slot);
+                }
                 // 0x8006b958: what the cars knocked over.
                 for (v, _vel) in std::mem::take(&mut self.collision.knocked) {
                     let Some(vol) = self.world_volumes.get(v as usize).copied() else { continue };
@@ -836,7 +840,9 @@ impl Race {
         // 0x8007f17c: the track's objects move, by the race clock and the
         // time before the start, unless the race stands still.
         if !self.frozen {
-            self.anims.step(self.time.wrapping_add(self.before_start));
+            // The triggers' looped sounds (0x8006a4cc, 0x8006a424) are
+            // played once, so nothing follows their animations.
+            let _running = self.anims.step(self.time.wrapping_add(self.before_start));
         }
         self.rumble();
         match self.phase {
@@ -1224,6 +1230,34 @@ impl Race {
             }
         }
         quads
+    }
+
+    /// The track's moving objects, those a trigger zone names run only
+    /// when it fires (collision_scp_load, 0x8004c084, with 0x8007f628).
+    pub fn set_anims(&mut self, mut anims: crate::world_anim::WorldAnims) {
+        let scp = &self.collision.scp;
+        for z in scp.zones.iter().filter(|z| z.flags & 2 != 0) {
+            let Some(t) = scp.triggers.get(z.param as usize) else { continue };
+            if t.flags & 2 != 0 && anims.set_triggered(t.anims[0] as usize) && t.flags & 4 != 0 {
+                anims.set_triggered(t.anims[1] as usize);
+            }
+        }
+        self.anims = anims;
+    }
+
+    /// 0x8006a200: car `slot` drove into a zone of trigger `trigger`.
+    fn fire_trigger(&mut self, trigger: u16, slot: u8) {
+        let Some(t) = self.collision.scp.triggers.get(trigger as usize).copied() else { return };
+        let player = self.cars.get(slot as usize).is_some_and(|c| c.flags & 1 != 0);
+        for f in self.anims.fire(&t, trigger, player) {
+            match f {
+                crate::world_anim::Fired::Sound { anim, sound } => {
+                    let at = self.anims.pose(&self.tables, anim).map_or([0; 3], |(_, pos)| pos);
+                    self.events.push(RaceEvent::Knock { sound, at });
+                }
+                crate::world_anim::Fired::Effect27 => self.events.push(RaceEvent::Effect { id: 27, importance: 0 }),
+            }
+        }
     }
 
     /// The countdown's number showing, if any.

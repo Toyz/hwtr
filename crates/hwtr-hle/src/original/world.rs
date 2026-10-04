@@ -103,6 +103,7 @@ pub fn collision(ram: &Ram) -> (Collision, Vec<u32>) {
             prop_draws: Vec::new(),
             volume_fx: Vec::new(),
             hits: Vec::new(),
+            triggers_hit: Vec::new(),
             hushed: ram.u8(HUSHED) == 1,
             knocked: Vec::new(),
             pairs: (0..ram.i16(PAIR_COUNT) as u16 as u32)

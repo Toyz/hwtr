@@ -125,10 +125,24 @@ pub struct Scp {
     pub planes: Vec<Plane>,
     /// The zones' fences (table D).
     pub fences: Vec<Fence>,
-    /// Table E (12 bytes each), not yet understood.
-    pub e: Vec<[u8; 12]>,
+    /// The triggers (table E), by a trigger zone's parameter.
+    pub triggers: Vec<Trigger>,
     /// The camera's path over the track before a race (0x8003acbc).
     pub flyby: Vec<Keyframe>,
+}
+
+/// A trigger (table E, 12 bytes): what a zone flagged 2 starts when a car
+/// drives into it (0x8006a200). Flag 1 turns it off; flags 2 and 4 name the
+/// two animations it starts (the second only with the first), both up to
+/// key `frame`; flags 0x28 and 0x10 sound each started animation's world
+/// sound (0x10 looped), else a player's car hears effect 27.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Trigger {
+    pub flags: u16,
+    pub anims: [u16; 2],
+    pub frame: u16,
+    pub sounds: [u8; 2],
+    pub params: [u8; 2],
 }
 
 /// A point on the flyby: where the camera is, and what it looks at.
@@ -197,7 +211,15 @@ impl Scp {
                 }
             })
             .collect();
-        let e = table(4).map(|o| b[o..o + 12].try_into().unwrap()).collect();
+        let triggers = table(4)
+            .map(|o| Trigger {
+                flags: u16_at(o),
+                anims: [u16_at(o + 2), u16_at(o + 4)],
+                frame: u16_at(o + 6),
+                sounds: [b[o + 8], b[o + 9]],
+                params: [b[o + 10], b[o + 11]],
+            })
+            .collect();
         let flyby = table(5)
             .map(|o| Keyframe {
                 eye: [i32_at(o), i32_at(o + 4), i32_at(o + 8)],
@@ -208,7 +230,7 @@ impl Scp {
             let (p, q) = (24 + 16 * k, 120 + 16 * k);
             ([i32_at(p), i32_at(p + 4), i32_at(p + 8)], [i32_at(q), i32_at(q + 4), i32_at(q + 8), i32_at(q + 12)])
         });
-        Some(Scp { grid, zones, sections, planes, fences, e, flyby })
+        Some(Scp { grid, zones, sections, planes, fences, triggers, flyby })
     }
 
     /// The planes bounding `zone`.

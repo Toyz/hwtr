@@ -437,10 +437,13 @@ impl Race {
                         period: a.period,
                         keys: a.keys.iter().map(|k| (k.pos, k.quat)).collect(),
                         time: 0,
+                        triggered: false,
+                        left: 0,
+                        trigger: 0,
                     })
                 })
                 .collect();
-            race.anims = hwtr_game::world_anim::WorldAnims::new(anims);
+            race.set_anims(hwtr_game::world_anim::WorldAnims::new(anims));
             // 0x8006b2a8: the collision volumes; one that follows its object
             // takes the object's place (20.12) and rotation.
             let volumes: Vec<_> = world

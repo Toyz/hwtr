@@ -201,10 +201,10 @@ impl Collision {
     /// zone's parameter where it says so). A checkpoint zone counts toward
     /// the car's laps when the car drove in, at race time `driven` (not when
     /// it is put there). A driven car is sped up by a boost pad (flags
-    /// 0x4800) or thrown by a launcher (0x4000 alone). Trigger zones (flag
-    /// 2, 0x8006a200) are not yet ported.
+    /// 0x4800) or thrown by a launcher (0x4000 alone). A trigger zone (flag
+    /// 2) fires its trigger (0x8006a200, see [`Collision::triggers_hit`]).
     pub fn zone_effects(
-        &self,
+        &mut self,
         t: &crate::math::Tables,
         car: &mut Car,
         zone: u16,
@@ -262,7 +262,7 @@ impl Collision {
             }
         }
         if f & 2 != 0 {
-            tracing::trace!("zone {zone}: trigger {} (0x8006a200, not yet ported)", z.param);
+            self.triggers_hit.push((z.param, car.slot));
         }
         event
     }

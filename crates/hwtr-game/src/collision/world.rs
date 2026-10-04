@@ -46,6 +46,8 @@ pub struct Collision {
     pub volume_fx: Vec<(u32, u16)>,
     /// The hits the cars' sounds hear this step (0x80035a88, 0x80035c7c).
     pub hits: Vec<Hit>,
+    /// The trigger zones cars drove into this step: (trigger, car slot).
+    pub triggers_hit: Vec<(u16, u8)>,
     /// The race's sounds are shut (set when the race ends, by 0x800364cc):
     /// no hit is heard, and none draws its random number.
     pub hushed: bool,
@@ -222,6 +224,7 @@ impl Collision {
         self.sparks.clear();
         self.prop_draws.clear();
         self.hits.clear();
+        self.triggers_hit.clear();
         self.step = self.step.wrapping_add(1);
         self.update_points(cars);
         self.find_pairs(t, cars);

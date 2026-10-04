@@ -15,6 +15,28 @@ pub struct ObjectAnim {
     pub keys: Vec<(Vec3, [i32; 4])>,
     /// Milliseconds into the round (0x800d0ffc +0x10).
     pub time: u32,
+    /// Run only when a trigger starts it (+0x14, 0x8007f628), how much of
+    /// its round it has left to run (+0x18) and the trigger that started it
+    /// (+0x1c).
+    pub triggered: bool,
+    pub left: u32,
+    pub trigger: u16,
+}
+
+/// What a trigger's firing sounds: an animation's world sound where it
+/// stands, or effect 27 for a player's car.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fired {
+    Sound { anim: usize, sound: u8 },
+    Effect27,
+}
+
+/// What the animations' steps did to the triggers' looped sounds: those
+/// whose animation still runs, and those whose animation came to rest.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Running {
+    pub moving: Vec<u16>,
+    pub stopped: Vec<u16>,
 }
 
 /// The objects' animations and the clock they last ran to (0x800d1000:
@@ -31,17 +53,86 @@ impl WorldAnims {
     }
 
     /// 0x8007f17c at clock `now`: every animation on by the time since the
-    /// last (none running a trigger's set time here: no trigger starts
-    /// one).
-    pub fn step(&mut self, now: u32) {
+    /// last, but a triggered one only by what it has left to run, until it
+    /// comes to rest.
+    pub fn step(&mut self, now: u32) -> Running {
+        let mut out = Running::default();
         let dt = now.wrapping_sub(self.last);
         self.last = now;
         if dt == 0 {
-            return;
+            return out;
         }
         for a in &mut self.anims {
-            a.time = a.time.wrapping_add(dt);
+            if !a.triggered {
+                a.time = a.time.wrapping_add(dt);
+            } else if a.left != 0 {
+                let run = a.left.min(dt);
+                a.time = a.time.wrapping_add(run);
+                a.left -= run;
+                if a.left == 0 { out.stopped.push(a.trigger) } else { out.moving.push(a.trigger) }
+            } else {
+                continue;
+            }
+            // The pose that follows (0x8007f2a4) keeps the time within a
+            // round.
+            if a.period != 0 {
+                a.time %= a.period;
+            }
         }
+        out
+    }
+
+    /// 0x8007f628: animation `k` runs only when triggered.
+    pub fn set_triggered(&mut self, k: usize) -> bool {
+        match self.anims.get_mut(k) {
+            Some(a) => {
+                a.triggered = true;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// 0x8006a200: trigger number `trigger` (`t`) fired by a car (a
+    /// player's if `player`). Unless it is off, it starts its animations
+    /// (the second only with the first) toward its key; each one started
+    /// sounds its world sound (looped ones once), or else, for the first, a
+    /// player's car hears effect 27.
+    pub fn fire(&mut self, t: &crate::collision::scp::Trigger, trigger: u16, player: bool) -> Vec<Fired> {
+        let mut out = Vec::new();
+        if t.flags & 1 != 0 || t.flags & 2 == 0 {
+            return out;
+        }
+        for k in 0..2 {
+            if k == 1 && t.flags & 4 == 0 {
+                break;
+            }
+            let anim = t.anims[k] as usize;
+            if !self.start(anim, t.frame, trigger) {
+                continue;
+            }
+            if t.flags & 0x38 != 0 {
+                out.push(Fired::Sound { anim, sound: t.sounds[k] });
+            } else if player && k == 0 {
+                out.push(Fired::Effect27);
+            }
+        }
+        out
+    }
+
+    /// 0x8007f670: trigger `trigger` starts animation `k` toward key
+    /// `frame` (at most its last), unless it is still running: it is given
+    /// that share of its round to run. Whether it started.
+    pub fn start(&mut self, k: usize, frame: u16, trigger: u16) -> bool {
+        let Some(a) = self.anims.get_mut(k) else { return false };
+        if a.left != 0 {
+            return false;
+        }
+        let last = (a.keys.len() as u32).wrapping_sub(1);
+        let frame = (frame as u32).min(last);
+        a.left = frame.wrapping_mul(a.period).checked_div(last).unwrap_or(0);
+        a.trigger = trigger;
+        true
     }
 
     /// 0x8007f2a4: animation `k`'s object's pose now: its rotation (the

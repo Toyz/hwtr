@@ -99,7 +99,7 @@ fn zone_effects_match_the_original() {
     for name in STATES {
         let Some(mut m) = common::state(&exe, name) else { return };
         let start = m.bus.ram.clone();
-        let (world, addresses) = collision(&Ram(&mut m.bus.ram));
+        let (mut world, addresses) = collision(&Ram(&mut m.bus.ram));
         let id = world.objects.iter().position(|o| o.car == Some(0)).expect("the player's object");
         // Not the trigger zones (not yet ported) nor the special zones
         // (their own test).
@@ -140,7 +140,7 @@ fn boost_pads_and_launchers_match_the_original() {
     let (mut launched, mut boosted) = (0, 0);
     for name in STATES {
         let Some(mut m) = common::state(&exe, name) else { return };
-        let (world, addresses) = collision(&Ram(&mut m.bus.ram));
+        let (mut world, addresses) = collision(&Ram(&mut m.bus.ram));
         let id = world.objects.iter().position(|o| o.car == Some(0)).expect("the player's object");
         let launchers: Vec<u16> = (0..world.scp.zones.len() as u16)
             .filter(|&z| world.scp.zones[z as usize].flags & 0x4800 == 0x4000)
@@ -160,7 +160,7 @@ fn boost_pads_and_launchers_match_the_original() {
             }
         }
         let start = m.bus.ram.clone();
-        let (world, _) = collision(&Ram(&mut m.bus.ram));
+        let (mut world, _) = collision(&Ram(&mut m.bus.ram));
         for round in 0..800 {
             m.bus.ram.copy_from_slice(&start);
             let pad = rng.below(2) == 0;

@@ -2,8 +2,8 @@
 title: Track collision (SCP)
 status: guess
 discs: US
-covers: US <TRACK>.SCP in the 11 track archives; US CCCPSX.EXE:0x8004c084 collision_scp_load, 0x8004c334 collision_load, 0x800515e0, 0x8005cd38, 0x8005a548, 0x8005c3a4 zone_effects, 0x80049a8c boost_pad, 0x80048fa4 launcher
-worklog: 12, 15, 53
+covers: US <TRACK>.SCP in the 11 track archives; US CCCPSX.EXE:0x8004c084 collision_scp_load, 0x8004c334 collision_load, 0x800515e0, 0x8005cd38, 0x8005a548, 0x8005c3a4 zone_effects, 0x80049a8c boost_pad, 0x80048fa4 launcher, 0x8006a200 trigger_fire, 0x8007f670 anim_start, 0x8007f628 anim_set_triggered, 0x8007f17c anim_step
+worklog: 12, 15, 53, 57
 ---
 
 # Track collision (SCP)
@@ -73,8 +73,44 @@ When a driving car (car +0x891 = 2) enters a sector whose flags have
   - The desert tracks have 3 to 6 launchers, HAUNTED3 5, VOLCANO1 1 and
     VOLCANO2 2.
 
-A sector with flag 2 is a trigger (0x8006a200): it starts world objects'
-animations with their sounds. That is not ported yet.
+## Triggers (table E, flag 2)
+
+Table E holds the triggers, 12 bytes each:
+
+```
++0 u16 flags   +2 u16 animation A   +4 u16 animation B   +6 u16 key
++8 u8 sound A  +9 u8 sound B        +10 u8 A's second byte   +11 u8 B's
+```
+
+**At load.** For each sector with flag 2, collision_scp_load
+(0x8004c084) looks up the trigger at the sector's parameter. It marks
+animation A as triggered when the trigger has flag 2 (0x8007f628), then
+animation B too when it also has flag 4.
+
+**Running.** A triggered animation stands still until started. Each
+frame, the animation step (0x8007f17c) advances it only by the time it
+has left to run (+0x18), and the pose that follows keeps every moving
+animation's time within its round. When a triggered animation comes to
+rest, its looped sound is stopped (0x8006a424). While it runs, the sound
+follows it (0x8006a4cc).
+
+**Firing.** A car entering the sector fires the trigger (0x8006a200).
+Nothing happens when the trigger has flag 1, or lacks flag 2.
+
+1. Animation A is started toward the key (0x8007f670).
+   - An animation still running is left alone.
+   - Otherwise it is given `min(key, keys - 1) * period / (keys - 1)`
+     milliseconds to run, and the trigger's number is noted on it.
+2. If animation A started:
+   - with flags 0x28, its world sound (0x80036270) plays at the
+     animation's place: sound A and A's second byte
+   - with flag 0x10, the same sound plays looped
+   - otherwise a player's car hears effect 27
+3. With flag 4, animation B is started the same way. If it starts, its
+   world sound plays under flags 0x28 or 0x10, but there is no effect 27.
+
+DESERT3 has 2 trigger sectors, GLACIAL2 6 and GLACIAL3 1. The port plays
+the looped sounds once.
 
 ## Unknown
 
