@@ -40,6 +40,9 @@ use hwtr_hle::original::rand::SEED;
 use hwtr_hle::original::world::STEP;
 use hwtr_hle::script::Script;
 
+/// A collision stage's address, and the world and cars as it began.
+type AtStage = (u32, Collision, Vec<Car>);
+
 fn cars(ram: &mut [u8]) -> Vec<Car> {
     let ram = Ram(ram);
     (0..ram.i32(CAR_COUNT) as u32).map(|k| Car::read(&ram, CARS + k * CAR_SIZE)).collect()
@@ -151,7 +154,7 @@ fn main() {
     // The world as each of the collision's stages finds it: the zones
     // (0x800515e0), the wheels (0x80051bc0), the ground (0x800536b4) and
     // the walls (0x80054964).
-    let at_stage: Rc<RefCell<Vec<(u32, Collision, Vec<Car>)>>> = Rc::default();
+    let at_stage: Rc<RefCell<Vec<AtStage>>> = Rc::default();
     for addr in [0x8005_15e0u32, 0x8005_1bc0, 0x8005_36b4, 0x8005_4964] {
         let log = at_stage.clone();
         hle.m.check_through_interrupts(addr, move |_, bus| {
@@ -161,15 +164,13 @@ fn main() {
             Box::new(|_, _| Ok(()))
         });
     }
-    // How often the collision step and its stages ran this frame.
+    // How often the collision's stages ran this frame.
     let calls: Rc<RefCell<Vec<u32>>> = Rc::default();
-    for addr in [0x8005_148cu32] {
-        let log = calls.clone();
-        hle.m.check_through_interrupts(addr, move |_, _| {
-            log.borrow_mut().push(addr);
-            Box::new(|_, _| Ok(()))
-        });
-    }
+    let log = calls.clone();
+    hle.m.check_through_interrupts(0x8005_148c, move |_, _| {
+        log.borrow_mut().push(0x8005_148c);
+        Box::new(|_, _| Ok(()))
+    });
     let (mut steps, mut same, mut reported, mut resets) = (0u32, 0u32, 0u32, 0u32);
     for f in 0..frames {
         let before = Ram(&mut hle.m.bus.ram).i32(STEP);
