@@ -2,8 +2,8 @@
 title: The race's effects: puffs, skid marks, sparks
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8002bdb4 effects_init, 0x8002c0dc pool_init, 0x8002c2b8 pool_alloc, 0x8002f354 particles_update, 0x8002f618 pool_draw, 0x8002b888 trails_emit, 0x80029230 trail_push, 0x800303cc skid_segment_spawn, 0x80030fc8 dust_puff_spawn, 0x8003119c spark_puff_spawn, 0x8002e9f8 collision_sparks, 0x8002c32c spark_spawn, 0x80049ecc car_pose, 0x80068540 view_setup, 0x800d25c0 0x800d25c8 0x800d25d0 0x800d25d8 pools, 0x8011ec2c trails, 0x800d0d98 fx_enable, 0x800d2578 fps, 0x800d0b68 frame_count, 0x8002e128 flash_draw
-worklog: 45, 46, 47, 56, 61, 80
+covers: US CCCPSX.EXE:0x8002bdb4 effects_init, 0x8002c0dc pool_init, 0x8002c2b8 pool_alloc, 0x8002f354 particles_update, 0x8002f618 pool_draw, 0x8002b888 trails_emit, 0x80029230 trail_push, 0x800303cc skid_segment_spawn, 0x80030fc8 dust_puff_spawn, 0x8003119c spark_puff_spawn, 0x8002e9f8 collision_sparks, 0x8002c32c spark_spawn, 0x80049ecc car_pose, 0x80068540 view_setup, 0x800d25c0 0x800d25c8 0x800d25d0 0x800d25d8 pools, 0x8011ec2c trails, 0x800d0d98 fx_enable, 0x80028b34 effects_on, 0x800d2578 fps, 0x800d0b68 frame_count, 0x8002e128 flash_draw
+worklog: 45, 46, 47, 56, 61, 80, 81
 ---
 
 # The race's effects
@@ -112,6 +112,32 @@ from the first skid after it was dropped. A skid mark:
 ## Puffs
 
 `dust_puff_spawn` (0x80030fc8) needs fx_enable bit 0 and `fps > 0x15fff`.
+
+**fx_enable (0x800d0d98).** It is set as the race loads, at the end of
+0x80028b34:
+
+- **Its value.** `(views < 2) | 0x1fe`, from the view count (0x800d0bc5).
+- **Cheat options.** If cheat option 2 or 4 is on (0x800d2468, the race
+  setup's +0x1c), bits 0x02, 0x20, 0x80 and 0x100 are cleared.
+
+What reads each bit:
+
+| bit | effect | read by |
+| --- | --- | --- |
+| 0x01 | puffs | 0x80030fc8, 0x8003119c |
+| 0x02 | skid marks | 0x8002b888 |
+| 0x04 | sparks | 0x8002c32c |
+| 0x10 | lamp glows | 0x80029fb0 |
+| 0x20 | headlight beams | 0x8002a81c |
+| 0x40 | wreck effects | 0x80029e10 |
+| 0x80 | the boost flame | 0x8002b05c, the whole flame block, its random draws too |
+| 0x100 | (nothing reads it) | |
+
+So two views lose the puffs, and the scale cheats lose skid marks,
+beams and the flame. `Effects::set_enabled` is this.
+`the_effects_on_match_the_original` (hle tests/effects.rs) runs
+0x80028b34 with views 0 to 3 under ten cheat bytes and compares the
+value.
 It always draws two `rand()` values before allocating. The new puff has:
 
 - velocity `(r1&3, r2&3, r1&1) << 12` (or the vector it is given)
@@ -271,4 +297,3 @@ anything else on this page.
 
 - The camera-space units of the billboard translation: the draw adds the
   record's acceleration x and y to it.
-- Who sets fx_enable (0x800d0d98); it is 0x1ff in every race seen.

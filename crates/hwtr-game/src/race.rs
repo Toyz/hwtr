@@ -529,6 +529,9 @@ impl Race {
             camera.flyby = true;
         }
         let countdown_from = (collision.scp.flyby.len() as u32).saturating_sub(1) * 200;
+        // 0x80028b34: the effects on, by the views and the cheats.
+        let mut effects = crate::effects::Effects::default();
+        effects.set_enabled(cameras.len() as u8, setup.options);
         let stunts = vec![None; cars.len()];
         let hud = Hud::new(&setup, tables.meter.clone());
         let order = (0..cars.len() as u8).collect();
@@ -586,7 +589,7 @@ impl Race {
             snapshots: Default::default(),
             results_text: Default::default(),
             camera_spots: Vec::new(),
-            effects: Default::default(),
+            effects,
             car_faces: Vec::new(),
             volume_quads: Vec::new(),
         }
@@ -1355,7 +1358,8 @@ impl Race {
                         quads.extend(crate::lights::quads(&self.tables, &g, &pose, None));
                     }
                     if lights.lamp != 0 {
-                        if !wrecked {
+                        // 0x8002a81c: the beams, unless turned off (0x20).
+                        if !wrecked && self.effects.enabled & 0x20 != 0 {
                             let b = beams(&lights, lamps, &pose);
                             quads.extend(crate::lights::quads(&self.tables, &b, &pose, Some(lights.lamp)));
                         }
@@ -1367,19 +1371,21 @@ impl Race {
                         self.effects.lights[slot].fade(Fade::Lamps, colour, wrecked, self.frozen);
                     }
                 }
-                // 0x8002b05c: its boost flame.
+                // 0x8002b05c: its boost flame, unless turned off (0x80).
                 let exhaust = self.tables.exhausts.get(id as usize).copied().unwrap_or_default();
-                quads.extend(self.effects.draw_flame(
-                    &self.tables,
-                    &mut self.rand,
-                    slot as u8,
-                    &pose,
-                    &car.handling,
-                    exhaust,
-                    id == 8 || id == 21,
-                    paused,
-                    self.clock,
-                ));
+                if self.effects.enabled & 0x80 != 0 {
+                    quads.extend(self.effects.draw_flame(
+                        &self.tables,
+                        &mut self.rand,
+                        slot as u8,
+                        &pose,
+                        &car.handling,
+                        exhaust,
+                        id == 8 || id == 21,
+                        paused,
+                        self.clock,
+                    ));
+                }
                 // A wreck's smoke, from each wheel of its full model.
                 if d2 <= FULL && !self.frozen {
                     let car = &self.cars[slot];

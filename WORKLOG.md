@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-80 entries: audio 9, bug 1, build 3, content 5, decomp 8, design 3, disc 1, engine 6, format 7, input 10, physics 14, race 11, render 19, test 16, tooling 15, ui 13, video 1.
+81 entries: audio 9, bug 1, build 3, content 5, decomp 8, design 3, disc 1, engine 6, format 7, input 10, physics 14, race 11, render 20, test 16, tooling 15, ui 13, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -92,3 +92,4 @@ The [reference](docs/README.md) says what is true now.
 | 78 | [Two write-only questions: the fastest lap's car and the flying table's in-use byte](worklog/0078-two-write-only-questions-the-fastest-lap-s-car-and-the.md) | 2026-10-04 | decomp |
 | 79 | [Triangle turns the HUD off and on; the turbo has no sound of its own](worklog/0079-triangle-turns-the-hud-off-and-on-the-turbo-has-no-sound-of.md) | 2026-10-04 | input |
 | 80 | [A wreck's screen flash is drawn: a flat quad blended half and half](worklog/0080-a-wreck-s-screen-flash-is-drawn-a-flat-quad-blended-half.md) | 2026-10-04 | render |
+| 81 | [Which effects a race has: fx_enable from the views and the scale cheats](worklog/0081-which-effects-a-race-has-fx-enable-from-the-views-and-the.md) | 2026-10-04 | render |

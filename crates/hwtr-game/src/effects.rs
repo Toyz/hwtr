@@ -26,7 +26,9 @@ pub const DEBRIS: usize = 3;
 pub const CAPACITY: [usize; 4] = [64, 64, 20, 48];
 
 /// The effects that are on (0x800d0d98): 1 puffs, 2 skid marks, 4 sparks,
-/// 64 wrecks, 128 the boost's flame. Every race has them all.
+/// 0x10 lamp glows, 0x20 headlight beams, 0x40 wrecks, 0x80 the boost's
+/// flame (0x100 is set but read by nothing). All of them, until
+/// [`Effects::set_enabled`] says otherwise; sparks are never turned off.
 const ENABLED: u32 = 0x1ff;
 /// Puffs only above 22 frames a second (4.12).
 const FPS_FLOOR: i32 = 0x1_5fff;
@@ -323,6 +325,8 @@ pub struct Effects {
     pub origin: Vec3,
     pub embers: [Ember; 20],
     pub columns: [Column; 5],
+    /// The effects that are on (0x800d0d98; see [`ENABLED`]).
+    pub enabled: u32,
     /// Each player's screen flash after a wreck (0x800d0db8), and the grey
     /// it is drawn at this frame (0 for none).
     pub flash: [i16; 2],
@@ -416,6 +420,7 @@ impl Effects {
             origin: [0; 3],
             embers: [Ember::default(); 20],
             columns: [Column { frame: -1, ticks: 0xffff, ..Column::default() }; 5],
+            enabled: ENABLED,
             flash: [0; 2],
             flash_drawn: Drawn([0; 2]),
             chunk_colour: [176; 3],
@@ -564,11 +569,22 @@ impl Effects {
         out
     }
 
+    /// 0x80028b34's last part, at the race's load: puffs only with one
+    /// view (0x800d0bc5); under cheat option 2 or 4 (the race's options,
+    /// 0x800d2468) no skid marks, headlight beams or boost flame.
+    pub fn set_enabled(&mut self, views: u8, options: u32) {
+        let mut on = (views < 2) as u32 | 0x1fe;
+        if options & (2 | 4) != 0 {
+            on &= !(0x80 | 0x20 | 0x02 | 0x100);
+        }
+        self.enabled = on;
+    }
+
     /// 0x80030fc8: a puff at `pos` (sprite growth from `frame0`): dust the
     /// colour of the ground of kind `surface`, drifting at random (or by
     /// `vel`) and rising, 750 frames; on kind 0, grey smoke for 250.
     pub fn dust(&mut self, rand: &mut Rand, fps: i32, pos: Vec3, frame0: u8, surface: u8, vel: Option<Vec3>) {
-        if ENABLED & 1 == 0 || fps <= FPS_FLOOR {
+        if self.enabled & 1 == 0 || fps <= FPS_FLOOR {
             return;
         }
         let (r1, r2) = (rand.rand(), rand.rand());
@@ -642,7 +658,7 @@ impl Effects {
 
     /// 0x8003119c: an ember's spark, still, 40 frames.
     fn spark_puff(&mut self, fps: i32, pos: Vec3, frame0: u8) {
-        if ENABLED & 1 == 0 || fps <= FPS_FLOOR {
+        if self.enabled & 1 == 0 || fps <= FPS_FLOOR {
             return;
         }
         let p = &mut self.pools[PUFFS];
@@ -1020,7 +1036,7 @@ impl Effects {
                     continue;
                 }
                 let mut inner = t.inner;
-                if ENABLED & 2 != 0 {
+                if self.enabled & 2 != 0 {
                     self.skid(t.outer, t.inner, t.new_outer, t.new_inner, t.surface);
                     let t = &mut self.trails[car][w];
                     t.outer = t.new_outer;

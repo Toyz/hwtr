@@ -510,3 +510,22 @@ fn codec_fps(m: &hwtr_cpu::Machine) -> i32 {
     let mut ram = m.bus.ram.clone();
     Ram(&mut ram).i32(0x800d_2578)
 }
+
+#[test]
+fn the_effects_on_match_the_original() {
+    // 0x80028b34 ends by setting 0x800d0d98 from its argument (the views)
+    // and the cheat byte 0x800d2468.
+    const ENABLED: u32 = 0x800d_0d98;
+    const CHEATS: u32 = 0x800d_2468;
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-race") else { return };
+    for views in 0..4u8 {
+        for options in [0u32, 1, 2, 4, 6, 8, 0x20, 0x80, 0x26, 0xff] {
+            Ram(&mut m.bus.ram).set_i32(CHEATS, options as i32);
+            m.call(0x8002_8b34, &[views as u32]).unwrap();
+            let mut ours = hwtr_game::effects::Effects::default();
+            ours.set_enabled(views, options);
+            assert_eq!(Ram(&mut m.bus.ram).i32(ENABLED) as u32, ours.enabled, "views {views}, options {options:#x}");
+        }
+    }
+}
