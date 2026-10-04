@@ -227,7 +227,7 @@ fn disc_cmd(args: &mut Args, cue: &Option<String>) -> Result<()> {
                     }
                     raw
                 } else {
-                    iso.read(&e).map_err(|e| e.to_string())?
+                    iso.read(e).map_err(|e| e.to_string())?
                 };
                 std::fs::write(&dest, bytes).map_err(|err| format!("{}: {err}", dest.display()))?;
                 files += 1;
@@ -326,7 +326,7 @@ fn tim_cmd(args: &mut Args, cue: &Option<String>) -> Result<()> {
     let input = args.items.first().ok_or("tim FILE|DIR [OUT]")?.clone();
     let convert = |bytes: &[u8], out: &Path| -> Result<String> {
         let tim = hwtr_data::Tim::parse(bytes).map_err(|e| e.to_string())?;
-        let png = hwtr_data::png::encode(tim.width(), tim.height(), &tim.to_rgba(clut));
+        let png = rrt::image::png::encode(tim.width() as u32, tim.height() as u32, &tim.to_rgba(clut));
         std::fs::write(out, png).map_err(|e| e.to_string())?;
         Ok(format!(
             "{:?} {}x{} at vram ({}, {}){}",

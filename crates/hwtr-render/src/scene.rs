@@ -3,7 +3,9 @@
 
 use std::path::Path;
 
-use glam::{Quat, Vec3};
+use rrt::glam::{self, Quat, Vec3};
+use rrt::gpu::{Gpu, Target};
+use rrt::wgpu;
 use hwtr_data::car::{CarBmf, Model};
 use hwtr_data::world::World;
 
@@ -148,69 +150,12 @@ impl Scene {
 
     /// The same with `moving` (the cars, wherever they are) instead.
     pub fn shot_with(&self, width: u32, height: u32, mvp: glam::Mat4, moving: &[Vtx]) -> Result<Vec<u8>, String> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-            compatible_surface: None,
-            apply_limit_buckets: false,
-        }))
-        .map_err(|e| e.to_string())?;
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&Default::default())).map_err(|e| e.to_string())?;
-        let format = wgpu::TextureFormat::Rgba8Unorm;
-        let mut renderer = self.renderer(&device, &queue, format);
-        renderer.set_moving(&device, &queue, moving);
-        let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
-        let target = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("shot"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let view = target.create_view(&Default::default());
-        let cmd = renderer.draw(&device, &queue, &view, (width, height), mvp);
-        let row = (width * 4).div_ceil(256) * 256;
-        let readback = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("readback"),
-            size: (row * height) as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        let mut enc = device.create_command_encoder(&Default::default());
-        enc.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo {
-                texture: &target,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyBufferInfo {
-                buffer: &readback,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(row),
-                    rows_per_image: Some(height),
-                },
-            },
-            size,
-        );
-        queue.submit([cmd, enc.finish()]);
-        readback.map_async(wgpu::MapMode::Read, .., |r| r.expect("map readback"));
-        device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| e.to_string())?;
-        let data = readback.get_mapped_range(..).map_err(|e| e.to_string())?;
-        Ok((0..height as usize)
-            .flat_map(|y| data[y * row as usize..y * row as usize + width as usize * 4].iter().copied())
-            .collect())
+        let gpu = Gpu::headless().map_err(|e| e.to_string())?;
+        let target = Target::new(&gpu.device, width, height);
+        let mut renderer = self.renderer(&gpu.device, &gpu.queue, Target::FORMAT);
+        renderer.set_moving(&gpu.device, &gpu.queue, moving);
+        let cmd = renderer.draw(&gpu.device, &gpu.queue, &target.view, (width, height), mvp);
+        gpu.queue.submit([cmd]);
+        Ok(target.read_back(&gpu).rgba)
     }
-}
-
-/// A surface format that stores the shader's values as they are: the
-/// PlayStation's colours are already display-encoded.
-pub fn plain_format(formats: &[wgpu::TextureFormat]) -> wgpu::TextureFormat {
-    formats.iter().copied().find(|f| !f.is_srgb()).unwrap_or(formats[0])
 }

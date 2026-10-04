@@ -652,18 +652,12 @@ checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 name = "hwtr"
 version = "0.1.0"
 dependencies = [
- "glam",
  "hwtr-data",
  "hwtr-game",
- "hwtr-input",
  "hwtr-psx",
  "hwtr-render",
- "pollster",
  "rrt",
  "tracing",
- "tracing-subscriber",
- "wgpu",
- "winit",
 ]
 
 [[package]]
@@ -700,14 +694,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hwtr-input"
-version = "0.1.0"
-dependencies = [
- "gilrs",
- "tracing",
-]
-
-[[package]]
 name = "hwtr-psx"
 version = "0.1.0"
 
@@ -724,28 +710,18 @@ dependencies = [
 name = "hwtr-render"
 version = "0.1.0"
 dependencies = [
- "glam",
  "hwtr-data",
- "pollster",
  "rrt",
  "tracing",
- "wgpu",
 ]
 
 [[package]]
 name = "hwtr-viewer"
 version = "0.1.0"
 dependencies = [
- "glam",
  "hwtr-data",
- "hwtr-input",
  "hwtr-render",
- "pollster",
  "rrt",
- "tracing",
- "tracing-subscriber",
- "wgpu",
- "winit",
 ]
 
 [[package]]
@@ -1681,15 +1657,43 @@ name = "rrt"
 version = "0.1.0"
 source = "git+https://github.com/Toyz/retro_rt#25638e05363c62917c16f5396ad11b514b87b534"
 dependencies = [
+ "rrt-app",
  "rrt-disc",
+ "rrt-gpu",
  "rrt-image",
+ "rrt-input",
  "rrt-kit",
+ "rrt-macros",
+]
+
+[[package]]
+name = "rrt-app"
+version = "0.1.0"
+source = "git+https://github.com/Toyz/retro_rt#25638e05363c62917c16f5396ad11b514b87b534"
+dependencies = [
+ "rrt-gpu",
+ "rrt-image",
+ "rrt-input",
+ "tracing",
+ "tracing-subscriber",
+ "winit",
 ]
 
 [[package]]
 name = "rrt-disc"
 version = "0.1.0"
 source = "git+https://github.com/Toyz/retro_rt#25638e05363c62917c16f5396ad11b514b87b534"
+
+[[package]]
+name = "rrt-gpu"
+version = "0.1.0"
+source = "git+https://github.com/Toyz/retro_rt#25638e05363c62917c16f5396ad11b514b87b534"
+dependencies = [
+ "glam",
+ "pollster",
+ "rrt-image",
+ "wgpu",
+]
 
 [[package]]
 name = "rrt-image"
@@ -1700,9 +1704,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "rrt-input"
+version = "0.1.0"
+source = "git+https://github.com/Toyz/retro_rt#25638e05363c62917c16f5396ad11b514b87b534"
+dependencies = [
+ "gilrs",
+ "tracing",
+ "winit",
+]
+
+[[package]]
 name = "rrt-kit"
 version = "0.1.0"
 source = "git+https://github.com/Toyz/retro_rt#25638e05363c62917c16f5396ad11b514b87b534"
+
+[[package]]
+name = "rrt-macros"
+version = "0.1.0"
+source = "git+https://github.com/Toyz/retro_rt#25638e05363c62917c16f5396ad11b514b87b534"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "rustc-hash"

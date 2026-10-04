@@ -4,13 +4,14 @@
 use std::path::Path;
 use std::time::Duration;
 
-use glam::{Mat3, Mat4, Vec3};
+use rrt::glam::{self, Mat3, Mat4, Vec3};
+use rrt::input::Pad;
+use rrt::wgpu;
 use hwtr_game::car::{Tuning, handling};
 use hwtr_game::collision::Scp;
 use hwtr_game::math::Tables;
 use hwtr_game::pad::{Mapping, PadKind, PadReader, PadState};
 use hwtr_game::race::{Driver, Entrant, RaceSetup, STEP_MS};
-use hwtr_input::{Pad, buttons};
 use hwtr_render::scene::Layout;
 use hwtr_render::{Renderer, Scene};
 
@@ -36,7 +37,7 @@ impl Chase {
         let back = glam::Quat::from_rotation_z(self.around) * -flat;
         let eye = pos + back * Self::DISTANCE + Vec3::Z * Self::HEIGHT;
         let view = glam::camera::rh::view::look_at_mat4(eye, pos + Vec3::Z * Self::LOOK_ABOVE, Vec3::Z);
-        hwtr_render::renderer::projection(60f32.to_radians(), aspect, 16.0, 300_000.0) * view
+        rrt::gpu::projection(60f32.to_radians(), aspect, 16.0, 300_000.0) * view
     }
 }
 
@@ -60,9 +61,9 @@ pub struct Race {
 fn pad_state(pad: &Pad) -> PadState {
     PadState {
         kind: if pad.analog { PadKind::Analog } else { PadKind::Digital },
-        buttons: pad.buttons,
-        left: [pad.lx, pad.ly],
-        right: [pad.rx, pad.ry],
+        buttons: pad.buttons.bits(),
+        left: [pad.left.x, pad.left.y],
+        right: [pad.right.x, pad.right.y],
     }
 }
 
@@ -176,17 +177,8 @@ impl Race {
         renderer.draw(device, queue, target, size, mvp)
     }
 
-    /// After `steps` race steps with the accelerator down, one frame,
-    /// offscreen, as RGBA; and where the player's car is.
-    pub fn shot(&mut self, width: u32, height: u32, steps: u32) -> Result<(Vec<u8>, [f32; 3]), String> {
-        let pad = Pad { buttons: buttons::CROSS, ..Pad::default() };
-        for _ in 0..steps {
-            self.reader.read(&pad_state(&pad), &self.mapping, STEP_MS as u32);
-            self.race.step(&[self.reader.controls()]);
-        }
-        let (pos, _) = self.player_pose();
-        let tris = self.car_triangles();
-        let rgba = self.scene.shot_with(width, height, self.view(width as f32 / height as f32), &tris)?;
-        Ok((rgba, pos.to_array()))
+    /// Where the player's car is drawn, in world units.
+    pub fn position(&self) -> [f32; 3] {
+        self.player_pose().0.to_array()
     }
 }

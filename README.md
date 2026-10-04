@@ -30,15 +30,14 @@ results. During play nothing from the PlayStation runs and no BIOS is needed.
 
 | path | what |
 | --- | --- |
-| [retro_rt](https://github.com/Toyz/retro_rt) (`rrt`) | the shared runtime for the ports, a git dependency: the disc (CUE, raw sectors, ISO 9660 with CD-XA), and more as hwtr moves onto it |
+| [retro_rt](https://github.com/Toyz/retro_rt) (`rrt`) | the shared runtime for the ports, a git dependency: the disc (CUE, raw sectors, ISO 9660 with CD-XA), the window and loop, the pad (DualSense or any gamepad as a PlayStation pad), wgpu plumbing, PNG |
 | `crates/hwtr-data` | reads the game's data: the BIG archives, and the asset formats as they are decoded |
 | `crates/hwtr-psx` | the PS-X EXE format, an R3000A + GTE disassembler, static analysis |
 | `crates/hwtr-re` | the reverse engineering command line |
 | `crates/hwtr-cpu` | an R3000A + GTE interpreter that runs original functions |
 | `crates/hwtr-hle` | runs the whole original game in it: GPU, DMA, SPU registers, CD and BIOS supplied |
 | `crates/hwtr-game` | the port: the game's systems rewritten in Rust |
-| `crates/hwtr-input` | the pad: DualSense or any gamepad, as a PlayStation pad |
-| `crates/hwtr` | the program: the port, with its window, renderer and pad |
+| `crates/hwtr` | the program: the port, on retro_rt's loop |
 | `crates/hwtr-viewer` | flies around the tracks |
 | `symbols/` | names for the executable's functions and data, with confidence notes |
 | `docs/` | the [reference](docs/README.md): what is true about the disc, formats and engine |

@@ -3,9 +3,12 @@
 //! colour 0x0000 is transparent, and the texel is modulated by the vertex
 //! colour with 128 as 1.0.
 
-use wgpu::util::DeviceExt;
+use rrt::gpu::{DepthBuffer, GrowBuffer};
+use rrt::kit::{Pack, Staging};
+use rrt::wgpu::util::DeviceExt;
+use rrt::{glam, wgpu};
 
-use crate::mesh::{VRAM_H, VRAM_W, VertexStaging, Vram, Vtx};
+use crate::mesh::{VRAM_H, VRAM_W, Vram, Vtx};
 
 const SHADER: &str = r#"
 struct Camera { mvp: mat4x4f }
@@ -77,23 +80,17 @@ pub struct Renderer {
     /// What does not move (the track), uploaded once.
     vertices: wgpu::Buffer,
     count: u32,
-    /// What moves (the cars), replaced each frame by `set_moving`.
-    moving: Option<(wgpu::Buffer, u32)>,
+    /// What moves (the cars), replaced each frame by `set_moving`, and how
+    /// many vertices.
+    moving: GrowBuffer,
+    moving_count: u32,
     /// Where the moving triangles are packed each frame.
-    staging: VertexStaging,
-    depth: Option<(wgpu::Texture, u32, u32)>,
+    staging: Staging,
+    depth: DepthBuffer,
     pub clear: [u8; 3],
 }
 
 pub const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-
-/// The projection the renderer draws with: right-handed, `fov_y` radians
-/// tall, depth mapped to wgpu's clip range of 0 (near) to 1 (far). (glam
-/// files this convention under its `directx` name; Vulkan and Metal share
-/// it.)
-pub fn projection(fov_y: f32, aspect: f32, near: f32, far: f32) -> glam::Mat4 {
-    glam::camera::rh::proj::directx::perspective(fov_y, aspect, near, far)
-}
 
 impl Renderer {
     pub fn new(
@@ -176,7 +173,7 @@ impl Renderer {
                 entry_point: Some("vs"),
                 compilation_options: Default::default(),
                 buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: Vtx::SIZE as u64,
+                    array_stride: <Vtx as Pack>::SIZE as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &attrs,
                 })],
@@ -207,7 +204,7 @@ impl Renderer {
         });
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("triangles"),
-            contents: VertexStaging::default().pack(tris),
+            contents: Staging::new().pack(tris),
             usage: wgpu::BufferUsages::VERTEX,
         });
         Renderer {
@@ -216,30 +213,18 @@ impl Renderer {
             camera,
             vertices,
             count: tris.len() as u32,
-            moving: None,
-            staging: VertexStaging::default(),
-            depth: None,
+            moving: GrowBuffer::new("moving", wgpu::BufferUsages::VERTEX),
+            moving_count: 0,
+            staging: Staging::new(),
+            depth: DepthBuffer::new(DEPTH),
             clear: [0, 0, 0],
         }
     }
 
     /// The triangles that move, drawn after the fixed ones until replaced.
     pub fn set_moving(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, tris: &[Vtx]) {
-        let bytes = self.staging.pack(tris);
-        let fits = self.moving.as_ref().is_some_and(|(b, _)| b.size() >= bytes.len() as u64);
-        if !fits {
-            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("moving"),
-                size: (bytes.len() as u64).max(64).next_power_of_two(),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            self.moving = Some((buffer, 0));
-        }
-        if let Some((buffer, count)) = &mut self.moving {
-            queue.write_buffer(buffer, 0, bytes);
-            *count = tris.len() as u32;
-        }
+        self.moving.write(device, queue, self.staging.pack(tris));
+        self.moving_count = tris.len() as u32;
     }
 
     /// Draws into `target` with the camera's view-projection matrix.
@@ -251,20 +236,7 @@ impl Renderer {
         size: (u32, u32),
         mvp: glam::Mat4,
     ) -> wgpu::CommandBuffer {
-        if self.depth.as_ref().is_none_or(|d| (d.1, d.2) != size) {
-            let t = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("depth"),
-                size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: DEPTH,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            });
-            self.depth = Some((t, size.0, size.1));
-        }
-        let depth_view = self.depth.as_ref().unwrap().0.create_view(&Default::default());
+        let depth_view = self.depth.view(device, size.0, size.1).clone();
         let bytes: Vec<u8> = mvp.to_cols_array().iter().flat_map(|f| f.to_le_bytes()).collect();
         queue.write_buffer(&self.camera, 0, &bytes);
         let mut encoder = device.create_command_encoder(&Default::default());
@@ -294,11 +266,11 @@ impl Renderer {
             pass.set_bind_group(0, &self.group, &[]);
             pass.set_vertex_buffer(0, self.vertices.slice(..));
             pass.draw(0..self.count, 0..1);
-            if let Some((buffer, count)) = &self.moving
-                && *count > 0
+            if let Some(slice) = self.moving.slice()
+                && self.moving_count > 0
             {
-                pass.set_vertex_buffer(0, buffer.slice(..));
-                pass.draw(0..*count, 0..1);
+                pass.set_vertex_buffer(0, slice);
+                pass.draw(0..self.moving_count, 0..1);
             }
         }
         encoder.finish()

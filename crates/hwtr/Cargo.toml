@@ -8,14 +8,8 @@ publish.workspace = true
 
 [dependencies]
 hwtr-data.workspace = true
-rrt = { workspace = true, features = ["disc"] }
-hwtr-input.workspace = true
+rrt = { workspace = true, features = ["app", "disc"] }
 hwtr-game.workspace = true
 hwtr-psx.workspace = true
 hwtr-render.workspace = true
-glam = "0.33.3"
-wgpu = "30.0.1"
-winit = "0.30.13"
-pollster = "1.0.1"
 tracing.workspace = true
-tracing-subscriber.workspace = true
