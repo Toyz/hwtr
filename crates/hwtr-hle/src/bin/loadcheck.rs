@@ -41,8 +41,8 @@ fn main() {
             n => frames = n.parse().expect("frames"),
         }
     }
-    let cue = hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).expect("cue");
-    let disc = Rc::new(hwtr_disc::Disc::open(&cue).expect("disc"));
+    let cue = rrt::disc::Image::find(std::path::Path::new("work/disc")).expect("cue");
+    let disc = Rc::new(rrt::disc::Image::open(&cue).expect("disc"));
     let iso = disc.iso().expect("iso");
     let big = iso.find("CCCPSX.BIG").and_then(|e| iso.read(&e)).expect("CCCPSX.BIG");
     let mut hle = Hle::new(disc.clone()).expect("hle");

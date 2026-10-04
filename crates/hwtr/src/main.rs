@@ -275,7 +275,7 @@ impl ApplicationHandler for App {
 /// The boot screens, read off the disc: the legal screen, the title, the
 /// main menu's background.
 fn screens(cue: &std::path::Path) -> Result<Vec<(String, Picture)>, String> {
-    let disc = hwtr_disc::Disc::open(cue).map_err(|e| e.to_string())?;
+    let disc = rrt::disc::Image::open(cue).map_err(|e| e.to_string())?;
     let iso = disc.iso().map_err(|e| e.to_string())?;
     let read = |p: &str| iso.find(p).and_then(|e| iso.read(&e)).map_err(|e| e.to_string());
     let big = read("CCCPSX.BIG")?;
@@ -316,7 +316,7 @@ fn main() {
     };
     let cue = cue
         .map(Ok)
-        .unwrap_or_else(|| hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).map_err(|e| e.to_string()))
+        .unwrap_or_else(|| rrt::disc::Image::find(std::path::Path::new("work/disc")).map_err(|e| e.to_string()))
         .unwrap_or_else(|e| fail(e));
     let race = track.is_some() || shot.is_some();
     let track = track.unwrap_or_else(|| "DESERT1".into()).to_uppercase();

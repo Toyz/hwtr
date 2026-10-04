@@ -73,7 +73,7 @@ impl Race {
         if scene.cars.is_empty() {
             return Err(format!("{track} has no start grid"));
         }
-        let disc = hwtr_disc::Disc::open(cue).map_err(|e| e.to_string())?;
+        let disc = rrt::disc::Image::open(cue).map_err(|e| e.to_string())?;
         let iso = disc.iso().map_err(|e| e.to_string())?;
         let read = |name: &str| iso.find(name).and_then(|e| iso.read(&e)).map_err(|e| e.to_string());
         let exe = hwtr_psx::Exe::parse(&read("CCCPSX.EXE")?).map_err(|e| e.to_string())?;

@@ -67,7 +67,7 @@ impl Scene {
     /// the disc at `cue`, with `cars` (by name: deora, twinmill, ...) on the
     /// grid, up to six.
     pub fn load(cue: &Path, track: &str, layout: Layout, cars: &[String]) -> Result<Scene, String> {
-        let disc = hwtr_disc::Disc::open(cue).map_err(|e| e.to_string())?;
+        let disc = rrt::disc::Image::open(cue).map_err(|e| e.to_string())?;
         let iso = disc.iso().map_err(|e| e.to_string())?;
         let big = iso.find("CCCPSX.BIG").and_then(|e| iso.read(&e)).map_err(|e| e.to_string())?;
         let big = hwtr_data::Big::parse(&big).map_err(|e| e.to_string())?;

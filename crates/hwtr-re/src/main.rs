@@ -7,7 +7,7 @@ mod docs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use hwtr_disc::{Disc, TrackKind};
+use rrt::disc::{Image, TrackKind};
 use hwtr_psx::Exe;
 use hwtr_psx::mips;
 
@@ -83,12 +83,12 @@ fn parse_num(text: &str) -> Result<u32> {
     }
 }
 
-fn open_disc(cue: &Option<String>) -> Result<Disc> {
+fn open_disc(cue: &Option<String>) -> Result<Image> {
     let path = match cue {
         Some(p) => PathBuf::from(p),
-        None => Disc::find_cue(&root().join("work/disc")).map_err(|e| e.to_string())?,
+        None => Image::find(&root().join("work/disc")).map_err(|e| e.to_string())?,
     };
-    Disc::open(&path).map_err(|e| e.to_string())
+    Image::open(&path).map_err(|e| e.to_string())
 }
 
 fn read_input(file: &str, cue: &Option<String>) -> Result<Vec<u8>> {
@@ -103,7 +103,7 @@ fn read_input(file: &str, cue: &Option<String>) -> Result<Vec<u8>> {
 }
 
 fn xa_text(attr: Option<u16>) -> String {
-    use hwtr_disc::iso::xa;
+    use rrt::disc::iso::xa;
     let Some(a) = attr else { return "-".into() };
     let mut parts = Vec::new();
     for (bit, name) in
@@ -122,8 +122,9 @@ fn disc_cmd(args: &mut Args, cue: &Option<String>) -> Result<()> {
     let iso = disc.iso().map_err(|e| e.to_string())?;
     match sub.as_str() {
         "info" => {
-            println!("cue        {}", disc.cue.path.display());
-            for t in &disc.cue.tracks {
+            let cue = disc.cue.as_ref().ok_or("the disc was not opened through a CUE sheet")?;
+            println!("cue        {}", cue.path.display());
+            for t in &cue.tracks {
                 let sectors = t.file_sectors().map_err(|e| e.to_string())?;
                 let secs = sectors as f64 / 75.0;
                 println!(
@@ -208,7 +209,7 @@ fn disc_cmd(args: &mut Args, cue: &Option<String>) -> Result<()> {
                 }
                 // CD-DA files are directory entries pointing into the audio
                 // tracks; `disc audio` writes those.
-                if e.xa_attr.is_some_and(|a| a & hwtr_disc::iso::xa::CDDA != 0) {
+                if e.xa_attr.is_some_and(|a| a & rrt::disc::iso::xa::CDDA != 0) {
                     continue;
                 }
                 if let Some(parent) = dest.parent() {
@@ -220,7 +221,11 @@ fn disc_cmd(args: &mut Args, cue: &Option<String>) -> Result<()> {
                     || (0..e.sectors()).any(|i| disc.sector(e.lba + i).map(|s| s.is_form2()).unwrap_or(false));
                 let bytes = if form2 {
                     raw += 1;
-                    disc.read_raw(e.lba, e.sectors()).map_err(|e| e.to_string())?.to_vec()
+                    let mut raw = Vec::with_capacity(e.sectors() as usize * rrt::disc::RAW_SECTOR);
+                    for i in 0..e.sectors() {
+                        raw.extend_from_slice(&disc.sector(e.lba + i).map_err(|e| e.to_string())?.raw[..]);
+                    }
+                    raw
                 } else {
                     iso.read(&e).map_err(|e| e.to_string())?
                 };
@@ -238,9 +243,10 @@ fn disc_cmd(args: &mut Args, cue: &Option<String>) -> Result<()> {
         "audio" => {
             let out = args.items.first().map(PathBuf::from).unwrap_or_else(|| root().join("work/audio"));
             std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
-            for t in disc.cue.tracks.iter().filter(|t| t.kind == TrackKind::Audio) {
+            let cue = disc.cue.as_ref().ok_or("the disc was not opened through a CUE sheet")?;
+            for t in cue.tracks.iter().filter(|t| t.kind == TrackKind::Audio) {
                 let pcm = std::fs::read(&t.file).map_err(|e| format!("{}: {e}", t.file.display()))?;
-                let pcm = &pcm[t.index1 as usize * hwtr_disc::RAW_SECTOR..];
+                let pcm = &pcm[t.index1 as usize * rrt::disc::RAW_SECTOR..];
                 let dest = out.join(format!("track{:02}.wav", t.number));
                 write_wav(&dest, pcm).map_err(|e| e.to_string())?;
                 println!("{} ({:.1} s)", dest.display(), pcm.len() as f64 / 176400.0);

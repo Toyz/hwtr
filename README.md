@@ -30,7 +30,7 @@ results. During play nothing from the PlayStation runs and no BIOS is needed.
 
 | path | what |
 | --- | --- |
-| `crates/hwtr-disc` | reads the CD: CUE sheets, raw Mode 2 sectors, ISO 9660 with CD-XA, CD-DA tracks |
+| [retro_rt](https://github.com/Toyz/retro_rt) (`rrt`) | the shared runtime for the ports, a git dependency: the disc (CUE, raw sectors, ISO 9660 with CD-XA), and more as hwtr moves onto it |
 | `crates/hwtr-data` | reads the game's data: the BIG archives, and the asset formats as they are decoded |
 | `crates/hwtr-psx` | the PS-X EXE format, an R3000A + GTE disassembler, static analysis |
 | `crates/hwtr-re` | the reverse engineering command line |

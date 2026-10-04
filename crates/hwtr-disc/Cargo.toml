@@ -1,7 +1,0 @@
-[package]
-name = "hwtr-disc"
-version = "0.1.0"
-description = "Reads the Hot Wheels Turbo Racing CD: CUE sheets, raw 2352-byte Mode 2 sectors, ISO 9660 with the CD-XA extension, and CD-DA tracks."
-edition.workspace = true
-license.workspace = true
-publish.workspace = true

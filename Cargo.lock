@@ -19,6 +19,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "366ffbaa4442f4684d91e2cd7c5ea7c4ed8add41959a31447066e279e432b618"
 
 [[package]]
+name = "adler2"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -317,6 +323,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc32fast"
+version = "1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01a7799fd6b852db0e61728dde9a204c423b44d689dbd432522543614b490e78"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -401,6 +416,17 @@ name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+
+[[package]]
+name = "flate2"
+version = "1.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
+dependencies = [
+ "crc32fast",
+ "miniz_oxide",
+ "zlib-rs",
+]
 
 [[package]]
 name = "fnv"
@@ -628,12 +654,12 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "hwtr-data",
- "hwtr-disc",
  "hwtr-game",
  "hwtr-input",
  "hwtr-psx",
  "hwtr-render",
  "pollster",
+ "rrt",
  "tracing",
  "tracing-subscriber",
  "wgpu",
@@ -652,10 +678,6 @@ name = "hwtr-data"
 version = "0.1.0"
 
 [[package]]
-name = "hwtr-disc"
-version = "0.1.0"
-
-[[package]]
 name = "hwtr-game"
 version = "0.1.0"
 dependencies = [
@@ -670,9 +692,9 @@ version = "0.1.0"
 dependencies = [
  "hwtr-cpu",
  "hwtr-data",
- "hwtr-disc",
  "hwtr-game",
  "hwtr-psx",
+ "rrt",
  "tracing",
  "tracing-subscriber",
 ]
@@ -694,8 +716,8 @@ name = "hwtr-re"
 version = "0.1.0"
 dependencies = [
  "hwtr-data",
- "hwtr-disc",
  "hwtr-psx",
+ "rrt",
 ]
 
 [[package]]
@@ -704,8 +726,8 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "hwtr-data",
- "hwtr-disc",
  "pollster",
+ "rrt",
  "tracing",
  "wgpu",
 ]
@@ -716,10 +738,10 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "hwtr-data",
- "hwtr-disc",
  "hwtr-input",
  "hwtr-render",
  "pollster",
+ "rrt",
  "tracing",
  "tracing-subscriber",
  "wgpu",
@@ -957,6 +979,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "miniz_oxide"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
+dependencies = [
+ "adler2",
+ "simd-adler32",
 ]
 
 [[package]]
@@ -1645,6 +1677,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
+name = "rrt"
+version = "0.1.0"
+source = "git+https://github.com/Toyz/retro_rt#25638e05363c62917c16f5396ad11b514b87b534"
+dependencies = [
+ "rrt-disc",
+ "rrt-image",
+ "rrt-kit",
+]
+
+[[package]]
+name = "rrt-disc"
+version = "0.1.0"
+source = "git+https://github.com/Toyz/retro_rt#25638e05363c62917c16f5396ad11b514b87b534"
+
+[[package]]
+name = "rrt-image"
+version = "0.1.0"
+source = "git+https://github.com/Toyz/retro_rt#25638e05363c62917c16f5396ad11b514b87b534"
+dependencies = [
+ "flate2",
+]
+
+[[package]]
+name = "rrt-kit"
+version = "0.1.0"
+source = "git+https://github.com/Toyz/retro_rt#25638e05363c62917c16f5396ad11b514b87b534"
+
+[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1775,6 +1835,12 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "simd-adler32"
+version = "0.3.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
 name = "simd_cesu8"
@@ -2861,3 +2927,9 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b268e58e7c693d7c271f93ffc4ba3b380412554231c85bf61ca7af91042a4112"

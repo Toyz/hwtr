@@ -76,8 +76,8 @@ fn main() {
             other => panic!("unknown argument {other}"),
         }
     }
-    let cue = hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).expect("cue");
-    let disc = Rc::new(hwtr_disc::Disc::open(&cue).expect("disc"));
+    let cue = rrt::disc::Image::find(std::path::Path::new("work/disc")).expect("cue");
+    let disc = Rc::new(rrt::disc::Image::open(&cue).expect("disc"));
     let mut hle = Hle::new(disc).expect("hle");
     hle.load(&std::fs::read(&state).expect("state file")).expect("state");
     hle.m.step_limit = 30_000_000;

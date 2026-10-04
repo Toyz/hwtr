@@ -73,8 +73,8 @@ fn main() {
         }
     }
     std::fs::create_dir_all(&shots).expect("shots dir");
-    let cue = hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).expect("cue");
-    let disc = Rc::new(hwtr_disc::Disc::open(&cue).expect("disc"));
+    let cue = rrt::disc::Image::find(std::path::Path::new("work/disc")).expect("cue");
+    let disc = Rc::new(rrt::disc::Image::open(&cue).expect("disc"));
     let mut hle = hwtr_hle::Hle::new(disc).expect("hle");
     if let Some(p) = &load {
         let bytes = std::fs::read(p).expect("state file");
@@ -179,8 +179,8 @@ fn main() {
     // What the last frame spent its time in, by function.
     if let Some(t) = &hle.m.trace {
         let exe_bytes = {
-            let cue = hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).expect("cue");
-            let disc = hwtr_disc::Disc::open(&cue).expect("disc");
+            let cue = rrt::disc::Image::find(std::path::Path::new("work/disc")).expect("cue");
+            let disc = rrt::disc::Image::open(&cue).expect("disc");
             let iso = disc.iso().expect("iso");
             iso.find("CCCPSX.EXE").and_then(|e| iso.read(&e)).expect("exe")
         };
@@ -200,8 +200,8 @@ fn main() {
     // --writes: which functions stored where, over the whole run.
     if let Some(log) = hle.m.stores.take() {
         let exe_bytes = {
-            let cue = hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).expect("cue");
-            let disc = hwtr_disc::Disc::open(&cue).expect("disc");
+            let cue = rrt::disc::Image::find(std::path::Path::new("work/disc")).expect("cue");
+            let disc = rrt::disc::Image::open(&cue).expect("disc");
             let iso = disc.iso().expect("iso");
             iso.find("CCCPSX.EXE").and_then(|e| iso.read(&e)).expect("exe")
         };

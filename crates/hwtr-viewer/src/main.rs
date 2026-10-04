@@ -260,7 +260,7 @@ fn main() {
     let cue: Option<PathBuf> = cue;
     let loaded = cue
         .map(Ok)
-        .unwrap_or_else(|| hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).map_err(|e| e.to_string()))
+        .unwrap_or_else(|| rrt::disc::Image::find(std::path::Path::new("work/disc")).map_err(|e| e.to_string()))
         .and_then(|cue| Scene::load(&cue, &track, layout, &cars));
     let scene = match loaded {
         Ok(s) => s,

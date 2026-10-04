@@ -41,8 +41,8 @@ fn main() {
             other => panic!("unknown argument {other}"),
         }
     }
-    let cue = hwtr_disc::Disc::find_cue(std::path::Path::new("work/disc")).expect("cue");
-    let disc = Rc::new(hwtr_disc::Disc::open(&cue).expect("disc"));
+    let cue = rrt::disc::Image::find(std::path::Path::new("work/disc")).expect("cue");
+    let disc = Rc::new(rrt::disc::Image::open(&cue).expect("disc"));
     let bytes = std::fs::read(&state).expect("state file");
     let make = || {
         let mut hle = Hle::new(disc.clone()).expect("hle");

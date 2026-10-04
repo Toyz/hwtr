@@ -26,7 +26,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use hwtr_cpu::{Fault, Machine};
-use hwtr_disc::Disc;
+use rrt::disc::Image;
 
 pub const CD_INIT: u32 = 0x800a_4d18;
 pub const CD_SEARCH_FILE: u32 = 0x800a_4e18;
@@ -76,7 +76,7 @@ fn from_bcd(b: u8) -> u32 {
 
 impl Hle {
     /// Loads `CCCPSX.EXE` from the disc and installs the hardware and hooks.
-    pub fn new(disc: Rc<Disc>) -> Result<Hle, String> {
+    pub fn new(disc: Rc<Image>) -> Result<Hle, String> {
         let iso = disc.iso().map_err(|e| e.to_string())?;
         let exe = iso.find("CCCPSX.EXE").and_then(|e| iso.read(&e)).map_err(|e| e.to_string())?;
         let exe = hwtr_psx::Exe::parse(&exe).map_err(|e| e.to_string())?;
@@ -90,9 +90,9 @@ impl Hle {
         let files: Vec<(String, u32, u32)> = iso
             .walk()
             .map_err(|e| e.to_string())?
-            .into_iter()
+            .iter()
             .filter(|e| !e.is_dir)
-            .map(|e| (e.path.trim_start_matches('/').to_uppercase(), e.lba, e.size))
+            .map(|e| (e.path.trim_start_matches('/').to_uppercase(), e.lba, u32::try_from(e.size).unwrap_or(u32::MAX)))
             .collect();
         let pos = Rc::new(Cell::new(0u32));
         let reads: Rc<RefCell<Vec<(u32, u32)>>> = Default::default();

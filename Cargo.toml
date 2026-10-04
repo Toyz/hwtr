@@ -8,7 +8,6 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-hwtr-disc = { path = "crates/hwtr-disc" }
 hwtr-psx = { path = "crates/hwtr-psx" }
 hwtr-data = { path = "crates/hwtr-data" }
 hwtr-cpu = { path = "crates/hwtr-cpu" }
@@ -16,6 +15,9 @@ hwtr-game = { path = "crates/hwtr-game" }
 hwtr-input = { path = "crates/hwtr-input" }
 hwtr-hle = { path = "crates/hwtr-hle" }
 hwtr-render = { path = "crates/hwtr-render" }
+# The shared runtime for the ports: the disc, the window and loop, the pad,
+# wgpu, audio, pictures. Data crates take only the features they use.
+rrt = { git = "https://github.com/Toyz/retro_rt", default-features = false }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
