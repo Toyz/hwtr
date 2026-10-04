@@ -213,6 +213,8 @@ impl RaceSound {
                     }
                 }
                 Change::Volume { voice, left, right } => spu.set_volume(voice, [left as u16 * 129, right as u16 * 129]),
+                Change::ReverbDepth(depth) => spu.set_reverb_depth(depth),
+                Change::Reverb(on) => spu.set_reverb(on),
             }
         }
     }
@@ -226,12 +228,14 @@ impl RaceSound {
 }
 
 impl Drop for RaceSound {
-    /// The race over: its voices let go (0x80033aa0).
+    /// The race over: its voices let go (0x80033aa0), and its reverb with
+    /// it.
     fn drop(&mut self) {
         if let Ok(mut spu) = self.spu.lock() {
             for v in 0..24 {
                 spu.key_off(v);
             }
+            spu.set_reverb(false);
         }
     }
 }
@@ -586,6 +590,9 @@ impl Race {
                 s.crashes = hwtr_game::snd::Bank::from_vh(vh, 0).map(|b| (b, std::sync::Arc::from(vb)));
                 tracing::info!("crashes bank {n}");
             }
+            // 0x8001924c: the reverb, libspu's type 4 ("studio large"), on
+            // at no depth (0x800a70c8, 0x800a70a8).
+            s.apply(&[hwtr_game::engines::Change::Reverb(true)]);
             // ... and the dialog bank, as VAB 3.
             let n = race.dialog_bank;
             if let (Ok(vh), Ok(vb)) = (get(&format!("DIALOG{n}VH")), get(&format!("DIALOG{n}VB"))) {
@@ -786,6 +793,10 @@ impl Race {
                 if matches!(event, RaceEvent::Pause) {
                     changes.extend(s.engines.mute_sources(&alive));
                 }
+                // 0x80019f7c: the pause takes the reverb off.
+                if matches!(event, RaceEvent::Pause) {
+                    changes.extend(s.engines.reverb.pause(true));
+                }
                 s.apply(&changes);
             }
             // What each sounds (the calls to 0x800157f8): the countdown,
@@ -827,6 +838,9 @@ impl Race {
                         s.apply(&changes);
                     }
                     RaceEvent::Resume => {
+                        // 0x80019f7c going on: the reverb back on.
+                        let back: Vec<_> = s.engines.reverb.pause(false).into_iter().collect();
+                        s.apply(&back);
                         s.engines_on();
                         let alive = s.alive();
                         let changes = s.engines.rekey_sources(&self.race.tables, &|v| alive[v]);
@@ -857,6 +871,19 @@ impl Race {
                 alive.get(v).copied().unwrap_or(false)
             });
             s.apply(&changes);
+            // 0x80015d04 (iface_sound+0x34, with one player): the reverb
+            // deepens while player one's car is in a zone with flag 0x80.
+            if s.engines.players == 1
+                && let Some(car) = self.race.cars.first()
+            {
+                let level = if car.flags & 0x40 != 0 { 4096 } else { 0 };
+                let was = s.engines.reverb.sounding;
+                let step: Vec<_> = s.engines.reverb.step(level).into_iter().collect();
+                if was != s.engines.reverb.sounding {
+                    tracing::debug!("reverb {}", if was { "fades out" } else { "comes in" });
+                }
+                s.apply(&step);
+            }
             // Then the track's sounds that follow animations go where they
             // are now.
             let race = &mut self.race;

@@ -231,3 +231,26 @@ pub fn key_on(
         reverb: t.mode & 4 != 0,
     })
 }
+
+/// libspu's reverb type 4, "studio large", which the race sets as its
+/// sound loads (`SsUtSetReverbType`, 0x800a70c8): the reverb's 32
+/// registers from 0x1f801dc0 (dAPF1, dAPF2, vIIR, vCOMB1 to 4, vWALL,
+/// vAPF1, vAPF2, mLSAME, mRSAME, mLCOMB1, mRCOMB1, mLCOMB2, mRCOMB2,
+/// dLSAME, dRSAME, mLDIFF, mRDIFF, mLCOMB3, mRCOMB3, mLCOMB4, mRCOMB4,
+/// dLDIFF, dRDIFF, mLAPF1, mRAPF1, mLAPF2, mRAPF2, vLIN, vRIN) as it leaves
+/// them.
+pub const STUDIO_LARGE: [u16; 32] = [
+    0x00e3, 0x00a9, 0x6f60, 0x4fa8, 0xbce0, 0x4510, 0xbef0, 0xa680, 0x5680, 0x52c0, 0x0dfb, 0x0b58, 0x0d09, 0x0a3c,
+    0x0bd9, 0x0973, 0x0b59, 0x08da, 0x08d9, 0x05e9, 0x07ec, 0x04b0, 0x06ef, 0x03d2, 0x05ea, 0x031d, 0x031c, 0x0238,
+    0x0154, 0x00aa, 0x8000, 0x8000,
+];
+
+/// Where "studio large"'s work area starts in sound memory (mBASE,
+/// 0x1f801da2, in 8-byte units): it runs to the end, 0x80000.
+pub const STUDIO_LARGE_BASE: u16 = 0xf204;
+
+/// libsnd's `SsUtSetReverbDepth` (0x800a66d4): a depth of 0 to 127 as the
+/// reverb's output volume register, `depth * 0x7fff / 127`.
+pub fn reverb_depth(depth: u8) -> i16 {
+    ((depth as i32 * 0x7fff) / 127) as i16
+}

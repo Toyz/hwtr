@@ -321,6 +321,57 @@ pub enum Change {
         left: u8,
         right: u8,
     },
+    /// The reverb's depth, both sides (0-127; libsnd's `SsUtSetReverbDepth`,
+    /// 0x800a66d4), with the first 20 voices fed to it (0x800a6b94).
+    ReverbDepth(u8),
+    /// The reverb on or off (`SsUtReverbOn`, 0x800a70a8; `SsUtReverbOff`,
+    /// 0x800a6648, which also takes the voices off it and the depth to 0).
+    Reverb(bool),
+}
+
+/// The race's reverb (libspu's "studio large", type 4, set as its sound
+/// loads, 0x8001924c): how deep it is (0x800d0c40), whether it sounds
+/// (0x800d24d4), and whether the pause has it off (0x800d24d3).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Reverb {
+    pub depth: i32,
+    pub sounding: bool,
+    pub paused: bool,
+}
+
+impl Reverb {
+    /// 0x80015d04 for player one's car (`iface_sound+0x34`, run only in a
+    /// race with one player): the depth eases, by at most 4 a frame, toward
+    /// `level`'s share of 100 (4096 in a zone with flag 0x80, which sets the
+    /// car's flag 0x40; else 0). None while paused.
+    pub fn step(&mut self, level: i32) -> Option<Change> {
+        if self.paused {
+            return None;
+        }
+        let target = ((level as i64 * 0x64000) >> 12 >> 12) as i32;
+        let gap = target - self.depth;
+        self.depth = if gap > 0 { self.depth + gap.min(4) } else { self.depth - (-gap).min(4) };
+        self.sounding = self.depth != 0;
+        Some(Change::ReverbDepth(self.depth.clamp(0, 127) as u8))
+    }
+
+    /// 0x80019f7c, the pause and going on: paused, a sounding reverb goes
+    /// off (the depth kept for after); going on, it is turned on again.
+    pub fn pause(&mut self, paused: bool) -> Option<Change> {
+        if !paused {
+            if !self.paused {
+                return None;
+            }
+            self.paused = false;
+            return Some(Change::Reverb(true));
+        }
+        if self.paused {
+            return None;
+        }
+        self.paused = true;
+        let was = std::mem::take(&mut self.sounding);
+        was.then_some(Change::Reverb(false))
+    }
 }
 
 /// A car's state this frame, as the sound reads it (0x80045a84).
@@ -376,6 +427,8 @@ pub struct Engines {
     /// The spot each trigger's animations' looping sound took (0x800d0fd8,
     /// two bytes a trigger, zeroed at the track's load).
     pub trigger_spots: Vec<[u8; 2]>,
+    /// The race's reverb.
+    pub reverb: Reverb,
 }
 
 impl Engines {

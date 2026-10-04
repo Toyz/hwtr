@@ -7,8 +7,8 @@
 //! output; the game sets voices and keys them on between ticks.
 //!
 //! The sample format and the chip's 4-point Gaussian interpolation are
-//! rrt's (`rrt::kit::adpcm::spu`); the voices, envelopes and mixing are here.
-//! There is no reverb.
+//! rrt's (`rrt::kit::adpcm::spu`); the voices, envelopes and mixing are here,
+//! and the chip's reverb ([`Reverb`]) with the race's "studio large".
 
 use std::sync::Arc;
 
@@ -56,6 +56,115 @@ pub struct Spu {
     voices: [Voice; VOICES],
     stream: Stream,
     cd: Cd,
+    reverb: Reverb,
+}
+
+/// The chip's reverb, as the hardware runs it (psx-spx's account of it): at
+/// half the output rate, in a ring of sound memory from mBASE to the end,
+/// each sample the input from the voices fed to it reflected off the same
+/// side and the other, combed, put through two all-pass filters, and given
+/// out at the depth. The work area is its own buffer here, not shared
+/// sound memory. The registers are the race's preset
+/// ([`hwtr_game::snd::STUDIO_LARGE`]).
+#[derive(Default)]
+pub struct Reverb {
+    on: bool,
+    /// The first 20 voices are fed to it (0x800a6b94).
+    voices: bool,
+    /// The output volume, both sides (vLOUT, vROUT).
+    depth: i16,
+    regs: [i16; 32],
+    ring: Vec<i16>,
+    at: usize,
+    /// Every other output sample runs it; the output holds between.
+    odd: bool,
+    out: (i32, i32),
+}
+
+impl Reverb {
+    fn on(&mut self) {
+        if self.ring.is_empty() {
+            let base = hwtr_game::snd::STUDIO_LARGE_BASE as usize * 8;
+            self.ring = vec![0; (0x8_0000 - base) / 2];
+            self.regs = hwtr_game::snd::STUDIO_LARGE.map(|r| r as i16);
+        }
+        self.on = true;
+    }
+
+    /// `SsUtReverbOff`: off, the voices off it, its depth 0.
+    fn off(&mut self) {
+        self.on = false;
+        self.voices = false;
+        self.depth = 0;
+        self.out = (0, 0);
+    }
+
+    /// The half word `off` half words from where it is, round the ring.
+    fn at(&self, off: i32) -> i32 {
+        let n = self.ring.len() as i32;
+        self.ring[(self.at as i32 + off).rem_euclid(n) as usize] as i32
+    }
+
+    fn put(&mut self, off: i32, v: i32) {
+        let n = self.ring.len() as i32;
+        self.ring[(self.at as i32 + off).rem_euclid(n) as usize] = v.clamp(-0x8000, 0x7fff) as i16;
+    }
+
+    /// One output sample's reverb from the voices' share `input`.
+    fn sample(&mut self, input: (i32, i32)) -> (i32, i32) {
+        if !self.on || self.ring.is_empty() {
+            return (0, 0);
+        }
+        self.odd = !self.odd;
+        if self.odd {
+            return self.out;
+        }
+        let mul = |a: i32, b: i32| (a * b) >> 15;
+        let r = |k: usize| self.regs[k] as i32;
+        // An address register: in 8-byte steps, as half words.
+        let a = |k: usize| (self.regs[k] as u16 as i32) * 4;
+        let (d_apf1, d_apf2, v_iir) = (a(0), a(1), r(2));
+        let v_comb = [r(3), r(4), r(5), r(6)];
+        let (v_wall, v_apf1, v_apf2) = (r(7), r(8), r(9));
+        let (m_lsame, m_rsame) = (a(10), a(11));
+        let (m_lcomb1, m_rcomb1, m_lcomb2, m_rcomb2) = (a(12), a(13), a(14), a(15));
+        let (d_lsame, d_rsame, m_ldiff, m_rdiff) = (a(16), a(17), a(18), a(19));
+        let (m_lcomb3, m_rcomb3, m_lcomb4, m_rcomb4) = (a(20), a(21), a(22), a(23));
+        let (d_ldiff, d_rdiff) = (a(24), a(25));
+        let (m_lapf1, m_rapf1, m_lapf2, m_rapf2) = (a(26), a(27), a(28), a(29));
+        let (v_lin, v_rin) = (r(30), r(31));
+        let clamp = |v: i32| v.clamp(-0x8000, 0x7fff);
+        let l_in = mul(v_lin, clamp(input.0));
+        let r_in = mul(v_rin, clamp(input.1));
+        // The reflections: same side, then across.
+        let reflect = |s: &Self, input: i32, from: i32, to: i32| {
+            let last = s.at(to - 1);
+            mul(input + mul(s.at(from), v_wall) - last, v_iir) + last
+        };
+        let (ls, rs) = (reflect(self, l_in, d_lsame, m_lsame), reflect(self, r_in, d_rsame, m_rsame));
+        let (ld, rd) = (reflect(self, l_in, d_rdiff, m_ldiff), reflect(self, r_in, d_ldiff, m_rdiff));
+        self.put(m_lsame, ls);
+        self.put(m_rsame, rs);
+        self.put(m_ldiff, ld);
+        self.put(m_rdiff, rd);
+        // The early echo, then the two all-pass filters.
+        let comb = |s: &Self, m: [i32; 4]| (0..4).fold(0, |acc, k| acc + mul(v_comb[k], s.at(m[k])));
+        let mut l = comb(self, [m_lcomb1, m_lcomb2, m_lcomb3, m_lcomb4]);
+        let mut rr = comb(self, [m_rcomb1, m_rcomb2, m_rcomb3, m_rcomb4]);
+        for (m_l, m_r, d, v) in [(m_lapf1, m_rapf1, d_apf1, v_apf1), (m_lapf2, m_rapf2, d_apf2, v_apf2)] {
+            let (old_l, old_r) = (self.at(m_l - d), self.at(m_r - d));
+            l = clamp(l - mul(v, old_l));
+            rr = clamp(rr - mul(v, old_r));
+            self.put(m_l, l);
+            self.put(m_r, rr);
+            l = mul(l, v) + old_l;
+            rr = mul(rr, v) + old_r;
+        }
+        let depth = self.depth as i32;
+        self.out = (mul(clamp(l), depth), mul(clamp(rr), depth));
+        self.at = (self.at + 1) % self.ring.len();
+        self.out
+    }
 }
 
 /// The CD's music: a track's PCM (interleaved stereo, 44.1 kHz), where in
@@ -247,6 +356,22 @@ impl Spu {
     }
 
     /// The CD's volume, 0 to 128.
+    /// The reverb on or off (`SsUtReverbOn`, `SsUtReverbOff`).
+    pub fn set_reverb(&mut self, on: bool) {
+        if on {
+            self.reverb.on();
+        } else {
+            self.reverb.off();
+        }
+    }
+
+    /// `SsUtSetReverbDepth` at `depth` (0 to 127), the first 20 voices fed
+    /// to it.
+    pub fn set_reverb_depth(&mut self, depth: u8) {
+        self.reverb.depth = hwtr_game::snd::reverb_depth(depth);
+        self.reverb.voices = true;
+    }
+
     pub fn cd_volume(&mut self, v: i32) {
         self.cd.volume = v;
     }
@@ -341,11 +466,18 @@ impl Source for Spu {
     fn render(&mut self, out: &mut [i16]) {
         for frame in out.chunks_exact_mut(2) {
             let (mut l, mut r) = (0i32, 0i32);
-            for v in self.voices.iter_mut() {
+            let mut wet = (0i32, 0i32);
+            for (k, v) in self.voices.iter_mut().enumerate() {
                 let (a, b) = v.sample();
                 l += a;
                 r += b;
+                if k < 20 && self.reverb.voices {
+                    wet = (wet.0 + a, wet.1 + b);
+                }
             }
+            let (rl, rr) = self.reverb.sample(wet);
+            l += rl;
+            r += rr;
             let cd = &mut self.cd;
             if cd.playing && cd.pcm.len() >= 2 {
                 if 2 * cd.at + 1 >= cd.pcm.len() {
@@ -376,6 +508,29 @@ impl Source for Spu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An impulse through "studio large" comes back as a tail that dies
+    /// away, and at depth 0 as nothing.
+    #[test]
+    fn the_reverb_rings_and_dies_away() {
+        let run = |depth: u8| {
+            let mut spu = Spu::default();
+            spu.set_reverb(true);
+            spu.set_reverb_depth(depth);
+            let mut out = Vec::new();
+            for k in 0..44_100 * 3 {
+                let input = if k < 64 { (20_000, 20_000) } else { (0, 0) };
+                out.push(spu.reverb.sample(input).0);
+            }
+            out
+        };
+        let loud = |s: &[i32]| s.iter().map(|v| v.unsigned_abs()).max().unwrap_or(0);
+        let tail = run(100);
+        assert!(loud(&tail[..2205]) > 0 || loud(&tail[2205..22_050]) > 0, "it rings");
+        assert!(loud(&tail[2205..22_050]) > 50, "an echo comes back");
+        assert!(loud(&tail[44_100 * 2..]) < loud(&tail[2205..22_050]) / 4, "it dies away");
+        assert_eq!(loud(&run(0)), 0, "nothing at depth 0");
+    }
 
     /// The menu's Cross sound (effect 50) out of `HWMENU`: it sounds, and
     /// it ends. Written to `target/test-tmp/cross.wav` to listen to.

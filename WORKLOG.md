@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-82 entries: audio 9, bug 1, build 3, content 5, decomp 8, design 3, disc 1, engine 6, format 7, input 10, physics 14, race 11, render 20, test 16, tooling 16, ui 13, video 1.
+83 entries: audio 10, bug 1, build 3, content 5, decomp 8, design 3, disc 1, engine 6, format 7, input 10, physics 14, race 11, render 20, test 16, tooling 16, ui 13, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -94,3 +94,4 @@ The [reference](docs/README.md) says what is true now.
 | 80 | [A wreck's screen flash is drawn: a flat quad blended half and half](worklog/0080-a-wreck-s-screen-flash-is-drawn-a-flat-quad-blended-half.md) | 2026-10-04 | render |
 | 81 | [Which effects a race has: fx_enable from the views and the scale cheats](worklog/0081-which-effects-a-race-has-fx-enable-from-the-views-and-the.md) | 2026-10-04 | render |
 | 82 | [Entry 75's remaining questions, carried forward](worklog/0082-entry-75-s-remaining-questions-carried-forward.md) | 2026-10-04 | tooling |
+| 83 | [The tunnel reverb: libspu's studio large, deepened in zones with flag 0x80](worklog/0083-the-tunnel-reverb-libspu-s-studio-large-deepened-in-zones.md) | 2026-10-04 | audio |
