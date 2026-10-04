@@ -945,6 +945,31 @@ impl Race {
                         .collect()
                 })
                 .unwrap_or_default();
+            // A wreck's wheels that fly (0x8007c8fc, 0x80020e40): each
+            // drawn where its own body is, put into the car's model space.
+            let mut wheels = wheels;
+            let car_rot = Mat3::from_quat(rot);
+            for f in self.race.collision.flying.iter().flatten().filter(|f| f.car as usize == k) {
+                let w = f.wheel as usize;
+                if w >= look.model.wheels.len() {
+                    continue;
+                }
+                // Wheels with no pose yet sit where the model puts them.
+                while wheels.len() < look.model.wheels.len() {
+                    let c = &look.model.children[wheels.len()];
+                    wheels.push((Mat3::IDENTITY, Vec3::new(c.pos[0] as f32, c.pos[1] as f32, c.pos[2] as f32)));
+                }
+                let col = |j: usize| Vec3::from_array([0, 1, 2].map(|i| f.body.rot[i][j] as f32 / 4096.0));
+                let body_rot = Mat3::from_cols(col(0), col(1), col(2));
+                let at = Vec3::from_array(f.body.pos.map(|c| c as f32 / 4096.0));
+                let root = Vec3::new(
+                    look.model.root.pos[0] as f32,
+                    look.model.root.pos[1] as f32,
+                    look.model.root.pos[2] as f32,
+                );
+                let inverse = car_rot.transpose();
+                wheels[w] = (inverse * body_rot, inverse * (at - pos) * 2.0 - root);
+            }
             tris.extend(hwtr_render::mesh::car_triangles(
                 &look.model,
                 look.clut,

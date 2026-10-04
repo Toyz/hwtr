@@ -840,3 +840,126 @@ fn a_boost_ends_as_in_the_original() {
     }
     assert!(ended > 300 && kept > 300, "{ended} ended, {kept} kept");
 }
+
+/// The flying wheels' table (0x801323f4, 680 bytes a wheel).
+const FLYING: u32 = 0x8013_23f4;
+
+/// A player's wreck throwing its wheels (0x8007c9b0): the car moving and
+/// spinning any way, its wheels rolling and placed anywhere, some slots
+/// taken; each wheel's body, box, reach and zone, the slots taken and the
+/// seed compared.
+#[test]
+fn wheels_fly_off_as_in_the_original() {
+    use hwtr_game::flying::{FlyingWheel, SLOTS};
+    use hwtr_game::rand::Rand;
+    use hwtr_hle::original::rand::SEED;
+    let Some(exe) = common::exe() else { return };
+    let t = Tables::from_exe(&exe);
+    let mut rng = common::Rng(0xf1_7e5);
+    let mut thrown = 0;
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let start = m.bus.ram.clone();
+        for round in 0..300 {
+            m.bus.ram.copy_from_slice(&start);
+            let seed = rng.word();
+            let taken: Vec<bool> = (0..SLOTS).map(|_| rng.below(4) == 0).collect();
+            let car = {
+                let mut ram = Ram(&mut m.bus.ram);
+                let mut car = Car::read(&ram, CARS);
+                car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (6 + rng.below(8)));
+                car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (14 + rng.below(6)));
+                for w in &mut car.wheels {
+                    w.spin_rate = (rng.word() as i32) >> (6 + rng.below(10));
+                    w.world = hwtr_game::math::add(car.body.pos, [0; 3].map(|_| (rng.word() as i32) >> 12));
+                }
+                car.write(&mut ram, CARS);
+                for (k, &on) in taken.iter().enumerate() {
+                    ram.set_u8(FLYING + 680 * k as u32, on as u8);
+                }
+                ram.set_i32(SEED, seed as i32);
+                Car::read(&ram, CARS)
+            };
+            let mut table: [Option<FlyingWheel>; SLOTS] =
+                std::array::from_fn(|k| taken[k].then(|| hwtr_game::flying::throw(&t, &car, 0, &mut Rand { seed: 0 })));
+            let mut rand = Rand { seed };
+            hwtr_game::flying::throw_all(&t, &car, &mut table, &mut rand);
+            m.call(0x8007_c9b0, &[CARS]).unwrap();
+            let what = format!("{name} round {round}");
+            assert_eq!(m.bus.read_u32(SEED), rand.seed, "{what}: seed");
+            let ram = Ram(&mut m.bus.ram);
+            for k in 0..SLOTS as u32 {
+                let at = FLYING + 680 * k;
+                let ours = &table[k as usize];
+                assert_eq!(ram.u8(at) != 0, ours.is_some(), "{what}: slot {k} taken");
+                let Some(f) = ours.as_ref().filter(|_| !taken[k as usize]) else { continue };
+                assert_eq!((ram.u8(at + 1), ram.u8(at + 2)), (f.car, f.wheel), "{what}: slot {k}'s car and wheel");
+                let body = hwtr_game::body::Body::read(&ram, at + 152);
+                assert_eq!(body, f.body, "{what}: slot {k}'s body");
+                assert_eq!(ram.vec3(at + 0x20), f.half, "{what}: slot {k}'s box");
+                assert_eq!(ram.i32(at + 0x60), f.radius, "{what}: slot {k}'s reach");
+                assert_eq!(ram.u8(at + 0x64), 6, "{what}: slot {k}'s kind");
+                thrown += 1;
+            }
+        }
+    }
+    assert!(thrown > 1000, "{thrown} thrown");
+}
+
+/// The flying wheels' steps (0x8007c894): thrown by the original, then 40
+/// steps of each, every body compared after each.
+#[test]
+fn flying_wheels_step_as_in_the_original() {
+    use hwtr_game::flying::{FlyingWheel, SLOTS};
+    let Some(exe) = common::exe() else { return };
+    let t = Tables::from_exe(&exe);
+    let mut rng = common::Rng(0x57e9_f1);
+    let mut stepped = 0;
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let start = m.bus.ram.clone();
+        for round in 0..40 {
+            m.bus.ram.copy_from_slice(&start);
+            {
+                let mut ram = Ram(&mut m.bus.ram);
+                let mut car = Car::read(&ram, CARS);
+                car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (6 + rng.below(8)));
+                car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (14 + rng.below(6)));
+                for w in &mut car.wheels {
+                    w.spin_rate = (rng.word() as i32) >> (6 + rng.below(10));
+                }
+                car.write(&mut ram, CARS);
+                for k in 0..SLOTS as u32 {
+                    ram.set_u8(FLYING + 680 * k, 0);
+                }
+            }
+            m.call(0x8007_c9b0, &[CARS]).unwrap();
+            let mut table: [Option<FlyingWheel>; SLOTS] = {
+                let ram = Ram(&mut m.bus.ram);
+                std::array::from_fn(|k| {
+                    let at = FLYING + 680 * k as u32;
+                    (ram.u8(at) != 0).then(|| FlyingWheel {
+                        car: ram.u8(at + 1),
+                        wheel: ram.u8(at + 2),
+                        body: hwtr_game::body::Body::read(&ram, at + 152),
+                        half: ram.vec3(at + 0x20),
+                        radius: ram.i32(at + 0x60),
+                        object: None,
+                    })
+                })
+            };
+            for step in 0..40 {
+                m.call(0x8007_c894, &[]).unwrap();
+                hwtr_game::flying::step(&t, &mut table);
+                let ram = Ram(&mut m.bus.ram);
+                for (k, f) in table.iter().enumerate() {
+                    let Some(f) = f else { continue };
+                    let body = hwtr_game::body::Body::read(&ram, FLYING + 680 * k as u32 + 152);
+                    assert_eq!(body, f.body, "{name} round {round} step {step}: wheel {k}");
+                    stepped += 1;
+                }
+            }
+        }
+    }
+    assert!(stepped > 10000, "{stepped} stepped");
+}

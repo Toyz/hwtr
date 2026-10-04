@@ -47,8 +47,15 @@ pub fn contact_volume(speed: i32) -> i32 {
     div_fx(fx(speed, 232).clamp(0x1_4000, 0x6_4000), 0x6_4000)
 }
 
-/// The share of a point's inward speed a contact takes away.
+/// How much of a point's inward speed a contact gives back: half, and 1.3
+/// for a flying wheel (0x8006dc08, kind 6).
 const BOUNCE: i32 = 0x800;
+const WHEEL_BOUNCE: i32 = div_fx_const(0xd000, 0xa000);
+
+/// [`crate::math::div_fx`] for small constants.
+const fn div_fx_const(a: i32, b: i32) -> i32 {
+    ((a / b) << 12) + ((a % b) << 12) / b
+}
 
 impl Collision {
     /// The contacts' part of `collision_update` (0x8004de6c). For a
@@ -64,6 +71,16 @@ impl Collision {
     pub fn contact_impulses(&mut self, t: &Tables, cars: &mut [Car], step: &mut Step) {
         for c in self.contacts.clone() {
             let obj = &mut self.objects[c.object];
+            // A flying wheel's contact only pushes its body back.
+            if obj.car.is_none() {
+                if let Some(f) = obj.flying.and_then(|k| self.flying.get_mut(k as usize)?.as_mut()) {
+                    obj.stamp = self.step;
+                    obj.contact_normal = c.normal;
+                    let friction = contact_friction(t, c.surface, false);
+                    f.body.impulse(t, c.point, c.normal, WHEEL_BOUNCE, friction);
+                }
+                continue;
+            }
             let Some(slot) = obj.car else { continue };
             let car = &mut cars[slot as usize];
             let first = obj.stamp != self.step;
@@ -86,18 +103,18 @@ impl Collision {
                     }
                 }
                 if car.hard_impact(c.normal) {
-                    car.wreck(false, step.rand);
+                    car.wreck_throwing(false, step.rand, Some((t, &mut self.flying)));
                 }
                 if car.ground.floor.found
                     && dot(c.normal, car.ground.floor.normal) > 3547
                     && car.right_itself(step.tuning, step.rand) == Righting::Wreck
                 {
-                    car.wreck(false, step.rand);
+                    car.wreck_throwing(false, step.rand, Some((t, &mut self.flying)));
                 }
                 car.contact_time = step.time;
             }
             obj.stamp = self.step;
-            obj.contact_point = c.point;
+            obj.contact_normal = c.normal;
             let friction = contact_friction(t, c.surface, obj.kind == Kind::ComputerCar && !was_wrecked);
             car.body.impulse(t, c.point, c.normal, BOUNCE, friction);
             // 0x8002e9f8: a player's car's first contact of the step throws
@@ -123,13 +140,32 @@ impl Collision {
         for road in [false, true] {
             for id in self.walls.iter().collect::<Vec<_>>() {
                 let obj = &self.objects[id];
-                let Some(slot) = obj.car else { continue };
-                let car = &mut cars[slot as usize];
-                if car.body.asleep {
+                // A car's body, or a flying wheel's, taken out while its
+                // points are pressed.
+                let mut flying = obj.flying.and_then(|k| self.flying.get_mut(k as usize)?.take());
+                let (body, mut flags, wheels) = match (obj.car, flying.as_mut()) {
+                    (Some(slot), _) => {
+                        let car = &mut cars[slot as usize];
+                        (&mut car.body, Some(&mut car.flags), car.wheels.len())
+                    }
+                    (None, Some(f)) => (&mut f.body, None, 0),
+                    _ => continue,
+                };
+                if body.asleep {
+                    if let (Some(k), Some(f)) = (self.objects[id].flying, flying) {
+                        self.flying[k as usize] = Some(f);
+                    }
                     continue;
                 }
                 let player = obj.kind == Kind::PlayerCar;
-                let first = if player { car.wheels.len() } else { 0 };
+                let first = if player { wheels } else { 0 };
+                // A flying wheel is a ball: each side meets its point
+                // nearest it, its reach in from the centre.
+                let ball = (obj.kind.byte() == 6).then_some(obj.radius);
+                let nearest = |p: Vec3, n: Vec3| match ball {
+                    Some(r) => sub(p, n.map(|c| fx(c, r))),
+                    None => p,
+                };
                 for zone_id in obj.zones.iter().collect::<Vec<_>>() {
                     let zone = self.scp.zones[zone_id as usize];
                     if zone.is_road() != road {
@@ -143,11 +179,11 @@ impl Collision {
                         .collect();
                     if road {
                         for point in points {
-                            for (side, (d, n)) in self.road_sides(t, &zone, sub(point, origin)).into_iter().enumerate()
-                            {
+                            let sides = self.road_sides(t, &zone, sub(point, origin), ball);
+                            for (side, (d, n)) in sides.into_iter().enumerate() {
                                 if d <= 0 {
                                     let surface = if side == 0 { 2 } else { 1 };
-                                    self.press(id, car, point, n, d, surface);
+                                    self.press(id, body, flags.as_deref_mut(), nearest(point, n), n, d, surface);
                                 }
                             }
                         }
@@ -160,20 +196,24 @@ impl Collision {
                             continue;
                         }
                         for &point in &points {
+                            let point = nearest(point, plane.normal());
                             let d = plane.distance(sub(point, origin));
                             if d > 0 {
                                 continue;
                             }
-                            if player {
+                            if player && let Some(f) = flags.as_deref_mut() {
                                 match plane.kind {
-                                    3 => car.flags |= HIT_KIND_3,
-                                    4 => car.flags |= HIT_KIND_4,
+                                    3 => *f |= HIT_KIND_3,
+                                    4 => *f |= HIT_KIND_4,
                                     _ => {}
                                 }
                             }
-                            self.press(id, car, point, plane.normal(), d, plane.kind);
+                            self.press(id, body, flags.as_deref_mut(), point, plane.normal(), d, plane.kind);
                         }
                     }
+                }
+                if let (Some(k), Some(f)) = (self.objects[id].flying, flying) {
+                    self.flying[k as usize] = Some(f);
                 }
             }
         }
@@ -196,7 +236,9 @@ impl Collision {
         (low, high)
     }
 
-    fn road_sides(&self, t: &Tables, zone: &super::scp::Zone, p: Vec3) -> [(i32, Vec3); 4] {
+    /// A ball (`ball`, its reach) has every side's distance and normal,
+    /// less its reach.
+    fn road_sides(&self, t: &Tables, zone: &super::scp::Zone, p: Vec3, ball: Option<i32>) -> [(i32, Vec3); 4] {
         let (low, high) = self.road_edges(zone, p);
         // Floor (through the right edge), left wall, roof, right wall.
         let sides = [(low[1], high[1]), (low[0], low[1]), (high[0], low[0]), (high[1], high[0])];
@@ -204,20 +246,30 @@ impl Collision {
             let v = sub(toward, base);
             let w = sub(p, base);
             let measure = dot(v, w);
-            if measure > 0 {
+            if measure > 0 && ball.is_none() {
                 return (measure, [0; 3]);
             }
             let len = t.length(v);
             let n = v.map(|c| div_fx(c, len));
-            (dot(n, w), n)
+            (dot(n, w).wrapping_sub(ball.unwrap_or(0)), n)
         })
     }
 
-    /// A point of object `id` (of `car`) `d` deep (d <= 0) into a surface
-    /// with normal `n`: a contact if it moves inward, then the body pushed
-    /// back out, unless it has gone right through.
-    fn press(&mut self, id: ObjectId, car: &mut Car, point: Vec3, n: Vec3, d: i32, surface: u8) {
-        let body = &mut car.body;
+    /// A point of object `id` (its `body`, and a car's `flags`) `d` deep
+    /// (d <= 0) into a surface with normal `n`: a contact if it moves
+    /// inward, then the body pushed back out, unless it has gone right
+    /// through.
+    #[allow(clippy::too_many_arguments)]
+    fn press(
+        &mut self,
+        id: ObjectId,
+        body: &mut crate::body::Body,
+        flags: Option<&mut i32>,
+        point: Vec3,
+        n: Vec3,
+        d: i32,
+        surface: u8,
+    ) {
         let r = sub(point, body.pos);
         let vel = add(body.vel, cross(body.spin, r));
         if dot(vel, n) < 0 && self.contacts.len() < MAX_CONTACTS {
@@ -225,10 +277,9 @@ impl Collision {
         }
         let depth = d.wrapping_neg();
         if depth > THROUGH {
-            if self.objects[id].kind == Kind::PlayerCar {
-                car.flags |= THROUGH_WALL;
-            } else {
-                body.asleep = true;
+            match flags {
+                Some(f) if self.objects[id].kind == Kind::PlayerCar => *f |= THROUGH_WALL,
+                _ => body.asleep = true,
             }
             return;
         }

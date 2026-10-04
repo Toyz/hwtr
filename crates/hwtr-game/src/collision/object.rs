@@ -93,11 +93,14 @@ pub struct CollisionObject {
     pub radius: i32,
     /// The zones its points are in.
     pub zones: RefSet<u16>,
-    /// The collision step it last touched the track in, and where.
+    /// The collision step it last touched the track in, and that
+    /// contact's normal (+0x7c).
     pub stamp: u32,
-    pub contact_point: Vec3,
-    /// The car it belongs to, by slot.
+    pub contact_normal: Vec3,
+    /// The car it belongs to, by slot, or the flying wheel it is (kind 6,
+    /// by slot in [`super::world::Collision::flying`]).
     pub car: Option<u8>,
+    pub flying: Option<u8>,
     /// The collision step it last looked for objects to meet.
     pub paired: u32,
     /// A prop's weight, for the knocks it takes and gives.

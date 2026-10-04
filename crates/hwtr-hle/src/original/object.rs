@@ -22,9 +22,41 @@ pub const BODY: u32 = 0x64;
 pub const CAR: u32 = 0x68;
 pub const ZONES: u32 = 0x74;
 pub const STAMP: u32 = 0x78;
-pub const CONTACT_POINT: u32 = 0x7c;
+pub const CONTACT_NORMAL: u32 = 0x7c;
 /// A car's pointer to its collision object.
 pub const CAR_OBJECT: u32 = 0x908;
+/// The flying wheels' records (0x801323f4, 680 bytes each, eight).
+pub const FLYING: u32 = 0x8013_23f4;
+pub const FLYING_SIZE: u32 = 680;
+
+/// The flying wheels as the original keeps them: each record in use (+0)
+/// with its car (+1), wheel (+2), body (+152), box (+0x20), reach (+0x60)
+/// and its object (+4, by `id`).
+pub fn flying(
+    ram: &Ram,
+    id: &dyn Fn(u32) -> Option<usize>,
+) -> [Option<hwtr_game::flying::FlyingWheel>; hwtr_game::flying::SLOTS] {
+    std::array::from_fn(|k| {
+        let at = FLYING + FLYING_SIZE * k as u32;
+        (ram.u8(at) != 0).then(|| hwtr_game::flying::FlyingWheel {
+            car: ram.u8(at + 1),
+            wheel: ram.u8(at + 2),
+            body: hwtr_game::body::Body::read(ram, at + 152),
+            half: ram.vec3(at + 0x20),
+            radius: ram.i32(at + 0x60),
+            object: id(at + 4),
+        })
+    })
+}
+
+/// The flying wheels' bodies written back.
+pub fn write_flying(ram: &mut Ram, table: &[Option<hwtr_game::flying::FlyingWheel>; hwtr_game::flying::SLOTS]) {
+    for (k, f) in table.iter().enumerate() {
+        if let Some(f) = f {
+            f.body.write(ram, FLYING + FLYING_SIZE * k as u32 + 152);
+        }
+    }
+}
 
 /// A list's members, newest first: nodes of { value, previous, next,
 /// count (u16 at +12) } from the head at `head`.
@@ -45,6 +77,12 @@ impl InMemory for CollisionObject {
             (ram.i32(o + LOCAL) as u32, ram.i32(o + POINTS) as u32, ram.i32(o + POINT_ZONES) as u32);
         let car_at = ram.i32(o + CAR) as u32;
         let car = (CARS..CARS + 8 * CAR_SIZE).contains(&car_at).then(|| ((car_at - CARS) / CAR_SIZE) as u8);
+        // A flying wheel's body is its record's (+152).
+        let body_at = ram.i32(o + BODY) as u32;
+        let flying = (FLYING..FLYING + 8 * FLYING_SIZE)
+            .contains(&body_at)
+            .then(|| ((body_at - FLYING) / FLYING_SIZE) as u8)
+            .filter(|_| car.is_none());
         let list = read_list(ram, o + ZONES);
         CollisionObject {
             id: ram.i32(o + ID) as u16,
@@ -59,8 +97,9 @@ impl InMemory for CollisionObject {
             radius: ram.i32(o + RADIUS),
             zones: RefSet { entries: list.entries.into_iter().map(|(z, c)| (z as u16, c)).collect() },
             stamp: ram.i32(o + STAMP) as u32,
-            contact_point: ram.vec3(o + CONTACT_POINT),
+            contact_normal: ram.vec3(o + CONTACT_NORMAL),
             car,
+            flying,
             paired: ram.i32(o + PAIRED) as u32,
             heft: ram.i32(o + HEFT) as u32,
             pickup: None,
@@ -90,7 +129,7 @@ impl InMemory for CollisionObject {
         ram.set_i32(o + RADIUS, self.radius);
         ram.set_u8(o + KIND, self.kind.byte());
         ram.set_i32(o + STAMP, self.stamp as i32);
-        ram.set_vec3(o + CONTACT_POINT, self.contact_point);
+        ram.set_vec3(o + CONTACT_NORMAL, self.contact_normal);
         ram.set_i32(o + PAIRED, self.paired as i32);
     }
 }

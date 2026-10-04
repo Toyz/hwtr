@@ -50,8 +50,9 @@ impl Collision {
             radius: t.length(margin),
             zones: RefSet::default(),
             stamp: 0,
-            contact_point: [0; 3],
+            contact_normal: [0; 3],
             car: Some(car.slot),
+            flying: None,
             paired: 0,
             heft: 0,
             pickup: None,
@@ -87,6 +88,71 @@ impl Collision {
         id
     }
 
+    /// 0x8007c9b0's end, 0x8004d798 for each wheel thrown and not yet in
+    /// the world: its object (kind 6), one point at its centre in the zone
+    /// its car's point for that wheel is in (a computer car's only point),
+    /// in that zone and in the lists of everything, the moving and the
+    /// wall-hitting.
+    pub fn add_flying(&mut self) {
+        for k in 0..self.flying.len() {
+            let Some(f) = self.flying[k].as_ref().filter(|f| f.object.is_none()) else { continue };
+            let car_object = self.objects.iter().find(|o| o.car == Some(f.car));
+            let zone = car_object.map_or(0, |o| {
+                let point = if o.kind == Kind::ComputerCar { 0 } else { f.wheel as usize };
+                o.point_zones.get(point).or(o.point_zones.first()).copied().unwrap_or(0)
+            });
+            let id = self.objects.len();
+            self.objects.push(CollisionObject {
+                id: id as u16,
+                kind: Kind::Other(6),
+                flags: 0,
+                centre: add(f.body.pos, f.body.centre),
+                rot: f.body.rot,
+                half: f.half,
+                local: vec![[0; 3]],
+                points: vec![[0; 3]],
+                point_zones: vec![zone],
+                radius: f.radius,
+                zones: RefSet::default(),
+                stamp: 0,
+                contact_normal: [0; 3],
+                car: None,
+                flying: Some(k as u8),
+                paired: 0,
+                heft: 0,
+                pickup: None,
+                volume: None,
+            });
+            self.members[zone as usize].add(id);
+            self.objects[id].zones.add(zone);
+            self.all.add(id);
+            self.moving.add(id);
+            self.walls.add(id);
+            if let Some(f) = self.flying[k].as_mut() {
+                f.object = Some(id);
+            }
+        }
+    }
+
+    /// 0x8007da78 with 0x8004da1c: car `slot`'s flying wheels taken away:
+    /// each object out of its lists, out of its points' zones.
+    pub fn remove_flying(&mut self, slot: u8) {
+        for k in 0..self.flying.len() {
+            let Some(f) = self.flying[k].as_ref().filter(|f| f.car == slot) else { continue };
+            if let Some(id) = f.object {
+                self.all.remove(id);
+                self.moving.remove(id);
+                self.walls.remove(id);
+                for z in self.objects[id].point_zones.clone() {
+                    self.members[z as usize].remove(id);
+                    self.objects[id].zones.remove(z);
+                }
+                self.objects[id].flying = None;
+            }
+            self.flying[k] = None;
+        }
+    }
+
     /// 0x80067418 with 0x8004cedc and 0x8004d798: pickup `number`'s object,
     /// a box of half `size` each way at `pos` with one point, its centre, in
     /// the zone there; it stays put (not among the moving).
@@ -107,8 +173,9 @@ impl Collision {
             radius: t.length(half),
             zones: RefSet::default(),
             stamp: 0,
-            contact_point: [0; 3],
+            contact_normal: [0; 3],
             car: None,
+            flying: None,
             paired: 0,
             heft: 0,
             pickup: Some(number),
@@ -177,8 +244,9 @@ impl Collision {
             radius: t.length(half),
             zones: RefSet::default(),
             stamp: 0,
-            contact_point: [0; 3],
+            contact_normal: [0; 3],
             car: None,
+            flying: None,
             paired: 0,
             heft,
             pickup: None,

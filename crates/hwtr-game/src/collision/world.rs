@@ -9,6 +9,32 @@ use crate::math::{Vec3, add, apply_matrix_lv, fx, sub};
 /// An object, by its place in [`Collision::objects`].
 pub type ObjectId = usize;
 
+/// The body object `o` moves with: its car's, or its flying wheel's.
+pub fn body_of<'a>(
+    flying: &'a [Option<crate::flying::FlyingWheel>; crate::flying::SLOTS],
+    cars: &'a [Car],
+    o: &CollisionObject,
+) -> Option<&'a crate::body::Body> {
+    match (o.car, o.flying) {
+        (Some(s), _) => cars.get(s as usize).map(|c| &c.body),
+        (None, Some(k)) => flying.get(k as usize)?.as_ref().map(|f| &f.body),
+        _ => None,
+    }
+}
+
+/// [`body_of`], to change.
+pub fn body_of_mut<'a>(
+    flying: &'a mut [Option<crate::flying::FlyingWheel>; crate::flying::SLOTS],
+    cars: &'a mut [Car],
+    o: &CollisionObject,
+) -> Option<&'a mut crate::body::Body> {
+    match (o.car, o.flying) {
+        (Some(s), _) => cars.get_mut(s as usize).map(|c| &mut c.body),
+        (None, Some(k)) => flying.get_mut(k as usize)?.as_mut().map(|f| &mut f.body),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Collision {
     pub scp: Scp,
@@ -51,6 +77,8 @@ pub struct Collision {
     /// The race's sounds are shut (set when the race ends, by 0x800364cc):
     /// no hit is heard, and none draws its random number.
     pub hushed: bool,
+    /// The wheels flying off players' wrecks (0x801323f4).
+    pub flying: [Option<crate::flying::FlyingWheel>; crate::flying::SLOTS],
     /// The pad jolts this step asked for, by car slot and level
     /// (iface_controls+0x28), and each player's wait before its next
     /// contact jolt, in frames (0x800d0e2c).
@@ -114,9 +142,20 @@ impl Collision {
                 }
                 _ => {}
             }
-            let Some(slot) = obj.car else { continue };
-            let car = &mut cars[slot as usize];
-            let body = &mut car.body;
+            // A car's body, or a flying wheel's (as a computer car's).
+            let (body, all_down, pedals_off) = match (obj.car, obj.flying) {
+                (Some(slot), _) => {
+                    let car = &mut cars[slot as usize];
+                    let all_down = car.grounded == car.wheels.len() as u8;
+                    let pedals_off = car.accel == 0 && car.brake == 0;
+                    (&mut car.body, all_down, pedals_off)
+                }
+                (None, Some(k)) => match self.flying.get_mut(k as usize).and_then(Option::as_mut) {
+                    Some(f) => (&mut f.body, true, true),
+                    None => continue,
+                },
+                _ => continue,
+            };
             if body.asleep {
                 continue;
             }
@@ -125,10 +164,10 @@ impl Collision {
             place(obj);
             let ten_degrees = fx(0xa000, 0x3244) / 180;
             let still = if obj.kind == Kind::PlayerCar {
-                if car.grounded != car.wheels.len() as u8 {
+                if !all_down {
                     continue;
                 }
-                body.speed <= 0x1_7fff && body.spin_rate < ten_degrees && car.accel == 0 && car.brake == 0
+                body.speed <= 0x1_7fff && body.spin_rate < ten_degrees && pedals_off
             } else {
                 body.speed <= 0x5_ffff && body.spin_rate < fx(0x5_a000, 0x3244) / 180
             };
@@ -155,7 +194,7 @@ impl Collision {
         let order: Vec<ObjectId> = self.moving.iter().collect();
         for id in order {
             let obj = &self.objects[id];
-            if obj.car.is_some_and(|slot| cars[slot as usize].body.asleep) {
+            if body_of(&self.flying, cars, obj).is_some_and(|b| b.asleep) {
                 continue;
             }
             let old = obj.point_zones.clone();
@@ -234,6 +273,8 @@ impl Collision {
         self.hits.clear();
         self.triggers_hit.clear();
         self.step = self.step.wrapping_add(1);
+        // Wheels a wreck threw since (in the cars' update) join the world.
+        self.add_flying();
         self.update_points(cars);
         self.find_pairs(t, cars);
         self.stages(t, cars, step);
@@ -270,9 +311,9 @@ impl Collision {
             let car = &mut cars[slot as usize];
             use super::walls::{HIT_KIND_3, HIT_KIND_4, THROUGH_WALL};
             if car.flags & THROUGH_WALL != 0 {
-                car.wreck(true, step.rand);
+                car.wreck_throwing(true, step.rand, Some((t, &mut self.flying)));
             } else if car.flags & (HIT_KIND_4 | HIT_KIND_3) != 0 {
-                car.wreck(false, step.rand);
+                car.wreck_throwing(false, step.rand, Some((t, &mut self.flying)));
             }
         }
     }

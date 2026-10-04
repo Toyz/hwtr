@@ -110,6 +110,7 @@ pub fn collision(ram: &Ram) -> (Collision, Vec<u32>) {
             triggers_hit: Vec::new(),
             hushed: ram.u8(HUSHED) == 1,
             options: ram.i32(OPTIONS) as u32,
+            flying: super::object::flying(ram, &|a| addresses.iter().position(|&x| x == a)),
             jolts: Vec::new(),
             jolt_wait: [ram.i32(JOLT_WAIT), ram.i32(JOLT_WAIT + 4)],
             knocked: Vec::new(),

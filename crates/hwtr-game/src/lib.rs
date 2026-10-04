@@ -15,6 +15,7 @@ pub mod cd;
 pub mod collision;
 pub mod effects;
 pub mod engines;
+pub mod flying;
 pub mod front;
 pub mod fsm;
 pub mod hud;

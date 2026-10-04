@@ -7,7 +7,7 @@
 //! wrecked (0x8007e000).
 
 use super::object::Kind;
-use super::world::{Collision, ObjectId};
+use super::world::{Collision, ObjectId, body_of, body_of_mut};
 use crate::car::Car;
 use crate::math::{Matrix, Tables, Vec3, add, cross, div_fx, dot, fx, sub};
 use crate::rand::Rand;
@@ -65,6 +65,14 @@ struct Boxed {
 /// nine across them) along which the boxes are apart, from 1; 0 when they
 /// overlap. Each axis passed leaves its overlap (negative) in `depths`, at
 /// its number.
+/// [`apart`] for two boxes (centre, half, rotation), from no depths.
+pub fn apart_of(a: (Vec3, Vec3, Matrix), b: (Vec3, Vec3, Matrix)) -> (u8, [i32; 16]) {
+    let mut depths = [0; 16];
+    let axis =
+        apart(&Boxed { centre: a.0, half: a.1, rot: a.2 }, &Boxed { centre: b.0, half: b.1, rot: b.2 }, &mut depths);
+    (axis, depths)
+}
+
 fn apart(a: &Boxed, b: &Boxed, depths: &mut [i32; 16]) -> u8 {
     let ca = [col(&a.rot, 0), col(&a.rot, 1), col(&a.rot, 2)];
     let cb = [col(&b.rot, 0), col(&b.rot, 1), col(&b.rot, 2)];
@@ -145,7 +153,7 @@ impl Collision {
     }
 
     fn body_asleep(&self, id: ObjectId, cars: &[Car]) -> Option<bool> {
-        self.objects[id].car.and_then(|s| cars.get(s as usize)).map(|c| c.body.asleep)
+        body_of(&self.flying, cars, &self.objects[id]).map(|b| b.asleep)
     }
 
     /// Near enough to test: on every axis within half as much again as the
@@ -245,9 +253,8 @@ impl Collision {
             .is_some_and(|c| self.objects[a].kind == Kind::PlayerCar && (c.all_terrain || c.handling.all_terrain));
         let mut axis = self.separations.get(&(ia, ib)).copied().unwrap_or(0);
         if axis == 0
-            && let Some(s) = self.objects[a].car
+            && let Some(vel) = body_of(&self.flying, cars, &self.objects[a]).map(|b| b.vel)
         {
-            let vel = cars.get(s as usize).map_or([0; 3], |c| c.body.vel);
             let mut was = self.boxed(a);
             was.centre = sub(was.centre, vel);
             let mut depths = self.depths;
@@ -325,15 +332,15 @@ impl Collision {
         if !fixed(ka)
             && fb & 4 == 0
             && !(fb & 2 != 0 && (heft < 10_000 || clear))
-            && let Some(c) = self.objects[a].car.and_then(|s| cars.get_mut(s as usize))
+            && let Some(body) = body_of_mut(&mut self.flying, cars, &self.objects[a])
         {
-            move_body(c, push);
+            move_body(body, push);
         }
         let push = push.map(i32::wrapping_neg);
         if !fixed(kb)
-            && let Some(c) = self.objects[b].car.and_then(|s| cars.get_mut(s as usize))
+            && let Some(body) = body_of_mut(&mut self.flying, cars, &self.objects[b])
         {
-            move_body(c, push);
+            move_body(body, push);
         }
     }
 
@@ -410,8 +417,8 @@ impl Collision {
         let p = self.pairs[k];
         let (ca, cb) = (self.objects[p.a].car, self.objects[p.b].car);
         let Some(slot) = ca.max(cb) else { return };
-        let vel = |c: Option<u8>| c.and_then(|s| cars.get(s as usize)).map_or([0; 3], |c| c.body.vel);
-        if let Some(hit) = crash_hit(t, slot, sub(vel(ca), vel(cb)), rand) {
+        let vel = |id: ObjectId| body_of(&self.flying, cars, &self.objects[id]).map_or([0; 3], |b| b.vel);
+        if let Some(hit) = crash_hit(t, slot, sub(vel(p.a), vel(p.b)), rand) {
             self.hits.push(hit);
         }
     }
@@ -446,7 +453,7 @@ impl Collision {
         if *wait != 0 {
             return;
         }
-        let theirs = o.car.and_then(|s| cars.get(s as usize)).map_or([0; 3], |c| c.body.vel);
+        let theirs = body_of(&self.flying, cars, o).map_or([0; 3], |b| b.vel);
         let speed = t.length(sub(car.body.vel, theirs));
         if speed <= 0 {
             return;
@@ -487,13 +494,13 @@ impl Collision {
             && (oc.steel || (oc.rubber && self.objects[side].kind == Kind::ComputerCar))
         {
             if let Some(c) = cars.get_mut(slot as usize) {
-                c.wreck(false, rand);
+                c.wreck_throwing(false, rand, Some((t, &mut self.flying)));
             }
             return;
         }
         if o.flags & 8 != 0 {
             if let Some(c) = cars.get_mut(slot as usize) {
-                c.wreck(false, rand);
+                c.wreck_throwing(false, rand, Some((t, &mut self.flying)));
             }
             return;
         }
@@ -538,7 +545,7 @@ impl Collision {
         };
         let k = div_fx(span, over);
         if base.wrapping_add(low.wrapping_add(fx(from, k))) < speed {
-            c.wreck(false, rand);
+            c.wreck_throwing(false, rand, Some((t, &mut self.flying)));
         }
     }
 
@@ -562,14 +569,13 @@ impl Collision {
     /// counts by its weight if it has one.
     fn pair_impulse(&mut self, _t: &Tables, p: &Pair, tuning: &crate::car::Tuning, cars: &mut [Car]) -> i32 {
         let (oa, ob) = (&self.objects[p.a], &self.objects[p.b]);
-        let (sa, sb) = (oa.car.map(|s| s as usize), ob.car.map(|s| s as usize));
-        let at_point = |s: Option<usize>| -> Vec3 {
-            s.and_then(|s| cars.get(s)).map_or([0; 3], |c| {
-                let r = sub(p.point, c.body.pos);
-                add(c.body.vel, cross(c.body.spin, r))
+        let at_point = |o: &super::object::CollisionObject| -> Vec3 {
+            body_of(&self.flying, cars, o).map_or([0; 3], |b| {
+                let r = sub(p.point, b.pos);
+                add(b.vel, cross(b.spin, r))
             })
         };
-        let rel = sub(at_point(sa), at_point(sb));
+        let rel = sub(at_point(oa), at_point(ob));
         let n = p.normal;
         let inward = dot(n, rel);
         if inward > 0 {
@@ -584,14 +590,14 @@ impl Collision {
         };
         let bounce = div_fx((tuning.pair_bounce[index - 42] as i32) << 12, 0xa000);
         let wanted = fx(bounce.wrapping_neg(), inward);
-        let give = |s: Option<usize>, o: &super::object::CollisionObject| -> Option<i32> {
-            match s.and_then(|s| cars.get(s)) {
-                Some(c) => Some(c.body.give(sub(p.point, c.body.pos), n)),
+        let give = |o: &super::object::CollisionObject| -> Option<i32> {
+            match body_of(&self.flying, cars, o) {
+                Some(b) => Some(b.give(sub(p.point, b.pos), n)),
                 None if o.flags & 6 != 0 => (o.heft != 0).then(|| div_fx(0x18_2000, (o.heft as i32) << 12)),
                 None => Some(0),
             }
         };
-        let (Some(ga), Some(gb)) = (give(sa, oa), give(sb, ob)) else { return 0 };
+        let (Some(ga), Some(gb)) = (give(oa), give(ob)) else { return 0 };
         let size = div_fx(wanted, ga.wrapping_add(gb));
         let mut on_a = n.map(|c| fx(c, size));
         let mut on_b = on_a;
@@ -602,27 +608,26 @@ impl Collision {
         if fb & 64 != 0 {
             on_a = on_a.map(|c| fx(c, if ka == 4 { 0xa000 } else { 0x4000 }));
         }
-        if let Some(c) = sa.and_then(|s| cars.get_mut(s)) {
+        if let Some(b) = body_of_mut(&mut self.flying, cars, &self.objects[p.a]) {
             if fa & 96 == 0 {
-                let r = sub(p.point, c.body.pos);
-                c.body.push(r, on_a);
+                let r = sub(p.point, b.pos);
+                b.push(r, on_a);
             }
-            c.body.settle();
+            b.settle();
         }
-        if let Some(c) = sb.and_then(|s| cars.get_mut(s)) {
+        if let Some(b) = body_of_mut(&mut self.flying, cars, &self.objects[p.b]) {
             if fb & 96 == 0 {
-                let r = sub(p.point, c.body.pos);
-                c.body.pull(r, on_b);
+                let r = sub(p.point, b.pos);
+                b.pull(r, on_b);
             }
-            c.body.settle();
+            b.settle();
         }
         size
     }
 }
 
 /// A body moved by `by` and woken.
-fn move_body(c: &mut Car, by: Vec3) {
-    let b = &mut c.body;
+fn move_body(b: &mut crate::body::Body, by: Vec3) {
     b.pos = sub(add(add(b.pos, b.centre), by), b.centre);
     b.asleep = false;
 }

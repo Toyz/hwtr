@@ -643,3 +643,69 @@ fn pair_jolts_match_the_original() {
     }
     assert!(set > 200 && by_speed > 200 && none > 100, "{set} set, {by_speed} by speed, {none} none");
 }
+
+/// A player's wreck's wheels in the world (0x8007c9b0's objects): the
+/// original wrecks the player's car at any speed and spin, then, a step at
+/// a time from its state, its collision step (0x8004de6c) and the wheels'
+/// step (0x8007c894) against the port's: every flying wheel's body, every
+/// object, every car and the seed after each.
+#[test]
+fn flying_wheels_collide_as_in_the_original() {
+    use hwtr_game::collision::world::Step;
+    use hwtr_hle::original::object::{FLYING, FLYING_SIZE};
+    use hwtr_hle::original::rand::SEED;
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0xf1_c011);
+    let (mut steps, mut touching) = (0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { continue };
+        let t = hwtr_hle::original::tables(&m.bus.ram);
+        let tuning = hwtr_hle::original::car::tuning(&Ram(&mut m.bus.ram));
+        let start = m.bus.ram.clone();
+        for round in 0..6 {
+            m.bus.ram.copy_from_slice(&start);
+            {
+                let mut ram = Ram(&mut m.bus.ram);
+                for k in 0..8 {
+                    ram.set_u8(FLYING + FLYING_SIZE * k, 0);
+                }
+                let mut car = Car::read(&ram, CARS);
+                car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (6 + rng.below(6)));
+                car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (15 + rng.below(4)));
+                car.body.asleep = false;
+                car.write(&mut ram, CARS);
+            }
+            m.call(0x8004_619c, &[CARS, 0, 0]).unwrap();
+            for step in 0..60 {
+                let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+                assert!(world.flying.iter().any(Option::is_some), "{name} round {round}: wheels thrown");
+                let mut cars = cars_from(&mut m.bus.ram);
+                let (seed, time, clock) = {
+                    let ram = Ram(&mut m.bus.ram);
+                    (ram.i32(SEED) as u32, ram.i32(0x800d_0e34) as u32, ram.i32(0x800d_240c) as u32)
+                };
+                let mut rand = hwtr_game::rand::Rand { seed };
+                let mut st = Step { tuning: &tuning, rand: &mut rand, time, clock };
+                world.update(&t, &mut cars, &mut st);
+                m.call(0x8004_de6c, &[]).unwrap();
+                world.add_flying();
+                hwtr_game::flying::step(&t, &mut world.flying);
+                m.call(0x8007_c894, &[]).unwrap();
+                let at = format!("{name} round {round} step {step}");
+                assert_eq!(m.bus.read_u32(SEED), rand.seed, "{at}: seed");
+                let (original, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+                for (k, (a, b)) in original.flying.iter().zip(&world.flying).enumerate() {
+                    assert_eq!(a.as_ref().map(|f| &f.body), b.as_ref().map(|f| &f.body), "{at}: wheel {k}");
+                }
+                for (k, (a, b)) in original.objects.iter().zip(&world.objects).enumerate() {
+                    assert_eq!(a, b, "{at}: object {k}");
+                }
+                assert_eq!(cars_from(&mut m.bus.ram), cars, "{at}: cars");
+                touching += original.contacts.iter().filter(|c| original.objects[c.object].flying.is_some()).count();
+                steps += 1;
+            }
+        }
+    }
+    eprintln!("{steps} steps, {touching} wheel contacts");
+    assert!(steps > 1000 && touching > 50, "{steps} steps, {touching} wheel contacts");
+}

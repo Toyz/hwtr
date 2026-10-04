@@ -656,10 +656,10 @@ impl Race {
         car.wrecked = false;
         car.wreck_ms = 0;
         car.flags &= !0x3800;
-        // Its flying wheels taken away (0x8007da78: the wheels are not yet
-        // ported), its effects reset (0x80029f04: the puffs and sparks
-        // cleared, the model its colour) and its boost flame out
-        // (0x8002aff4).
+        // Its flying wheels taken away (0x8007da78), its effects reset
+        // (0x80029f04: the puffs and sparks cleared, the model its colour)
+        // and its boost flame out (0x8002aff4).
+        self.collision.remove_flying(slot as u8);
         self.effects.car_reset(slot as u8);
         self.effects.flame_stop(slot as u8);
         body.ang_momentum = [0; 3];
@@ -711,6 +711,10 @@ impl Race {
                 self.volumes_follow();
                 let mut step = Step { tuning: &self.tuning, rand: &mut self.rand, time: self.time, clock: self.clock };
                 self.collision.update(&self.tables, &mut self.cars, &mut step);
+                // 0x8007c894: the wheels flying off wrecks, those thrown in
+                // the collision in the world first.
+                self.collision.add_flying();
+                crate::flying::step(&self.tables, &mut self.collision.flying);
                 for s in std::mem::take(&mut self.collision.sparks) {
                     self.effects.spark(s);
                 }

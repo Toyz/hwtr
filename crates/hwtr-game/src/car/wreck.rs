@@ -16,10 +16,21 @@ impl Car {
     /// The wreck's smoke, embers and flying faces (0x80029e10 with
     /// 0x8002e574) draw their random numbers here, after the throw; the
     /// race gives them to the effects, and runs the sounds and a player's
-    /// camera shake (`jolted`, `crashed`). Not yet ported: the wheels
-    /// flying off as debris (0x8007c9b0, a player's car, which draws
-    /// random numbers before the throw).
+    /// camera shake (`jolted`, `crashed`). A player's car's wheels fly off
+    /// first ([`Car::wreck_throwing`]), drawing their random numbers before
+    /// the throw.
     pub fn wreck(&mut self, flip: bool, rand: &mut Rand) {
+        self.wreck_throwing(flip, rand, None);
+    }
+
+    /// [`Car::wreck`], a player's car throwing its wheels into `flying`
+    /// (0x8007c9b0, see crate::flying) as the collision wrecks it.
+    pub fn wreck_throwing(
+        &mut self,
+        flip: bool,
+        rand: &mut Rand,
+        flying: Option<(&crate::math::Tables, &mut [Option<crate::flying::FlyingWheel>; crate::flying::SLOTS])>,
+    ) {
         if self.wrecked {
             return;
         }
@@ -31,9 +42,12 @@ impl Car {
         }
         body.vel = body.vel.map(|c| fx(c, 0x800));
         let fx_vel = body.vel;
-        if self.flags & 1 != 0 {
-            tracing::trace!("car {}: the wheels fly off (0x8007c9b0), not yet ported", self.slot);
+        if self.flags & 1 != 0
+            && let Some((t, table)) = flying
+        {
+            crate::flying::throw_all(t, self, table, rand);
         }
+        let body = &mut self.body;
         let mph = div_fx(176 << 12, 10 << 12);
         let up = (rand.below(10) as i32 + 10) << 12;
         body.vel[2] = body.vel[2].wrapping_add(fx(up, mph));
