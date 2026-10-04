@@ -634,6 +634,17 @@ impl Hud {
     }
 
     /// 0x800627a8: the time left of a race against the clock.
+    /// 0x80064294's start: the clock against which the time left is shown
+    /// (0x800d0e54) lowered to player one's time so far (`elapsed`), so
+    /// none is left from here.
+    pub fn stop_clock(&mut self, elapsed: u32) {
+        if let Some(limit) = &mut self.limit
+            && elapsed < *limit
+        {
+            *limit = elapsed;
+        }
+    }
+
     fn time_left(&self, d: &mut Draw, car: &Car, limit: u32, now: u32, panel: i16, text: i16) {
         d.colour = WHITE;
         d.glyph(1, 3, 259, panel);

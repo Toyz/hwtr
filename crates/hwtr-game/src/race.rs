@@ -1588,7 +1588,7 @@ impl Race {
             if swapped {
                 lines.swap(0, 1);
             }
-            tracing::trace!("the points' table lowering 0x800d0e54 to player one's lap time: not yet ported");
+            self.hud.stop_clock(self.time.wrapping_sub(self.cars[0].laps.start));
             return crate::hud::results_table(kit.style(), &text.points, &lines, false);
         }
         // 0x80064040: every car by its place, its race time (best lap

@@ -350,3 +350,36 @@ fn standings_match_the_original() {
     eprintln!("unplaced {unplaced}, scored {scored}");
     assert!(unplaced > 0 && scored > 0);
 }
+
+#[test]
+fn the_stunt_results_stop_the_clock_as_in_the_original() {
+    use hwtr_hle::original::car::LAP_START;
+    /// The clock the time left counts down from, and the HUD's players.
+    const LIMIT: u32 = 0x800d_0e54;
+    const PLAYERS: u32 = 0x800d_0e66;
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0x5701_0000_0000_0017);
+    let mut lowered = 0;
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        for _ in 0..50 {
+            let (now, start, limit) = (rng.word() >> 8, rng.word() >> 8, rng.word() >> 9);
+            {
+                let mut ram = Ram(&mut m.bus.ram);
+                ram.set_i32(TIME, now as i32);
+                ram.set_i32(CARS + LAP_START, start as i32);
+                ram.set_i32(LIMIT, limit as i32);
+                ram.set_u8(PLAYERS, 1);
+            }
+            let mut hud = hwtr_game::hud::Hud::default();
+            hud.limit = Some(limit);
+            hud.stop_clock(now.wrapping_sub(start));
+            m.call(0x8006_4294, &[]).unwrap();
+            let original = Ram(&mut m.bus.ram).i32(LIMIT) as u32;
+            assert_eq!(Some(original), hud.limit, "{name}: now {now}, start {start}, limit {limit}");
+            lowered += (original != limit) as u32;
+        }
+    }
+    eprintln!("lowered {lowered}");
+    assert!(lowered > 0);
+}

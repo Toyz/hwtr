@@ -2,8 +2,8 @@
 title: The race's results: snapshots and the table
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8007fe48 snapshot_init, 0x8007fe7c snapshot_reset, 0x8007feb0 snapshot_take, 0x80080014 snapshot_count, 0x80080020 snapshot_put_back, 0x8004a8fc, 0x8004aef8, 0x8003b610, 0x8003bafc, 0x8007e6e0, 0x8007ec08, 0x8006ba48, 0x8007f6f8, 0x80064b8c hud_draw, 0x80064b64 hud_mode, 0x8006452c, 0x80064040, 0x80064294, 0x800644c0, 0x80063ab4, 0x80063bc4, 0x8009b5b8, 0x80135a18 snapshot buffer, 0x800d2718 snapshot count, 0x800d271c bytes used, 0x800d2720 last taken, 0x800d2688 standings order, 0x801399b0 player names, 0x80033aa0 standings, 0x80061824 car_result, 0x800d0e48 lap_length, 0x800d25f8 points, 0x800d0e69 fastest_car
-worklog: 43, 67
+covers: US CCCPSX.EXE:0x8007fe48 snapshot_init, 0x8007fe7c snapshot_reset, 0x8007feb0 snapshot_take, 0x80080014 snapshot_count, 0x80080020 snapshot_put_back, 0x8004a8fc, 0x8004aef8, 0x8003b610, 0x8003bafc, 0x8007e6e0, 0x8007ec08, 0x8006ba48, 0x8007f6f8, 0x80064b8c hud_draw, 0x80064b64 hud_mode, 0x8006452c, 0x80064040, 0x80064294, 0x800644c0, 0x80063ab4, 0x80063bc4, 0x8009b5b8, 0x80135a18 snapshot buffer, 0x800d2718 snapshot count, 0x800d271c bytes used, 0x800d2720 last taken, 0x800d2688 standings order, 0x801399b0 player names, 0x80033aa0 standings, 0x80061824 car_result, 0x800d0e48 lap_length, 0x800d25f8 points, 0x800d0e69 fastest_car, 0x800d0e54 time_left_from
+worklog: 43, 67, 70
 ---
 
 # The race's results
@@ -48,6 +48,12 @@ after being let go, or on Start (26).
 6. **Fastest lap.** The car with the lowest nonzero best lap is noted at
    0x800d0e69 (0x80064ce4). If tied, the one placed higher wins.
 7. **Sound.** The race's sound is shut (0x800364cc).
+
+The stunt points' table (0x80064294) first stops the race against the
+clock. 0x800d0e54 is the time the HUD's time left counts down from: the
+setup's limit (+0x20), set at the start under flag 4. The table lowers it
+to player one's time so far (race clock less the car's lap start, +0x5a8)
+if that is less, so the time left shows none from then on.
 
 There is no replay. "Replay" in this game is this slideshow of up to
 twenty frozen moments.
@@ -165,6 +171,5 @@ profiles (+8) by 0x8009b5b8 as each race the players start is set up.
   that test it (0x8001cd54, 0x800225c8, 0x80029fe4 and others).
 - The loose bodies' 16-byte snapshot record (0x8007e6e0 / 0x8007ec08):
   kind, two bytes for kind 1, six rotation bytes, a position.
-- 0x800d0e54, which the points table lowers.
 - Who reads the fastest lap's car (0x800d0e69); no code reads it
   through gp.
