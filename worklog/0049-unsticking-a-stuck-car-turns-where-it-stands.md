@@ -33,4 +33,4 @@ compares the whole car's memory against the original after the call.
 Also corrected a stale comment: contacts between cars (0x8004e938) are
 ported.
 
-**Still unknown:** none new
+**Still unknown:** nothing

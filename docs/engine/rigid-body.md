@@ -12,7 +12,8 @@ Cars carry a rigid body at +0x30; the car's position, velocity, rotation,
 angular velocity and its force and torque sums are the body's fields (see
 [the car object](car-object.md)). `integrate` (0x8006c504) steps it. Its
 callers are `car_update` for cars under full physics, 0x80040494 for cars at
-state 1, and 0x8006b754 and 0x8007c894, not yet identified. After each step
+state 1, the track's moving volumes (0x8006b754) and the flying wheels
+(0x8007c894, see [flying wheels](flying-wheels.md)). After each step
 the caller runs `orthonormalize` (0x80025be4) on the rotation.
 
 ## Layout (from the body's start)

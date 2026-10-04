@@ -107,4 +107,4 @@ original gave a turbo for an air).
 
 Then computer cars driving, laps, and the HUD.
 
-**Still unknown:** nothing beyond the pieces listed above as still to port.
+**Still unknown:** nothing

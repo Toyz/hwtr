@@ -78,4 +78,4 @@ the game is playable.
 opening sweep, then computer cars, laps and the countdown, the HUD, the
 menus and sound.
 
-**Still unknown:** nothing beyond the work listed under Next.
+**Still unknown:** nothing

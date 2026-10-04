@@ -40,4 +40,4 @@ cars whose flames the original puts out must be exactly those whose
 `run_timers` sets `flame_out`. More than 300 boosts ended and more than
 300 were kept.
 
-**Still unknown:** None new.
+**Still unknown:** nothing

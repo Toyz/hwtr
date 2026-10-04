@@ -76,9 +76,10 @@ the original and reading the car's control fields:
 | 4, 5 stick right, left | Right, Left | +8, +0xa | +0x1c (right - left) |
 | 6, 7 stick down, up | Down, Up | +0xc, +0xe | +0x20 (down - up) |
 | 8 handbrake | L2 (0x01) | +0x10, 0 or 1 | +0x24 |
-| 9 | R1 (0x08) | +0x11 | +0x25 |
-| 10 | R2 (0x02) | +0x12 | +0x26, +0x27 |
-| 11, 12 | Circle, Triangle | +0x13, +0x14 | |
+| 9 reset (back on the road) | R1 (0x08) | +0x11 | +0x25 |
+| 10 turbo | R2 (0x02) | +0x12 | +0x26, +0x27 (held) |
+| 11 change view | Circle | +0x13 | the camera's view button |
+| 12 | Triangle | +0x14 | |
 
 ## The levels
 

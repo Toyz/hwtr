@@ -21,4 +21,4 @@ Reproduced with the front-end example: one 4-frame up press in the garage steppe
 - One tap now steps once.
 - Held, the car still steps at 0 ms, then after 500 ms, then every 250 ms (frames 1000, 1030, 1045, 1060...), as 0x8008ba30 does.
 
-**Still unknown:** None for this change
+**Still unknown:** nothing

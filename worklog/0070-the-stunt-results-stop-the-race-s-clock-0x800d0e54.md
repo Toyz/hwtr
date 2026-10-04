@@ -18,4 +18,4 @@ Verified with `the_stunt_results_stop_the_clock_as_in_the_original` (hle tests/l
 
 Docs: results.md, under the standings.
 
-**Still unknown:** None for this change
+**Still unknown:** nothing
