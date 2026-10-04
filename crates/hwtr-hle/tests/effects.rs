@@ -327,3 +327,101 @@ fn effects_match_the_original() {
     }
     assert_eq!(same, tried, "{same} of {tried} the same; first miss: {}", miss.unwrap_or_default());
 }
+
+/// The car pose's pass (0x80049ecc) against the port's: with the cars
+/// moving, skidding and turning any way, some wrecked, the trails (the
+/// effects' state), every car's wheel angles and, for each car near a
+/// camera and not wrecked, its wheel nodes compared.
+#[test]
+fn the_car_pose_pass_matches_the_original() {
+    use hwtr_game::camera::Camera;
+    use hwtr_hle::original::camera::{COUNT, at};
+    use hwtr_hle::original::car::CAR_SIZE;
+    let Some(exe) = common::exe() else { return };
+    let t = hwtr_game::math::Tables::from_exe(&exe);
+    let mut rng = common::Rng(0xca2b_05e5);
+    let mut posed = 0;
+    for name in ["desert1-race", "desert1-drive", "desert1-speed"] {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let start = m.bus.ram.clone();
+        let cars = m.bus.read_u32(hwtr_hle::original::car::CAR_COUNT) as usize;
+        for round in 0..200 {
+            m.bus.ram.copy_from_slice(&start);
+            let mut cs: Vec<Car> =
+                (0..cars).map(|k| Car::read(&Ram(&mut m.bus.ram), CARS + CAR_SIZE * k as u32)).collect();
+            for c in &mut cs {
+                for w in &mut c.wheels {
+                    w.spin_rate = (rng.word() as i32) >> (6 + rng.below(12));
+                    w.angle = (rng.word() as i32) >> (4 + rng.below(16));
+                    w.compression = (rng.word() as i32) >> (12 + rng.below(8));
+                    w.slipping = rng.below(2) == 0;
+                    w.on_ground = rng.below(3) != 0;
+                    w.surface = [0, 2, 5, 10, 11][rng.below(5) as usize];
+                }
+                c.steer = rng.below(8193) as i32 - 4096;
+                c.body.asleep = rng.below(6) == 0;
+                c.just_reset = rng.below(5) == 0;
+            }
+            {
+                let mut ram = Ram(&mut m.bus.ram);
+                for (k, c) in cs.iter().enumerate() {
+                    c.write(&mut ram, CARS + CAR_SIZE * k as u32);
+                }
+                for slot in 0..cars as u32 {
+                    let model = codec::model(&ram, slot);
+                    let cvs = ram.i32(model + 16) as u32;
+                    let byte = ram.u8(cvs + 0x28);
+                    let wrecked = rng.below(6) == 0;
+                    ram.set_u8(
+                        cvs + 0x28,
+                        if wrecked {
+                            1
+                        } else if byte == 1 {
+                            2
+                        } else {
+                            byte
+                        },
+                    );
+                }
+            }
+            let mut cs: Vec<Car> =
+                (0..cars).map(|k| Car::read(&Ram(&mut m.bus.ram), CARS + CAR_SIZE * k as u32)).collect();
+            let mut ours = codec::read(&Ram(&mut m.bus.ram));
+            let eyes: Vec<_> = {
+                let ram = Ram(&mut m.bus.ram);
+                (0..ram.u8(COUNT) as u32).map(|k| Camera::read(&ram, at(k)).pos).collect()
+            };
+            let ms = 17;
+            let shown = ours.car_pose(&mut cs, &eyes);
+            let mut poses = vec![None; cars];
+            for (slot, c) in cs.iter_mut().enumerate() {
+                if shown[slot] {
+                    c.turn_wheels(ms);
+                    if !ours.wrecked[slot] {
+                        poses[slot] = Some(c.wheel_poses(&t));
+                    }
+                }
+            }
+            m.call(0x8004_9ecc, &[ms]).unwrap();
+            let theirs = codec::read(&Ram(&mut m.bus.ram));
+            assert!(theirs.trails == ours.trails, "{name} round {round}: trails");
+            let ram = Ram(&mut m.bus.ram);
+            for (slot, c) in cs.iter().enumerate() {
+                let original = Car::read(&ram, CARS + CAR_SIZE * slot as u32);
+                let angles = |c: &Car| c.wheels.iter().map(|w| w.angle).collect::<Vec<_>>();
+                assert_eq!(angles(&original), angles(c), "{name} round {round}: car {slot}'s wheel angles");
+                assert_eq!(original.just_reset, c.just_reset, "{name} round {round}: car {slot}'s reset mark");
+                let Some(p) = &poses[slot] else { continue };
+                let model = codec::model(&ram, slot as u32);
+                for (k, pose) in p.iter().enumerate().take(ram.i32(model) as usize) {
+                    let node = ram.i32(model + 8) as u32 + 72 * k as u32;
+                    let rot: [[i16; 3]; 3] =
+                        std::array::from_fn(|i| std::array::from_fn(|j| ram.i16(node + 6 * i as u32 + 2 * j as u32)));
+                    assert_eq!(rot, pose.rot, "{name} round {round}: car {slot} wheel {k}'s rotation");
+                    posed += 1;
+                }
+            }
+        }
+    }
+    assert!(posed > 1000, "{posed} wheels posed");
+}

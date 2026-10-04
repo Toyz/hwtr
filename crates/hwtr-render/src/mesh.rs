@@ -248,6 +248,9 @@ pub fn place_car_texture(vram: &mut Vram, tim: &hwtr_data::Tim, slot: usize) -> 
 /// A car model's triangles at `pos` turned by `rot`. The game draws cars at
 /// half their model's scale (inferred: at full scale the grid's cars would
 /// overlap). Faces are lit at the base colour 0x80, a texel modulation of 1.
+/// `wheels` turns and places each wheel node (rotation, translation in
+/// model units) as the game last posed it; a wheel without one sits where
+/// the model puts it.
 pub fn car_triangles(
     m: &hwtr_data::car::Model,
     clut: u16,
@@ -255,6 +258,7 @@ pub fn car_triangles(
     pos: glam::Vec3,
     rot: glam::Mat3,
     root_rgb: u32,
+    wheels: &[(glam::Mat3, glam::Vec3)],
 ) -> Vec<Vtx> {
     let mut out = Vec::new();
     let root = glam::Vec3::new(m.root.pos[0] as f32, m.root.pos[1] as f32, m.root.pos[2] as f32);
@@ -265,7 +269,12 @@ pub fn car_triangles(
         for f in &node.faces {
             let corner = |k: usize| {
                 let v = node.verts[f.v[k] as usize];
-                let local = (glam::Vec3::new(v.x as f32, v.y as f32, v.z as f32) + offset + root) * 0.5;
+                let v = glam::Vec3::new(v.x as f32, v.y as f32, v.z as f32);
+                let placed = match n.checked_sub(1).and_then(|w| wheels.get(w)) {
+                    Some((turn, at)) => *turn * v + *at,
+                    None => v + offset,
+                };
+                let local = (placed + root) * 0.5;
                 Vtx {
                     pos: (rot * local + pos).to_array(),
                     colour,

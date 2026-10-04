@@ -162,6 +162,7 @@ pub fn read(ram: &Ram) -> Effects {
         let cvs = ram.i32(m + 16) as u32;
         e.root_colour[slot] = ram.i32(ram.i32(m + 4) as u32 + 0x44) as u32 & 0xff_ffff;
         e.wrecked[slot] = ram.u8(cvs + 0x28) == 1;
+        e.lift[slot] = ram.i32(cvs + 0x18);
         e.flames[slot] = hwtr_game::effects::Flame {
             on: ram.u8(cvs + 0x1f0) != 0,
             start: ram.i32(cvs + 0x24) as u32,

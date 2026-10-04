@@ -654,3 +654,70 @@ fn unsticking_matches_the_original() {
         }
     }
 }
+
+/// A wheel's node as the original poses it (0x80020a14): any steering,
+/// angle and lift, its node's rotation and place and the model's lift
+/// (+0x18) compared; a wrecked car's left alone.
+#[test]
+fn wheel_poses_match_the_original() {
+    use hwtr_game::car::draw::WheelPose;
+    let Some(exe) = common::exe() else { return };
+    let t = Tables::from_exe(&exe);
+    let mut rng = common::Rng(0x0d2a_0b1e);
+    let mut posed = 0;
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let start = m.bus.ram.clone();
+        let cars = m.bus.read_u32(car::CAR_COUNT);
+        for round in 0..1000 {
+            m.bus.ram.copy_from_slice(&start);
+            let slot = rng.below(cars);
+            let model = hwtr_hle::original::effects::model(&Ram(&mut m.bus.ram), slot);
+            let k = rng.below(4);
+            let big = |rng: &mut common::Rng| (rng.word() as i32) >> (4 + rng.below(20));
+            let (steer, lift, angle) = (big(&mut rng), big(&mut rng), big(&mut rng));
+            let wrecked = rng.below(8) == 0;
+            {
+                let mut ram = Ram(&mut m.bus.ram);
+                let cvs = ram.i32(model + 16) as u32;
+                let byte = ram.u8(cvs + 0x28);
+                ram.set_u8(
+                    cvs + 0x28,
+                    if wrecked {
+                        1
+                    } else if byte == 1 {
+                        2
+                    } else {
+                        byte
+                    },
+                );
+            }
+            // Ground kind 10: no trail point.
+            m.call(
+                0x8002_0a14,
+                &[slot, k, steer as u32, lift as u32, angle as u32, 0, 10, 0, common::OUT, common::OUT],
+            )
+            .unwrap();
+            let ram = Ram(&mut m.bus.ram);
+            let cvs = ram.i32(model + 16) as u32;
+            let node = ram.i32(model + 8) as u32 + 72 * k;
+            let rec = ram.i32(model + 12) as u32 + 32 * k;
+            let rot: [[i16; 3]; 3] =
+                std::array::from_fn(|i| std::array::from_fn(|j| ram.i16(node + 6 * i as u32 + 2 * j as u32)));
+            let at = ram.vec3(node + 20);
+            let what = format!("{name} round {round}: car {slot} wheel {k} steer {steer} lift {lift} angle {angle}");
+            if wrecked {
+                let before = Ram(&mut start.clone()).vec3(node + 20);
+                assert_eq!(at, before, "{what}: a wreck's wheel left alone");
+                continue;
+            }
+            let p = WheelPose::new(&t, steer, angle, lift);
+            assert_eq!(rot, p.rot, "{what}: rotation");
+            let (x, y, z) = (ram.i32(rec), ram.i32(rec + 4), ram.i32(rec + 8));
+            assert_eq!(at, [x << 13, y << 13, ((z << 12).wrapping_add(lift)) << 1], "{what}: place");
+            assert_eq!(ram.i32(cvs + 0x18), lift.wrapping_mul(2), "{what}: the model's lift");
+            posed += 1;
+        }
+    }
+    assert!(posed > 2000, "{posed} posed");
+}

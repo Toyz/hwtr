@@ -62,7 +62,9 @@ spawners draw come from the game's single generator.
 ## Trails and skid marks
 
 Each frame, the car pose (0x80049ecc) looks at every car within 600 units
-of a camera on every axis. For each of that car's wheels it computes a
+of a camera on every axis. A wrecked car (cvs +0x28 = 1) is skipped: the
+trail point is pushed from inside the wheel pose (0x80020a14), which
+leaves a wreck's wheels alone. For each of that car's wheels it computes a
 side vector, `cross(heading, normal)`:
 
 ```
@@ -208,6 +210,8 @@ It does this through the cvs byte +0x1ef (iface_general+220).
     and the exhaust table 0x800be088
   - each quad's length takes a random factor, `rand()%1375`, every frame
   - colour 112 less the frames shown, sheet entry 15 (additive)
+  - the quads drawn from the tyre diameter raised by cvs +0x18: twice the
+    lift of the car's last posed wheel (see [the car's wheels](car-wheels.md))
   - meanwhile the car's root colour pulses from 128 to 248 and back, a
     step every 20 ms of the system clock (0x8002bc04)
 - **A reset (0x80029f04):** clears every puff and spark, idles the
@@ -225,4 +229,3 @@ draws them: in `Car::wreck` and in the knock, as `WreckDraws` and
 - The camera-space units of the billboard translation: the draw adds the
   record's acceleration x and y to it.
 - Who sets fx_enable (0x800d0d98); it is 0x1ff in every race seen.
-- cvs +0x18, added to the flame body's z; taken as 0.

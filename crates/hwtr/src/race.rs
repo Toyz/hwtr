@@ -798,6 +798,30 @@ impl Race {
             }
             // A wrecked car's model is blackened (0x8002e51c).
             let rgb = self.race.effects.root_colour.get(k).copied().unwrap_or(0x80_8080);
+            // Each wheel steered, turned and lifted as last posed
+            // (0x80020a14): at twice its record's mount, raised by twice
+            // its lift.
+            let wheels: Vec<(Mat3, Vec3)> = self
+                .race
+                .wheel_poses
+                .get(k)
+                .and_then(|p| p.as_ref())
+                .map(|poses| {
+                    poses
+                        .iter()
+                        .zip(&look.model.wheels)
+                        .map(|(p, rec)| {
+                            let col = |j: usize| Vec3::from_array([0, 1, 2].map(|i| p.rot[i][j] as f32 / 4096.0));
+                            let at = Vec3::new(
+                                2.0 * rec[0] as f32,
+                                2.0 * rec[1] as f32,
+                                2.0 * (rec[2] as f32 + p.lift as f32 / 4096.0),
+                            );
+                            (Mat3::from_cols(col(0), col(1), col(2)), at)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
             tris.extend(hwtr_render::mesh::car_triangles(
                 &look.model,
                 look.clut,
@@ -805,6 +829,7 @@ impl Race {
                 pos,
                 Mat3::from_quat(rot),
                 rgb,
+                &wheels,
             ));
         }
         tris

@@ -159,6 +159,7 @@ pub mod wheel {
     pub const SLIP: u32 = 0x78;
     pub const COMPRESSION: u32 = 0x7c;
     pub const SPIN_RATE: u32 = 0x84;
+    pub const ANGLE: u32 = 0x80;
 }
 
 /// Offsets within the engine record.
@@ -201,6 +202,7 @@ impl InMemory for Wheel {
             slipping: ram.flag(w + SLIP),
             compression: ram.i32(w + COMPRESSION),
             spin_rate: ram.i32(w + SPIN_RATE),
+            angle: ram.i32(w + ANGLE),
         }
     }
 
@@ -224,6 +226,7 @@ impl InMemory for Wheel {
         ram.set_flag(w + SLIP, self.slipping);
         ram.set_i32(w + COMPRESSION, self.compression);
         ram.set_i32(w + SPIN_RATE, self.spin_rate);
+        ram.set_i32(w + ANGLE, self.angle);
     }
 }
 

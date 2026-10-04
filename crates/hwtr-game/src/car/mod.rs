@@ -7,6 +7,7 @@
 //! `docs/engine/car-object.md`.
 
 mod controls;
+pub mod draw;
 pub mod handling;
 pub mod impact;
 mod load;
@@ -95,6 +96,8 @@ pub struct Wheel {
     pub compression: i32,
     /// How fast it turns, radians a second, for drawing.
     pub spin_rate: i32,
+    /// How far it has turned, radians (4.12), for drawing (+0x80).
+    pub angle: i32,
 }
 
 /// The engine and gearbox. Speeds of rotation are revolutions a minute.

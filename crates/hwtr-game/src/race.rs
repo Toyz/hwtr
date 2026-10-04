@@ -296,6 +296,8 @@ pub struct Race {
     pub dialog_bank: u8,
     /// The commentator.
     pub commentary: Commentary,
+    /// Each car's wheels as last drawn (none until first near a camera).
+    pub wheel_poses: Vec<Option<Vec<crate::car::draw::WheelPose>>>,
     /// The computer cars' drivers.
     pub ai: Ai,
     /// The race clock (0x800d0e34), 25 ms a step.
@@ -463,6 +465,7 @@ impl Race {
             crash_bank,
             dialog_bank,
             commentary: Commentary::default(),
+            wheel_poses: Vec::new(),
             ai,
             time: 0,
             clock: 0,
@@ -1114,7 +1117,24 @@ impl Race {
         self.effects.frame_done(paused);
         if !paused {
             let eyes: Vec<_> = self.cameras.iter().map(|c| c.pos).collect();
-            self.effects.car_pose(&mut self.cars, &eyes);
+            let shown = self.effects.car_pose(&mut self.cars, &eyes);
+            // 0x80049ecc's wheels: each near car's turn by the frame, and
+            // their nodes but a wrecked car's (0x80020a14).
+            self.wheel_poses.resize(self.cars.len(), None);
+            for (slot, car) in self.cars.iter_mut().enumerate() {
+                if !shown.get(slot).copied().unwrap_or(false) {
+                    continue;
+                }
+                car.turn_wheels(frame_ms);
+                if self.effects.wrecked.get(slot).copied().unwrap_or(false) {
+                    continue;
+                }
+                let poses = car.wheel_poses(&self.tables);
+                if let (Some(last), Some(lift)) = (poses.last(), self.effects.lift.get_mut(slot)) {
+                    *lift = last.lift.wrapping_mul(2);
+                }
+                self.wheel_poses[slot] = Some(poses);
+            }
         }
         quads
     }

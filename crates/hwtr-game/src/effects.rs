@@ -322,6 +322,9 @@ pub struct Effects {
     /// last stepped, by the system clock).
     pub root_colour: [u32; 6],
     pub wrecked: [bool; 6],
+    /// Twice the last drawn wheel's lift (cvs +0x18, 0x80020a14), added to
+    /// the boost flame's tip.
+    pub lift: [i32; 6],
     pub flames: [Flame; 6],
     pub pulse: [(i32, u32); 6],
 }
@@ -399,6 +402,7 @@ impl Effects {
             chunk_colour: [176; 3],
             root_colour: [0x80_8080; 6],
             wrecked: [false; 6],
+            lift: [0; 6],
             flames: [Flame::default(); 6],
             pulse: [(-1, 0); 6],
         }
@@ -525,6 +529,7 @@ impl Effects {
                 } else {
                     wb[0].wrapping_sub(if special { 17664 } else { 1280 })
                 };
+                off[2] = off[2].wrapping_add(self.lift[s]);
                 let z = ((diameter - 20480) >> 12) as i16;
                 ([[0, 0, 0], [0, 0, z], [0, l, 0], [0, l, 0]], [[0xff, 0x5f], [0xff, 0x40], [0x80, 0x40], [0x80, 0x5f]])
             };
@@ -1054,19 +1059,23 @@ impl Effects {
     }
 
     /// 0x80049ecc's trails: for each car within 600 units of a camera
-    /// (`eyes`, on every axis), each wheel's edge points: its contact, and
+    /// (`eyes`, on every axis) and not wrecked, each wheel's edge points: its contact, and
     /// while it skids on the ground (not the frame after a reset) the
     /// contact moved its tyre's half width across it (out on wheels 0, 2
     /// and 4, in on the others). On ground of kind 10 none is kept. The
-    /// reset's mark is cleared for every car.
-    pub fn car_pose(&mut self, cars: &mut [Car], eyes: &[Vec3]) {
+    /// reset's mark is cleared for every car. Which cars were near a camera.
+    pub fn car_pose(&mut self, cars: &mut [Car], eyes: &[Vec3]) -> Vec<bool> {
         let near = fx(0xc_8000, 0xc000);
+        let mut shown = Vec::with_capacity(cars.len());
         for car in cars.iter_mut() {
             let centre = crate::math::add(car.body.pos, car.body.centre);
             let seen = eyes
                 .iter()
                 .any(|e| (0..3).map(|k| centre[k].wrapping_sub(e[k]).wrapping_abs()).max().unwrap_or(0) < near);
-            if seen {
+            shown.push(seen);
+            // A wrecked car's wheels are left as they were (0x80020a14).
+            let wrecked = self.wrecked.get(car.slot as usize).copied().unwrap_or(false);
+            if seen && !wrecked {
                 let wheels = car.wheels.len();
                 for (k, w) in car.wheels.iter().enumerate() {
                     let (h, n) = (w.heading, w.normal);
@@ -1091,6 +1100,7 @@ impl Effects {
             }
             car.just_reset = false;
         }
+        shown
     }
 
     /// 0x8002f618 for each pool: the quads, `cam` the camera's axes (the
