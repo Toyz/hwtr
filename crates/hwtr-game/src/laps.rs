@@ -4,7 +4,9 @@
 //! finds on the track).
 
 use crate::collision::Scp;
+use crate::math::{div_fx, fx};
 use crate::race::RaceSetup;
+use crate::rand::Rand;
 
 /// The race's lap rules, and where the track's checkpoints are.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -153,6 +155,43 @@ impl Laps {
         self.passed_count = 0;
         self.passed = [false; 10];
         Some(LapEvent::Lap { time: lap, best })
+    }
+
+    /// 0x80061824 for a computer car short of the line when the race ends,
+    /// at race clock `now`: the laps it has still to run are timed for it,
+    /// and it has finished. This lap ends after the race it has left to
+    /// run (`progress`, the driver's), less the laps after this one, at
+    /// its `pace`; each later lap takes a lap's length at its pace, plus up
+    /// to a twentieth of that length at random.
+    pub fn estimate(&mut self, progress: i32, laps: u8, lap_length: i32, pace: i32, now: u32, rand: &mut Rand) {
+        let done = self.done as usize;
+        let left = fx(progress.wrapping_abs(), 1000 << 12) >> 12;
+        let after = (laps as i32).wrapping_sub(done as i32 + 1).wrapping_mul(lap_length);
+        let rest = if (left as u32) < after as u32 { 0 } else { left.wrapping_sub(after) };
+        let end = now.wrapping_add((div_fx(rest << 12, pace) >> 12) as u32);
+        self.set_end(done, end);
+        let first = if done == 0 { end } else { end.wrapping_sub(self.ends[done - 1]) };
+        self.note_best(first);
+        for k in done + 1..laps as usize {
+            let lap = ((div_fx(lap_length << 12, pace) >> 12) as u32).wrapping_add(rand.below(lap_length as u32 / 20));
+            self.set_end(k, lap.wrapping_add(self.ends[k - 1]));
+            self.note_best(lap);
+        }
+        self.finished = true;
+        self.done = laps;
+    }
+
+    fn set_end(&mut self, k: usize, time: u32) {
+        if self.ends.len() <= k {
+            self.ends.resize(k + 1, 0);
+        }
+        self.ends[k] = time;
+    }
+
+    fn note_best(&mut self, lap: u32) {
+        if self.best == 0 || lap < self.best {
+            self.best = lap;
+        }
     }
 }
 

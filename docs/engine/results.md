@@ -2,8 +2,8 @@
 title: The race's results: snapshots and the table
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8007fe48 snapshot_init, 0x8007fe7c snapshot_reset, 0x8007feb0 snapshot_take, 0x80080014 snapshot_count, 0x80080020 snapshot_put_back, 0x8004a8fc, 0x8004aef8, 0x8003b610, 0x8003bafc, 0x8007e6e0, 0x8007ec08, 0x8006ba48, 0x8007f6f8, 0x80064b8c hud_draw, 0x80064b64 hud_mode, 0x8006452c, 0x80064040, 0x80064294, 0x800644c0, 0x80063ab4, 0x80063bc4, 0x8009b5b8, 0x80135a18 snapshot buffer, 0x800d2718 snapshot count, 0x800d271c bytes used, 0x800d2720 last taken, 0x800d2688 standings order, 0x801399b0 player names
-worklog: 43
+covers: US CCCPSX.EXE:0x8007fe48 snapshot_init, 0x8007fe7c snapshot_reset, 0x8007feb0 snapshot_take, 0x80080014 snapshot_count, 0x80080020 snapshot_put_back, 0x8004a8fc, 0x8004aef8, 0x8003b610, 0x8003bafc, 0x8007e6e0, 0x8007ec08, 0x8006ba48, 0x8007f6f8, 0x80064b8c hud_draw, 0x80064b64 hud_mode, 0x8006452c, 0x80064040, 0x80064294, 0x800644c0, 0x80063ab4, 0x80063bc4, 0x8009b5b8, 0x80135a18 snapshot buffer, 0x800d2718 snapshot count, 0x800d271c bytes used, 0x800d2720 last taken, 0x800d2688 standings order, 0x801399b0 player names, 0x80033aa0 standings, 0x80061824 car_result, 0x800d0e48 lap_length, 0x800d25f8 points, 0x800d0e69 fastest_car
+worklog: 43, 67
 ---
 
 # The race's results
@@ -17,6 +17,37 @@ shows the snapshots taken during the race, two seconds each, round and
 round: snapshot `((since - 4000) / 2000) % count` is put back every
 frame. The results leave after 30 seconds, on Cross (action 18) pressed
 after being let go, or on Start (26).
+
+## The standings (0x80033aa0)
+
+1. **A snapshot** is taken (0x8007feb0).
+2. **Each car's result** (0x80061824, in car order) is its race time (the
+   end of its last lap, +0x5b4 + 4 × laps) and its best lap (+0x5d8).
+3. **Estimates.** A computer car that has not finished gets its laps to
+   come estimated first:
+   - **This lap.** Its driver's race left to run (+0x1a8 of its AI record,
+     0x801315f4 + 0x250 a car), made positive and times 1000, less the
+     laps after this one at the lap length. That is held to 0, compared
+     unsigned. Divided by the car's pace (handling +0x6c, car +0x6a8), it
+     is added to the race clock as this lap's end.
+   - **Each later lap.** The lap length over its pace, plus
+     `random(lap length / 20)`.
+   - **Best lap.** It takes each estimated lap that beats it, or the first
+     if it has none.
+   - **Finished.** The car is then finished, with all its laps done.
+
+   The lap length is 0x800d0e48, which the start (0x80061264) copies from
+   the best line's header. Before the start it is 0.
+4. **Ordering.** The cars are ordered by picking, for each place in turn,
+   the fastest time among the cars from there on. A car without a time
+   never displaces one. It is a selection sort with swaps, so it is not
+   stable among ties and the timeless. Place `p`'s car goes to
+   0x800d2688 + p (0x80064ccc).
+5. **Points.** Each of the first six places with a time scores 10, 8, 7,
+   6, 5 or 4 (0x800d25f8, by car). Any other car scores 0.
+6. **Fastest lap.** The car with the lowest nonzero best lap is noted at
+   0x800d0e69 (0x80064ce4). If tied, the one placed higher wins.
+7. **Sound.** The race's sound is shut (0x800364cc).
 
 There is no replay. "Replay" in this game is this slideshow of up to
 twenty frozen moments.
@@ -135,3 +166,5 @@ profiles (+8) by 0x8009b5b8 as each race the players start is set up.
 - The loose bodies' 16-byte snapshot record (0x8007e6e0 / 0x8007ec08):
   kind, two bytes for kind 1, six rotation bytes, a position.
 - 0x800d0e54, which the points table lowers.
+- Who reads the fastest lap's car (0x800d0e69); no code reads it
+  through gp.

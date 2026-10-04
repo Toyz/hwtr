@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-66 entries: audio 8, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 5, format 7, input 9, physics 13, race 10, render 17, test 14, tooling 14, ui 10, video 1.
+67 entries: audio 8, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 5, format 7, input 9, physics 13, race 11, render 17, test 14, tooling 14, ui 10, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -78,3 +78,4 @@ The [reference](docs/README.md) says what is true now.
 | 64 | [racecheck matches every step again](worklog/0064-racecheck-matches-every-step-again.md) | 2026-10-04 | tooling |
 | 65 | [A player's wreck throws its wheels (0x8007c9b0)](worklog/0065-a-player-s-wreck-throws-its-wheels-0x8007c9b0.md) | 2026-10-04 | physics |
 | 66 | [Wrecked and finished computer cars meet the walls as boxes (0x800572f0)](worklog/0066-wrecked-and-finished-computer-cars-meet-the-walls-as-boxes.md) | 2026-10-04 | physics |
+| 67 | [Estimate the unfinished computer cars' times for the standings (0x80061824)](worklog/0067-estimate-the-unfinished-computer-cars-times-for-the.md) | 2026-10-04 | race |

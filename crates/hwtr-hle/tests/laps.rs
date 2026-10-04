@@ -205,3 +205,148 @@ fn boost_pads_and_launchers_match_the_original() {
     }
     assert!(launched > 200 && boosted > 200, "{launched} launched, {boosted} boosted");
 }
+
+#[test]
+fn finish_estimates_match_the_original() {
+    use hwtr_hle::original::ai::{DRIVER_SIZE, DRIVERS};
+    use hwtr_hle::original::car::{CAR_COUNT, CAR_SIZE};
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0xe571_0000_0000_0015);
+    let mut estimated = 0;
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        for _ in 0..40 {
+            let (laps, lap_length, count) = {
+                let mut ram = Ram(&mut m.bus.ram);
+                let course = course(&ram);
+                // The states are still counting down: the start (0x80061264)
+                // would keep the best line's lap length here.
+                assert_eq!(ram.i32(LAP_LENGTH), course.lap_length, "{name}");
+                ram.set_i32(0x800d_0e48, course.lap_length);
+                (course.laps, course.lap_length, ram.i32(CAR_COUNT) as u32)
+            };
+            let now = rng.word() >> 12;
+            Ram(&mut m.bus.ram).set_i32(TIME, now as i32);
+            for k in 0..count {
+                let at = CARS + k * CAR_SIZE;
+                let mut car = Car::read(&Ram(&mut m.bus.ram), at);
+                // Any lap, any race left, any times so far.
+                car.laps.finished = rng.below(5) == 0;
+                car.laps.done = rng.below(laps as u32) as u8;
+                car.laps.best = if rng.below(3) == 0 { 0 } else { rng.word() >> 16 };
+                let mut end = 0u32;
+                car.laps.ends = (0..car.laps.done.max(1))
+                    .map(|_| {
+                        end = end.wrapping_add(rng.word() >> 14);
+                        end
+                    })
+                    .collect();
+                car.handling.ai_pace = 0x800 + rng.below(0x1000) as i32;
+                car.write(&mut Ram(&mut m.bus.ram), at);
+                let progress = (rng.word() as i32) >> (6 + rng.below(10));
+                Ram(&mut m.bus.ram).set_i32(DRIVERS + k * DRIVER_SIZE + 0x1a8, progress);
+            }
+            for k in 0..count {
+                let at = CARS + k * CAR_SIZE;
+                let mut car = Car::read(&Ram(&mut m.bus.ram), at);
+                let progress = Ram(&mut m.bus.ram).i32(DRIVERS + k * DRIVER_SIZE + 0x1a8);
+                let progress = if k < 6 { progress } else { 0 };
+                let mut rand =
+                    hwtr_game::rand::Rand { seed: Ram(&mut m.bus.ram).i32(hwtr_hle::original::rand::SEED) as u32 };
+                let estimate = car.flags & 1 == 0 && !car.laps.finished;
+                if estimate {
+                    car.laps.estimate(progress, laps, lap_length, car.handling.ai_pace, now, &mut rand);
+                    estimated += 1;
+                }
+                m.call(0x8006_1824, &[k, common::OUT, common::OUT + 4]).unwrap();
+                let ram = Ram(&mut m.bus.ram);
+                let original = Car::read(&ram, at);
+                assert_eq!(original.laps, car.laps, "{name} car {k}");
+                let time = (laps as usize).checked_sub(1).and_then(|l| car.laps.ends.get(l)).copied().unwrap_or(0);
+                assert_eq!(ram.i32(common::OUT) as u32, time, "{name} car {k}: time");
+                assert_eq!(ram.i32(common::OUT + 4) as u32, car.laps.best, "{name} car {k}: best");
+                assert_eq!(ram.i32(hwtr_hle::original::rand::SEED) as u32, rand.seed, "{name} car {k}: rand");
+            }
+        }
+    }
+    eprintln!("estimated {estimated}");
+    assert!(estimated > 0);
+}
+
+#[test]
+fn standings_match_the_original() {
+    use hwtr_hle::original::ai::{DRIVER_SIZE, DRIVERS};
+    use hwtr_hle::original::car::{CAR_COUNT, CAR_SIZE};
+    /// Where 0x80033aa0 leaves each place's car (0x80064ccc) and each car's
+    /// points.
+    const ORDER: u32 = 0x800d_2688;
+    const POINTS: u32 = 0x800d_25f8;
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0x57a0_0000_0000_0016);
+    let (mut unplaced, mut scored) = (0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        // The snapshot and the sound's end are not what is checked here.
+        m.hook(0x8007_feb0, |_, _| 0);
+        m.hook(0x8003_64cc, |_, _| 0);
+        for _ in 0..60 {
+            let (course, count) = {
+                let mut ram = Ram(&mut m.bus.ram);
+                let course = course(&ram);
+                ram.set_i32(0x800d_0e48, course.lap_length);
+                (course, ram.i32(CAR_COUNT) as u32)
+            };
+            let now = rng.word() >> 12;
+            Ram(&mut m.bus.ram).set_i32(TIME, now as i32);
+            let mut cars = Vec::new();
+            for k in 0..count {
+                let at = CARS + k * CAR_SIZE;
+                let mut car = Car::read(&Ram(&mut m.bus.ram), at);
+                car.laps.finished = rng.below(2) == 0;
+                car.laps.done = if car.laps.finished { course.laps } else { rng.below(course.laps as u32) as u8 };
+                car.laps.best = rng.word() >> 18;
+                // Some ties, and some cars without a time.
+                let mut end = 0u32;
+                car.laps.ends = (0..car.laps.done.max(1))
+                    .map(|_| {
+                        end = end.wrapping_add((rng.below(4) << 14) * (rng.below(3) != 0) as u32);
+                        end
+                    })
+                    .collect();
+                if car.laps.done == 0 && car.laps.ends == [0] {
+                    // As the original's record reads with no laps.
+                    car.laps.ends.clear();
+                }
+                car.handling.ai_pace = 0x800 + rng.below(0x1000) as i32;
+                car.write(&mut Ram(&mut m.bus.ram), at);
+                Ram(&mut m.bus.ram).set_i32(DRIVERS + k * DRIVER_SIZE + 0x1a8, (rng.word() as i32) >> 12);
+                cars.push(car);
+            }
+            let progress: Vec<i32> =
+                (0..6).map(|k| Ram(&mut m.bus.ram).i32(DRIVERS + k * DRIVER_SIZE + 0x1a8)).collect();
+            let mut rand =
+                hwtr_game::rand::Rand { seed: Ram(&mut m.bus.ram).i32(hwtr_hle::original::rand::SEED) as u32 };
+            let ours = hwtr_game::race::standings(
+                &mut cars,
+                |slot| progress.get(slot as usize).copied().unwrap_or(0),
+                &course,
+                now,
+                &mut rand,
+            );
+            m.call(0x8003_3aa0, &[]).unwrap();
+            let ram = Ram(&mut m.bus.ram);
+            for (place, s) in ours.iter().enumerate() {
+                assert_eq!(ram.u8(ORDER + place as u32), s.car, "{name}: place {place}");
+                assert_eq!(ram.u8(POINTS + s.car as u32), s.points, "{name}: car {}'s points", s.car);
+                unplaced += (s.time == 0) as u32;
+                scored += (s.points != 0) as u32;
+            }
+            for (k, car) in cars.iter().enumerate() {
+                assert_eq!(Car::read(&ram, CARS + k as u32 * CAR_SIZE).laps, car.laps, "{name}: car {k}");
+            }
+            assert_eq!(ram.i32(hwtr_hle::original::rand::SEED) as u32, rand.seed, "{name}: rand");
+        }
+    }
+    eprintln!("unplaced {unplaced}, scored {scored}");
+    assert!(unplaced > 0 && scored > 0);
+}

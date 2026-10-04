@@ -274,6 +274,48 @@ pub struct Standing {
     pub points: u8,
 }
 
+/// 0x80033aa0 at race clock `now`: each computer car still racing has its
+/// laps to come estimated ([`crate::laps::Laps::estimate`], from its
+/// driver's `progress`); then each car's race time (the end of its last
+/// lap) and best lap, ordered by time with those without one last (picked
+/// out one place at a time, as the original does), and the points for the
+/// first six with a time.
+pub fn standings(
+    cars: &mut [Car],
+    progress: impl Fn(u8) -> i32,
+    course: &crate::laps::Course,
+    now: u32,
+    rand: &mut Rand,
+) -> Vec<Standing> {
+    let laps = course.laps;
+    for car in cars.iter_mut().filter(|c| c.flags & 1 == 0 && !c.laps.finished) {
+        let pace = car.handling.ai_pace;
+        car.laps.estimate(progress(car.slot), laps, course.lap_length, pace, now, rand);
+    }
+    let mut standings: Vec<Standing> = cars
+        .iter()
+        .map(|c| Standing {
+            car: c.slot,
+            time: (laps as usize).checked_sub(1).and_then(|k| c.laps.ends.get(k)).copied().unwrap_or(0),
+            best: c.laps.best,
+            points: 0,
+        })
+        .collect();
+    for place in 0..standings.len() {
+        let mut first = place;
+        for k in place + 1..standings.len() {
+            let (t, best) = (standings[k].time, standings[first].time);
+            if t != 0 && (t < best || best == 0) {
+                first = k;
+            }
+        }
+        standings.swap(place, first);
+        let s = &mut standings[place];
+        s.points = if s.time != 0 { POINTS.get(place).copied().unwrap_or(0) } else { 0 };
+    }
+    standings
+}
+
 /// The front end's actions race_frame reads besides the driving: held on a
 /// player's pad.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1095,27 +1137,11 @@ impl Race {
         }
     }
 
-    /// 0x80033aa0's standings: each car's race time (the end of its last
-    /// lap) and best lap, ordered by time with those without one last, and
-    /// the points for the first six with a time. (Computer cars short of the
-    /// line, whose times the original estimates, are not yet ported.)
-    fn standings(&self) -> Vec<Standing> {
-        let laps = self.collision.course.laps as usize;
-        let mut standings: Vec<Standing> = self
-            .cars
-            .iter()
-            .map(|c| Standing {
-                car: c.slot,
-                time: laps.checked_sub(1).and_then(|k| c.laps.ends.get(k)).copied().unwrap_or(0),
-                best: c.laps.best,
-                points: 0,
-            })
-            .collect();
-        standings.sort_by_key(|s| (s.time == 0, s.time));
-        for (place, s) in standings.iter_mut().enumerate() {
-            s.points = if s.time != 0 { POINTS.get(place).copied().unwrap_or(0) } else { 0 };
-        }
-        standings
+    /// 0x80033aa0's standings, at the race's end.
+    fn standings(&mut self) -> Vec<Standing> {
+        let drivers = &self.ai.drivers;
+        let progress = |slot: u8| drivers.get(slot as usize).map_or(0, |d| d.progress);
+        standings(&mut self.cars, progress, &self.collision.course, self.time, &mut self.rand)
     }
 
     /// The results: after four seconds the race stands still and shows its
