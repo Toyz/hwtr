@@ -59,3 +59,16 @@ fn key_on_matches_the_original() {
     }
     assert!(keyed > 500, "{keyed} keyed");
 }
+
+#[test]
+fn the_music_level_matches_the_original() {
+    // 0x80014b6c keeps the level at 0x800d2488 before handing it to CdMix.
+    const LEVEL: u32 = 0x800d_2488;
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "menu-main") else { return };
+    for setting in 0..=255u8 {
+        m.call(0x8001_4b6c, &[setting as u32]).unwrap();
+        let original = hwtr_hle::original::Ram(&mut m.bus.ram).i32(LEVEL) as u8;
+        assert_eq!(original, hwtr_game::cd::music_level(setting), "setting {setting}");
+    }
+}

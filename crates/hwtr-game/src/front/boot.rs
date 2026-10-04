@@ -45,6 +45,10 @@ pub(super) fn register(r: &mut Registry<Front>) {
             // 0x8001bafc: the player's buttons into the pad's.
             f.mappings[k] = f.players[k].mapping;
         }
+        // The saved music volume takes effect (0x80014b6c through
+        // iface_game+0xc4; the race's effects level, 0x8001a6dc with 255,
+        // is the race's own to set).
+        f.cd.push(crate::cd::CdAsk::Volume(f.settings.music));
         p.post(22);
     });
     // 0x800887a8: an unformatted card (event 14); there is never one here.
@@ -143,6 +147,8 @@ pub(super) fn register(r: &mut Registry<Front>) {
     r.add(0x8008_a184, |f: &mut Front, _: &mut Poster| {
         f.settings = Settings::new(f.default_difficulty);
         f.players = [Profile::new(&f.strings, 0), Profile::new(&f.strings, 1)];
+        // The default music volume takes effect (0x80014b6c).
+        f.cd.push(crate::cd::CdAsk::Volume(f.settings.music));
     });
     r.add(0x8008_a270, |_: &mut Front, p: &mut Poster| p.post(10));
 }

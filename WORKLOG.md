@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-75 entries: audio 8, bug 1, build 2, content 5, decomp 7, design 3, disc 1, engine 6, format 7, input 9, physics 14, race 11, render 18, test 16, tooling 15, ui 13, video 1.
+76 entries: audio 9, bug 1, build 2, content 5, decomp 7, design 3, disc 1, engine 6, format 7, input 9, physics 14, race 11, render 18, test 16, tooling 15, ui 13, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -87,3 +87,4 @@ The [reference](docs/README.md) says what is true now.
 | 73 | [The ground stage's best distances run across the cars; racecheck on all 11 tracks](worklog/0073-the-ground-stage-s-best-distances-run-across-the-cars.md) | 2026-10-04 | physics |
 | 74 | [One tap steps the garage's car once](worklog/0074-one-tap-steps-the-garage-s-car-once.md) | 2026-10-04 | ui |
 | 75 | [Closing the questions later work answered](worklog/0075-closing-the-questions-later-work-answered.md) | 2026-10-04 | tooling |
+| 76 | [Sound levels: the menu's effects, the music volume and CdMix](worklog/0076-sound-levels-the-menu-s-effects-the-music-volume-and-cdmix.md) | 2026-10-04 | audio |

@@ -50,7 +50,7 @@ impl CdPlayer {
 
     /// 0x80014b6c: the music volume from the settings (0 to 255).
     pub fn set_volume(&mut self, v: u8) {
-        let v = ((v as i32 * 127) / 255).min(128);
+        let v = hwtr_game::cd::music_level(v) as i32;
         if let Ok(mut s) = self.spu.lock() {
             s.cd_volume(v);
         }

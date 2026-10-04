@@ -22,6 +22,14 @@ pub enum CdAsk {
     Volume(u8),
 }
 
+/// 0x80014b6c: the CD audio's level from the music setting (0 to 255): as
+/// 4096ths, then 127ths, each step rounding down, at most 128 (0x800d2488).
+/// libcd's CdMix (0x800a5c58) takes it for the left into the left and the
+/// right into the right, nothing across.
+pub fn music_level(setting: u8) -> u8 {
+    ((((setting as i32) << 12) / 255 * 127) >> 12).min(128) as u8
+}
+
 /// The songs' artists and titles (0x800be8cc and 0x800be900, by song),
 /// as the Boom Box shows them.
 pub fn songs(byte: &dyn Fn(u32) -> u8) -> Vec<(String, String)> {
