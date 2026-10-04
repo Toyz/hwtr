@@ -98,6 +98,8 @@ pub fn collision(ram: &Ram) -> (Collision, Vec<u32>) {
             pickups_touched: Vec::new(),
             players_touched: false,
             sparks: Vec::new(),
+            prop_draws: Vec::new(),
+            volume_fx: Vec::new(),
             knocked: Vec::new(),
             pairs: (0..ram.i16(PAIR_COUNT) as u16 as u32)
                 .map(|k| {

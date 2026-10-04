@@ -145,6 +145,10 @@ pub struct WorldVolume {
     pub follows: bool,
     pub sound: Option<u8>,
     pub collision: usize,
+    /// Its flags, centre and height, for its debris.
+    pub flags: u32,
+    pub pos: crate::math::Vec3,
+    pub height: i32,
 }
 
 /// A car's result.
@@ -270,6 +274,9 @@ pub struct Race {
     /// root faces, which its wreck throws off.
     pub effects: crate::effects::Effects,
     pub car_faces: Vec<Vec<crate::effects::ChunkFace>>,
+    /// Each world volume's object's quads, which fly off when it is
+    /// knocked over.
+    pub volume_quads: Vec<Vec<crate::effects::ChunkFace>>,
 }
 
 /// How many of the views a player cycles through (the fifth, the side view,
@@ -383,6 +390,7 @@ impl Race {
             camera_spots: Vec::new(),
             effects: Default::default(),
             car_faces: Vec::new(),
+            volume_quads: Vec::new(),
         }
     }
 
@@ -395,9 +403,20 @@ impl Race {
             .enumerate()
             .map(|(k, &(flags, object, centre, rot, size, heft, sound))| {
                 let collision = self.collision.add_world_object(&self.tables, k as u16, flags, centre, rot, size, heft);
-                WorldVolume { object, follows: flags & 8 != 0, sound: (flags & 4 != 0).then_some(sound), collision }
+                WorldVolume { object, follows: flags & 8 != 0, sound: (flags & 4 != 0).then_some(sound), collision, flags, pos: centre, height: size[2] }
             })
             .collect();
+    }
+
+    /// Each world volume's object's quads, for its debris.
+    pub fn set_volume_quads(&mut self, quads: Vec<Vec<crate::effects::ChunkFace>>) {
+        self.collision.volume_fx = self
+            .world_volumes
+            .iter()
+            .enumerate()
+            .map(|(k, v)| (v.flags, quads.get(k).map_or(0, |q| q.len().min(0xffff) as u16)))
+            .collect();
+        self.volume_quads = quads;
     }
 
     /// 0x8006b754's moving volumes: each box where its object is now.
@@ -522,6 +541,11 @@ impl Race {
                 self.collision.update(&self.tables, &mut self.cars, &mut step);
                 for s in std::mem::take(&mut self.collision.sparks) {
                     self.effects.spark(s);
+                }
+                for d in std::mem::take(&mut self.collision.prop_draws) {
+                    let Some(v) = self.world_volumes.get(d.volume as usize).copied() else { continue };
+                    let quads = self.volume_quads.get(d.volume as usize).map_or(&[][..], |q| &q[..]);
+                    self.effects.prop_debris(&self.tables, &d, v.flags, v.pos, v.height, quads);
                 }
                 if self.collision.players_touched {
                     self.snapshots.take(self.time, &self.cars, &self.cameras, None);

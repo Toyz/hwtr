@@ -408,6 +408,25 @@ impl Race {
                 })
                 .collect();
             race.set_volumes(&volumes);
+            // 0x8002e27c: a knocked prop's object's quads fly off.
+            let quads = world
+                .volumes
+                .iter()
+                .map(|v| {
+                    v.object.and_then(|o| world.objects.get(o)).map_or(Vec::new(), |o| {
+                        o.mesh
+                            .iter()
+                            .map(|q| hwtr_game::effects::ChunkFace {
+                                verts: q.v.map(|p| [p.x, p.y, p.z]),
+                                uv: q.uv,
+                                clut: q.clut,
+                                tpage: q.tpage,
+                            })
+                            .collect()
+                    })
+                })
+                .collect();
+            race.set_volume_quads(quads);
             // The cars' models' root faces, which a wreck throws off
             // (0x8002e574: corners, the texels at +10, +14, +8, +12).
             race.car_faces = scene

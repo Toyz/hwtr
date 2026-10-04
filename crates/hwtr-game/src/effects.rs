@@ -162,6 +162,35 @@ impl WreckDraws {
     }
 }
 
+/// The random numbers a knocked prop's debris draws (0x8002e27c), taken
+/// as the knock happens in the collision's pair loop (0x8006b958).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PropDraws {
+    pub volume: u16,
+    pub vel: Vec3,
+    pub rands: Vec<u32>,
+}
+
+impl PropDraws {
+    /// A prop with volume flags `flags` and `quads` quads: two for each
+    /// smoke column (flag 2); for each of ten dust puffs (flag 1) two for
+    /// its place, one for its growth with flag 0x20, and the puff's two;
+    /// without flag 0x20, fifteen for each of up to 48 quads.
+    pub fn take(rand: &mut Rand, volume: u16, vel: Vec3, flags: u32, quads: usize) -> PropDraws {
+        let mut n = 0;
+        if flags & 2 != 0 {
+            n += 10;
+        }
+        if flags & 1 != 0 {
+            n += 10 * (4 + (flags & 0x20 != 0) as usize);
+        }
+        if flags & 0x20 == 0 {
+            n += 15 * quads.min(48);
+        }
+        PropDraws { volume, vel, rands: (0..n).map(|_| rand.rand()).collect() }
+    }
+}
+
 /// Where a car is drawn, for the effects that start from it or follow it:
 /// its model's place (0x80049ecc's), rotation, and its handling's origin.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -356,6 +385,11 @@ impl Effects {
             return;
         }
         let (r1, r2) = (rand.rand(), rand.rand());
+        self.dust_with(r1, r2, pos, frame0, surface, vel);
+    }
+
+    /// The puff of 0x80030fc8 from its two random numbers.
+    fn dust_with(&mut self, r1: u32, r2: u32, pos: Vec3, frame0: u8, surface: u8, vel: Option<Vec3>) {
         let p = &mut self.pools[PUFFS];
         let i = p.alloc();
         let buf = p.records[i].buf;
@@ -622,6 +656,54 @@ impl Effects {
             r.kind = 255;
             r.clut = face.clut;
             r.tpage = face.tpage;
+        }
+    }
+
+    /// 0x8002e27c: a knocked prop (flags `flags`, centre `pos`, height
+    /// `height`): smoke columns from 100 units above its foot (flag 2),
+    /// a ring of ten puffs of dust around its foot (flag 1), and unless
+    /// flag 0x20 its quads (`quads`, up to 48) thrown off as chunks that
+    /// last 180 frames.
+    pub fn prop_debris(&mut self, t: &crate::math::Tables, draws: &PropDraws, flags: u32, pos: Vec3, height: i32, quads: &[ChunkFace]) {
+        let mut rands = draws.rands.iter().copied();
+        if flags & 2 != 0 {
+            let p = [pos[0], pos[1], pos[2].wrapping_sub(height >> 1).wrapping_add(0x6_4000)];
+            self.columns_spawn(p, [0; 3], 0, 255, &mut rands);
+        }
+        if flags & 1 != 0 {
+            for n in 0..10u32 {
+                let sign = if n & 1 != 0 { 4096 } else { -4096 };
+                let r1 = rands.next().unwrap_or(0) % 100;
+                let r2 = rands.next().unwrap_or(0) % 100;
+                let p = [
+                    pos[0].wrapping_add(fx(((r1 << 12) as i32).wrapping_add(0x3_2000), sign)),
+                    pos[1].wrapping_add(fx(((r2 << 12) as i32).wrapping_add(0x3_2000), sign)),
+                    pos[2].wrapping_sub(0x6_4000),
+                ];
+                let (frame0, surface) = if flags & 0x20 != 0 { ((rands.next().unwrap_or(0) % 100) as u8, 2) } else { (80, 6) };
+                let (a, b) = (rands.next().unwrap_or(0), rands.next().unwrap_or(0));
+                self.dust_with(a, b, p, frame0, surface, None);
+            }
+        }
+        if flags & 0x20 != 0 {
+            return;
+        }
+        for q in quads.iter().take(48) {
+            let i = self.pools[DEBRIS].alloc();
+            self.pools[DEBRIS].records[i].semi = true;
+            self.chunk_init(t, pos, draws.vel, i, &mut rands);
+            let p = &mut self.pools[DEBRIS];
+            let buf = p.records[i].buf;
+            if let Some(c) = p.chunks.get_mut(buf) {
+                c.verts = q.verts;
+                c.uv = q.uv;
+            }
+            let r = &mut p.records[i];
+            r.flags = 0x98;
+            r.life = 180;
+            r.kind = 255;
+            r.clut = q.clut;
+            r.tpage = q.tpage;
         }
     }
 

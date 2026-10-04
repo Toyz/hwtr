@@ -388,7 +388,7 @@ impl Collision {
             // Knocked over, unless heavy (10000 on) and the car not
             // all-terrain: then it stands like a wall.
             if o_heft < 10_000 || clear {
-                self.knock(other, car_vel);
+                self.knock(other, car_vel, rand);
                 return;
             }
         } else if o_flags & 4 != 0 {
@@ -401,7 +401,7 @@ impl Collision {
                     c.body.momentum[2] = c.body.momentum[2].wrapping_add(((lift as i64 * c.body.mass as i64) >> 12) as i32);
                 }
             }
-            self.knock(other, car_vel);
+            self.knock(other, car_vel, rand);
         }
         let o = &self.objects[other];
         let other_vel = o.car.and_then(|s| cars.get(s as usize)).map_or([0; 3], |c| c.body.vel);
@@ -428,11 +428,14 @@ impl Collision {
     /// 0x8006b958: world object `id` knocked by a car going `vel`: it is out
     /// of the collision (flag 1), and its volume knocked (its object goes
     /// flying, with its sound) for the race to show.
-    fn knock(&mut self, id: ObjectId, vel: Vec3) {
+    fn knock(&mut self, id: ObjectId, vel: Vec3, rand: &mut Rand) {
         let o = &mut self.objects[id];
         o.flags |= 1;
         if let Some(v) = o.volume {
             self.knocked.push((v, vel));
+            // 0x80020824: the prop's debris, its random numbers drawn now.
+            let (flags, quads) = self.volume_fx.get(v as usize).copied().unwrap_or((0, 0));
+            self.prop_draws.push(crate::effects::PropDraws::take(rand, v, vel, flags, quads as usize));
         }
     }
 

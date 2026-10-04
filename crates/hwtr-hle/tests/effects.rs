@@ -60,7 +60,7 @@ fn effects_match_the_original() {
             miss = Some(format!("{what}: {detail}"));
         }
     };
-    for round in 0..300 {
+    for round in 0..350 {
         m.bus.ram.copy_from_slice(&start);
         let mut ours = codec::read(&Ram(&mut m.bus.ram));
         scramble(&mut rng, &mut ours);
@@ -70,7 +70,48 @@ fn effects_match_the_original() {
         let mut ours = ours0.clone();
         Ram(&mut m.bus.ram).set_i32(SEED, seed as i32);
         let mut rand = Rand { seed };
-        match round % 6 {
+        match round % 7 {
+            6 => {
+                // A world volume knocked over: its dust, smoke and quads.
+                let (o, flags, pos, height, quads) = {
+                    let ram = Ram(&mut m.bus.ram);
+                    let header = ram.i32(0x800d_2540) as u32;
+                    let (n, table) = (ram.i32(header + 48) as u32, ram.i32(header + 52) as u32);
+                    let o = table + 84 * rng.below(n.max(1));
+                    let object = ram.i32(o + 4) as u32;
+                    let valid = object % 4 == 0 && (0x8000_0000..0x8020_0000).contains(&object);
+                    let quads: Vec<effects::ChunkFace> = if !valid {
+                        Vec::new()
+                    } else {
+                        let (nq, at) = (ram.i32(object + 40) as u32, ram.i32(object + 44) as u32);
+                        (0..nq)
+                            .map(|k| {
+                                let q = at + 76 * k;
+                                effects::ChunkFace {
+                                    verts: std::array::from_fn(|c| std::array::from_fn(|a| ram.i16(q + 8 * c as u32 + 2 * a as u32))),
+                                    uv: std::array::from_fn(|c| [ram.u8(q + 8 * c as u32 + 6), ram.u8(q + 8 * c as u32 + 7)]),
+                                    clut: ram.i16(q + 68) as u16,
+                                    tpage: ram.i16(q + 70) as u16,
+                                }
+                            })
+                            .collect()
+                    };
+                    (o, ram.i32(o) as u32, ram.vec3(o + 8), ram.i32(o + 32), quads)
+                };
+                // Any of the debris' flags, whatever this volume's are.
+                let flags = (flags & !0x23) | [0, 1, 2, 3, 0x21, 0x23, 0x20][rng.below(7) as usize];
+                Ram(&mut m.bus.ram).set_i32(o, flags as i32);
+                let object = Ram(&mut m.bus.ram).i32(o + 4) as u32;
+                if (quads.is_empty() || object % 4 != 0) && flags & 0x20 == 0 {
+                    continue;
+                }
+                let vel = [0; 3].map(|_| rng.word() as i32 >> 8);
+                Ram(&mut m.bus.ram).set_vec3(ARGS, vel);
+                let draws = effects::PropDraws::take(&mut rand, 0, vel, flags, quads.len());
+                ours.prop_debris(&t, &draws, flags, pos, height, &quads);
+                m.call(0x8002_e27c, &[o, ARGS]).unwrap();
+                check(format!("round {round} prop debris (flags {flags:#x}, {} quads)", quads.len()), &ours, rand.seed, &mut m);
+            }
             5 => {
                 // A wreck's smoke, embers and chunks from car 0's model.
                 let slot = 0u32;
