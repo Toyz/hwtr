@@ -2,7 +2,7 @@
 title: Controls and the pad
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8001d320 controls_init, 0x8001c344 controls_read_port, 0x8001c480, 0x8001cee4, 0x8001abe8 controls_action_held, 0x8011b388 pad_buffer, 0x8011b3d8 control_mapping, 0x800bdc08 control_mapping_default, interface table 0x8012fcdc
+covers: US CCCPSX.EXE:0x8001bec0 controls_frame, 0x8001bf1c, 0x8001c998, 0x8001cee4 controls_read_analog, 0x8001d9ec curve, 0x8001b170 action_level, 0x8011b2b8 action_levels, 0x8001d320 controls_init, 0x8001c344 controls_read_port, 0x8001c480, 0x8001cee4, 0x8001abe8 controls_action_held, 0x8011b388 pad_buffer, 0x8011b3d8 control_mapping, 0x800bdc08 control_mapping_default, interface table 0x8012fcdc
 worklog: 11
 ---
 
@@ -63,10 +63,48 @@ action's mask in the player's mapping table, `control_mapping + config *
 and `$gp + 281` for player 2). Some cases read an analog byte instead when the
 type is 0x23, the neGcon.
 
-The default masks (`control_mapping_default`, 29 words) are single bits, for
-example action 0 = 0x80 and action 7 = 0x10; which buffer byte each applies
-to depends on the action's case, so the button each action means is not yet
-named.
+The default masks (`control_mapping_default`, 29 words) are single bits.
+For the race's actions 0 to 12 they are, checked by holding each button in
+the original and reading the car's control fields:
+
+| action | default | level kept at (0x8011b2b8 +) | car field |
+| --- | --- | --- | --- |
+| 0 steer left | Left (low byte 0x80) | +6 | steer, negative |
+| 1 steer right | Right (0x20) | +4 | steer, positive |
+| 2 accelerate | Cross (high byte 0x40) | +2 | +0x14 |
+| 3 brake | Square (0x80) | +0 | +0x18 |
+| 4, 5 stick right, left | Right, Left | +8, +0xa | +0x1c (right - left) |
+| 6, 7 stick down, up | Down, Up | +0xc, +0xe | +0x20 (down - up) |
+| 8 handbrake | L2 (0x01) | +0x10, 0 or 1 | +0x24 |
+| 9 | R1 (0x08) | +0x11 | +0x25 |
+| 10 | R2 (0x02) | +0x12 | +0x26, +0x27 |
+| 11, 12 | Circle, Triangle | +0x13, +0x14 | |
+
+## The levels
+
+Once a frame per port, `controls_frame` (0x8001bec0, from 0x8001b0ec with
+the milliseconds since the last read) reads actions 8 to 12 as on or off
+(0x8001bf1c), then by the pad's type:
+
+- **Digital (0x41), 0x8001c480 and 0x8001c998.** Accelerate and brake are
+  255 or 0. Steering ramps while held: +40 a frame below 75, then
+  +floor(1.8 x ms), at most 255; pressing one way drops the other's level,
+  and left is tested after right, so it wins. The stick actions ramp +45 a
+  frame.
+- **DualShock analog (0x73), 0x8001cee4.** The d-pad, Cross and Square are
+  not read for actions 0 to 7. Each stick axis splits into its halves,
+  `(v - 128) x 2` and `(127 - v) x 2`, read through a 7-point curve
+  (0x8001d9ec, straight lines between points): steering (left stick x) and
+  the pedals (right stick y, up accelerates) through 0x800bdbdc, (0,0)
+  (10,0) (50,5) (100,17) (190,70) (245,255) (255,255); the stick actions
+  through 0x800bdbec, (0,0) (50,30) (100,45) (175,80) (220,145) (245,255)
+  (255,255).
+
+Both then ease a pedal level at +0x16 toward accelerate's level (else
+brake's, else 0) by 7 a frame. `action_level` (0x8001b170, interface slot
+0x8012fce4) returns an action's level; the race's controls (0x80034940)
+read actions 0 to 10 through it. Ported as `hwtr_game::pad`, checked by a
+differential test against 0x8001bec0.
 
 ## Notes for the port
 
@@ -78,7 +116,7 @@ them is in 0x8001cee4.
 
 ## Unknown
 
-- The names of the 28 actions and which byte each case tests.
-- The analog read in 0x8001cee4: dead zone, scaling, which stick.
+- The meaning of actions 9 to 12 and 13 to 27 (menus).
+- The neGcon (0x23) path's analog buttons.
 - Vibration: the option string "Vibration" (0x800cf428, used by 0x80094164)
   shows the game drives the DualShock motors; the code path is untraced.
