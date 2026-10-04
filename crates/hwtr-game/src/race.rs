@@ -274,6 +274,18 @@ pub struct Standing {
     pub points: u8,
 }
 
+/// 0x8007c6fc: a computer car starts on its route's start point for grid
+/// place `grid`, raised by its ride height along its up axis.
+pub fn computer_start(car: &mut Car, line: &BestLine, grid: usize) {
+    let start = line.starts.get(grid).and_then(|&at| crate::ai::Op::decode(&line.stream, at));
+    if let Some((crate::ai::Op::Point { pos, .. }, _)) = start {
+        let ride = car.handling.front.ride_height.max(car.handling.rear.ride_height);
+        let h = car.origin[2].wrapping_add(ride).wrapping_sub(0x2_4000);
+        let up = crate::math::column(&car.body.rot, 2).map(|c| crate::math::fx(c, h));
+        car.body.pos = crate::math::sub(crate::math::add(pos, up), car.body.centre);
+    }
+}
+
 /// 0x80033aa0 at race clock `now`: each computer car still racing has its
 /// laps to come estimated ([`crate::laps::Laps::estimate`], from its
 /// driver's `progress`); then each car's race time (the end of its last
@@ -491,16 +503,7 @@ impl Race {
             let grid = collision.scp.grid[entrant.grid as usize % collision.scp.grid.len()];
             let mut car = Car::load(slot as u8, entrant, &setup, (h, spec), grid, &tuning);
             if !entrant.driver.is_player() {
-                // A computer car starts on its route's start point
-                // (0x8007c6fc), raised by its ride height along its up axis.
-                let start =
-                    line.starts.get(entrant.grid as usize).and_then(|&at| crate::ai::Op::decode(&line.stream, at));
-                if let Some((crate::ai::Op::Point { pos, .. }, _)) = start {
-                    let ride = car.handling.front.ride_height.max(car.handling.rear.ride_height);
-                    let h = car.origin[2].wrapping_add(ride).wrapping_sub(0x2_4000);
-                    let up = crate::math::column(&car.body.rot, 2).map(|c| crate::math::fx(c, h));
-                    car.body.pos = crate::math::sub(crate::math::add(pos, up), car.body.centre);
-                }
+                computer_start(&mut car, &line, entrant.grid as usize);
                 ai.add(&mut car, &line, entrant.grid as usize, setup.difficulty, setup.laps, &tuning, 0);
             }
             collision.add_car(&tables, &mut car);

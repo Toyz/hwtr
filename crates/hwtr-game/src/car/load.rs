@@ -117,8 +117,8 @@ impl Car {
 
     /// The car in race slot `slot`, from its handling (the CWH), placed on
     /// its start grid point `grid` (position and quaternion, from the SCP),
-    /// for the race `setup`. Computer cars start on the AI's line instead,
-    /// which is not yet ported; this places every car on the grid.
+    /// for the race `setup`. A computer car is then moved to its route's
+    /// start ([`crate::race::computer_start`]).
     pub fn load(
         slot: u8,
         entrant: &Entrant,

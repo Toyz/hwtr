@@ -509,6 +509,10 @@ impl Ai {
             base: body.pos,
             prev_base: body.pos,
             rot,
+            // The respawn line lives in the car's record (+0x7d0), zeroed
+            // when the race loads: until the first update keeps one, its
+            // choice reads as branch 0.
+            respawn_line: Line { choice: Some(0), ..Line::default() },
             ..Driver::default()
         };
         body.ang_momentum = [0; 3];
