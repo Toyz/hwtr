@@ -12,6 +12,7 @@ pub mod handling;
 pub mod righting;
 pub mod wreck;
 pub mod impact;
+pub mod stunt;
 pub mod layout;
 mod load;
 
@@ -323,9 +324,17 @@ pub struct Car {
     /// zone's distance (tenths).
     pub lap_distance: i32,
     pub ground: Ground,
-    /// Set as the car is loaded; meanings not yet known.
-    pub unknown_618: i32,
-    pub unknown_624: i32,
+    /// Milliseconds aloft, all told (counted by the stunt watch, never reset
+    /// there), and the stunts' points.
+    pub air_total_ms: u32,
+    pub stunt_points: i32,
+    /// The stunt watch (0x8003cb74): the angular velocity in the car's axes
+    /// last step, each axis's turn since take-off and its turn when it last
+    /// reversed, and the milliseconds aloft.
+    pub stunt_spin: Vec3,
+    pub stunt_turn: Vec3,
+    pub stunt_peak: Vec3,
+    pub air_ms: u32,
     /// Set while a player's car is off the ground, for its stunt
     /// (0x8003cb74); scraping a wall for half a second clears it.
     pub airborne: u8,
@@ -338,6 +347,8 @@ pub struct Car {
     pub unknown_7cc: i32,
     /// Turbos in hand, at most 10 (0x8003c850 adds, a boost spends one).
     pub turbos: u8,
+    /// Set once the turbo has been used, or the ten-turbos hint played.
+    pub turbo_hint: u8,
     /// Non-zero while the stick is turning the car in the air.
     pub air_control: u8,
     /// Which stick axes may turn the car in the air: [`Car::ARMED_ALONG`],

@@ -85,8 +85,13 @@ pub const LAP_DISTANCE: u32 = 0x5dc;
 /// +0x8d4) and the nearest surface (found +0x8f0, normal +0x8f4, d +0x904).
 pub const FLOOR: [u32; 4] = [0x8b2, 0x8b4, 0x8c4, 0x8d4];
 pub const NEAREST: [u32; 3] = [0x8f0, 0x8f4, 0x904];
-pub const UNKNOWN_618: u32 = 0x618;
-pub const UNKNOWN_624: u32 = 0x624;
+pub const AIR_TOTAL_MS: u32 = 0x618;
+pub const STUNT_SPIN: u32 = 0x5e4;
+pub const STUNT_TURN: u32 = 0x5f4;
+pub const STUNT_PEAK: u32 = 0x604;
+pub const AIR_MS: u32 = 0x614;
+pub const TURBO_HINT: u32 = 0x875;
+pub const STUNT_POINTS: u32 = 0x624;
 pub const AIRBORNE: u32 = 0x628;
 pub const CONTACT_CLOCK: u32 = 0x61c;
 pub const CONTACT_MS: u32 = 0x620;
@@ -338,8 +343,13 @@ impl Car {
                     d: ram.i32(at + NEAREST[2]),
                 },
             },
-            unknown_618: ram.i32(at + UNKNOWN_618),
-            unknown_624: ram.i32(at + UNKNOWN_624),
+            air_total_ms: ram.i32(at + AIR_TOTAL_MS) as u32,
+            stunt_spin: ram.vec3(at + STUNT_SPIN),
+            stunt_turn: ram.vec3(at + STUNT_TURN),
+            stunt_peak: ram.vec3(at + STUNT_PEAK),
+            air_ms: ram.i32(at + AIR_MS) as u32,
+            turbo_hint: ram.u8(at + TURBO_HINT),
+            stunt_points: ram.i32(at + STUNT_POINTS),
             airborne: ram.u8(at + AIRBORNE),
             contact_clock: ram.i32(at + CONTACT_CLOCK) as u32,
             contact_ms: ram.i32(at + CONTACT_MS) as u32,
@@ -410,8 +420,13 @@ impl Car {
         ram.set_u8(at + NEAREST[0], g.nearest.found);
         ram.set_vec3(at + NEAREST[1], g.nearest.normal);
         ram.set_i32(at + NEAREST[2], g.nearest.d);
-        ram.set_i32(at + UNKNOWN_618, self.unknown_618);
-        ram.set_i32(at + UNKNOWN_624, self.unknown_624);
+        ram.set_i32(at + AIR_TOTAL_MS, self.air_total_ms as i32);
+        ram.set_vec3(at + STUNT_SPIN, self.stunt_spin);
+        ram.set_vec3(at + STUNT_TURN, self.stunt_turn);
+        ram.set_vec3(at + STUNT_PEAK, self.stunt_peak);
+        ram.set_i32(at + AIR_MS, self.air_ms as i32);
+        ram.set_u8(at + TURBO_HINT, self.turbo_hint);
+        ram.set_i32(at + STUNT_POINTS, self.stunt_points);
         ram.set_u8(at + AIRBORNE, self.airborne);
         ram.set_i32(at + CONTACT_CLOCK, self.contact_clock as i32);
         ram.set_i32(at + CONTACT_MS, self.contact_ms as i32);

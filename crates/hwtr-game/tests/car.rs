@@ -480,3 +480,95 @@ fn wreck_matches_the_original_for_computer_cars() {
         }
     }
 }
+
+#[test]
+fn stunt_awards_match_the_original() {
+    use hwtr_game::car::stunt::award;
+    let Some(exe) = common::exe() else { return };
+    let t = Tables::from_exe(&exe);
+    let Some(mut m) = common::state(&exe, "desert1-race") else { return };
+    let mut rng = common::Rng(0x5701_0000_0000_0012);
+    let out = 0x801f_8000u32;
+    let mut named = std::collections::BTreeSet::new();
+    for round in 0..20000 {
+        // Turns from none to past eight, either way, often near a tier.
+        let mut deg = || {
+            let v = match rng.below(4) {
+                0 => rng.below(3200) as i32,
+                1 => (rng.below(9) * 180) as i32 + rng.below(91) as i32 - 45,
+                2 => rng.below(400) as i32,
+                _ => 0,
+            };
+            if rng.below(2) == 0 { -v } else { v }
+        };
+        let args = [deg(), deg(), deg(), deg(), deg(), deg()];
+        let aloft = [rng.below(6000), rng.below(1200), 999, 1000, 2000, 4000, 9999][rng.below(7) as usize];
+        for k in 0..12 {
+            m.bus.write_u32(out + 4 * k, 0xdead_0000 + k);
+        }
+        m.bus.write_u32(out, 0);
+        m.bus.write_u32(out + 8, 0);
+        m.bus.write_u32(out + 4, 0);
+        m.call(
+            0x8008_0148,
+            &[args[0] as u32, args[1] as u32, args[2] as u32, args[3] as u32, args[4] as u32, args[5] as u32, aloft, out, out + 4, out + 8],
+        )
+        .unwrap();
+        let (turbos, stunt, points) = (m.bus.read_u32(out) as u8, m.bus.read_u32(out + 4) as u16, m.bus.read_u32(out + 8) as i32);
+        let ported = award(&t.stunts, (args[0], args[1]), (args[2], args[3]), (args[4], args[5]), aloft);
+        match ported {
+            Some(a) => {
+                assert_eq!((a.points, a.stunt, a.turbos), (points, stunt, turbos), "round {round}: {args:?} aloft {aloft}");
+                named.insert(a.stunt);
+            }
+            None => assert_eq!((points, turbos), (0, 0), "round {round}: {args:?} aloft {aloft}"),
+        }
+    }
+    assert!(named.len() > 40, "stunts named: {named:?}");
+}
+
+#[test]
+fn stunt_watch_matches_the_original() {
+    use hwtr_game::rand::{Rand, layout::SEED};
+    let Some(exe) = common::exe() else { return };
+    let t = Tables::from_exe(&exe);
+    let mut rng = common::Rng(0x5701_0000_0000_0013);
+    let (mut landings, mut seeds_apart) = (0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let start = m.bus.ram.clone();
+        let scoring = m.bus.ram[(0x800d_2640u32 & 0x1f_ffff) as usize] != 0;
+        for round in 0..3000 {
+            m.bus.ram.copy_from_slice(&start);
+            let at = CARS;
+            on_car(&mut m.bus.ram, at, |car, _| {
+                car.airborne = rng.below(2) as u8;
+                car.grounded = [0, 0, 2, 4][rng.below(4) as usize];
+                car.grounded_level = (rng.below(3) == 0) as u8;
+                car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (13 + rng.below(8)));
+                car.stunt_spin = [0; 3].map(|_| (rng.word() as i32) >> (13 + rng.below(8)));
+                car.stunt_turn = [0; 3].map(|_| (rng.word() as i32) >> (10 + rng.below(12)));
+                car.stunt_peak = [0; 3].map(|_| (rng.word() as i32) >> (10 + rng.below(12)));
+                car.air_ms = [0, 999, 1500, 2500, 3900, rng.below(9000)][rng.below(6) as usize];
+                car.turbos = rng.below(11) as u8;
+                car.turbo_hint = rng.below(2) as u8;
+            });
+            let seed = rng.word();
+            m.bus.write_u32(SEED, seed);
+            let mut port = m.bus.ram.clone();
+            let mut rand = Rand { seed };
+            let landed = on_car(&mut port, at, |car, _| car.watch_stunt(102, scoring, &t.stunts, &mut rand));
+            m.call(0x8003_cb74, &[at, 102]).unwrap();
+            let original = Car::read(&Ram(&mut m.bus.ram), at);
+            assert_eq!(original, Car::read(&Ram(&mut port), at), "{name} round {round} ({landed:?})");
+            if landed.is_some() {
+                landings += 1;
+                seeds_apart += (m.bus.read_u32(SEED) != rand.seed) as u32;
+            } else {
+                assert_eq!(m.bus.read_u32(SEED), rand.seed, "{name} round {round}: the seed");
+            }
+        }
+    }
+    eprintln!("{landings} landings rewarded, seeds apart after {seeds_apart}");
+    assert!(landings > 100);
+}

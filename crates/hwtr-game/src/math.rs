@@ -27,6 +27,8 @@ pub struct Tables {
     pub sqrt: Vec<u16>,
     /// Each ground surface's tyre friction, in percent (0x800beac0).
     pub surface_friction: Vec<u8>,
+    /// What stunts are worth.
+    pub stunts: crate::car::stunt::StuntTable,
 }
 
 impl Tables {
@@ -35,7 +37,8 @@ impl Tables {
         let cos = (0..COS_ENTRIES as u32).map(|i| m.u16(COS_TABLE + 2 * i).unwrap_or(0)).collect();
         let sqrt = (0..SQRT_ENTRIES as u32).map(|i| m.u16(SQRT_TABLE + 2 * i).unwrap_or(0)).collect();
         let surface_friction = (0..FRICTION_ENTRIES as u32).map(|i| m.u8(FRICTION_TABLE + i).unwrap_or(0)).collect();
-        Tables { cos, sqrt, surface_friction }
+        let stunts = crate::car::stunt::StuntTable::read(|a| m.u8(a).unwrap_or(0));
+        Tables { cos, sqrt, surface_friction, stunts }
     }
 
     /// The same tables read from main RAM with the executable loaded.
@@ -48,7 +51,8 @@ impl Tables {
         let sqrt = (0..SQRT_ENTRIES as u32).map(|i| u16_at(SQRT_TABLE + 2 * i)).collect();
         let surface_friction =
             (0..FRICTION_ENTRIES as u32).map(|i| ram[((FRICTION_TABLE + i) & 0x1f_ffff) as usize]).collect();
-        Tables { cos, sqrt, surface_friction }
+        let stunts = crate::car::stunt::StuntTable::read(|a| ram[(a & 0x1f_ffff) as usize]);
+        Tables { cos, sqrt, surface_friction, stunts }
     }
 
     /// cos(x), 0x80010afc.
