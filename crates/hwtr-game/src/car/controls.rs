@@ -18,10 +18,11 @@ pub struct Controls {
     /// first action less the second (which way each is, is not yet known).
     pub stick_across: [u8; 2],
     pub stick_along: [u8; 2],
-    /// Actions 8 (L2), 9 (R1) and 10 (R2).
+    /// Actions 8 (L2), 9 (R1), 10 (R2) and 11 (Circle, the camera view).
     pub handbrake: bool,
     pub reset: bool,
     pub turbo: bool,
+    pub view: bool,
 }
 
 impl Car {

@@ -29,6 +29,8 @@ pub struct Tables {
     pub surface_friction: Vec<u8>,
     /// What stunts are worth.
     pub stunts: crate::car::stunt::StuntTable,
+    /// The race camera's views.
+    pub views: crate::camera::Views,
 }
 
 impl Tables {
@@ -44,7 +46,8 @@ impl Tables {
         let sqrt = (0..SQRT_ENTRIES as u32).map(|i| u16_at(SQRT_TABLE + 2 * i)).collect();
         let surface_friction = (0..FRICTION_ENTRIES as u32).map(|i| byte(FRICTION_TABLE + i)).collect();
         let stunts = crate::car::stunt::StuntTable::read(&byte);
-        Tables { cos, sqrt, surface_friction, stunts }
+        let views = crate::camera::Views::read(&byte);
+        Tables { cos, sqrt, surface_friction, stunts, views }
     }
 
     /// cos(x), 0x80010afc.

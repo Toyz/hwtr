@@ -208,6 +208,9 @@ pub struct Tuning {
     pub stay_roof_percent: u8,
     pub right_roof_ms: u8,
     pub wreck_roof_tens: u8,
+    /// Below this speed (mph) the chase camera follows the car's heading,
+    /// above it its travel.
+    pub camera_travel_mph: u8,
 }
 
 /// Where TUNING.PRM keeps each setting.
@@ -224,6 +227,7 @@ mod prm {
     pub const RIGHT_ROOF_MS: u32 = 0x37;
     pub const STAY_ROOF_PERCENT: u32 = 0x38;
     pub const WRECK_ROOF_TENS: u32 = 0x39;
+    pub const CAMERA_TRAVEL_MPH: u32 = 0x0b;
 }
 
 impl Tuning {
@@ -248,6 +252,7 @@ impl Tuning {
             stay_roof_percent: at(STAY_ROOF_PERCENT),
             right_roof_ms: at(RIGHT_ROOF_MS),
             wreck_roof_tens: at(WRECK_ROOF_TENS),
+            camera_travel_mph: at(CAMERA_TRAVEL_MPH),
         }
     }
 
@@ -371,6 +376,8 @@ pub struct Car {
     pub turbos: u8,
     /// Set once the turbo has been used, or the ten-turbos hint played.
     pub turbo_hint: bool,
+    /// A turbo or a boost zone is driving it toward this speed (in/s).
+    pub boost: Option<i32>,
     /// The stick is turning the car in the air.
     pub air_control: bool,
     /// Which stick axes may turn the car in the air: each is armed once

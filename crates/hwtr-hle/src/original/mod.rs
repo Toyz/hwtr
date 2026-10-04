@@ -4,6 +4,7 @@
 //! model; only this side knows where the original keeps anything.
 
 pub mod body;
+pub mod camera;
 pub mod car;
 pub mod object;
 pub mod pad;

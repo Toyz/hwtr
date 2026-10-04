@@ -1,6 +1,7 @@
 //! Collision: the track's zones and planes, the bodies' collision points,
 //! and the contacts between them.
 
+pub mod camera;
 pub mod create;
 pub mod ground;
 pub mod object;

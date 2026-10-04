@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod body;
+pub mod camera;
 pub mod car;
 pub mod collision;
 pub mod fsm;

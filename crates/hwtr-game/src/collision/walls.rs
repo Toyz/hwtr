@@ -155,7 +155,10 @@ impl Collision {
     /// The four sides of a road zone at `p` (relative to the zone's origin):
     /// each its distance and inward normal. A side the point is well inside
     /// of has only a positive measure, not its distance, and no normal.
-    fn road_sides(&self, t: &Tables, zone: &super::scp::Zone, p: Vec3) -> [(i32, Vec3); 4] {
+    /// A road zone's cross-section at `p` (relative to the zone's origin),
+    /// between its two sections by how far along `p` is: the left and right
+    /// edges, and the points above them.
+    pub(crate) fn road_edges(&self, zone: &super::scp::Zone, p: Vec3) -> ([Vec3; 2], [Vec3; 2]) {
         let ends = &self.scp.planes[zone.first_plane as usize..zone.first_plane as usize + 2];
         let (a, b) = (ends[0].distance(p), ends[1].distance(p));
         let along = div_fx(b, a.wrapping_add(b));
@@ -163,6 +166,11 @@ impl Collision {
         let mix = |x: Vec3, y: Vec3| [0, 1, 2].map(|i| fx(x[i], along).wrapping_add(fx(y[i], 0x1000 - along)));
         let low = [0, 1].map(|e| mix(near.edges[e].pos(), far.edges[e].pos()));
         let high = [0, 1].map(|e| mix(near.edges[e].up(), far.edges[e].up()));
+        (low, high)
+    }
+
+    fn road_sides(&self, t: &Tables, zone: &super::scp::Zone, p: Vec3) -> [(i32, Vec3); 4] {
+        let (low, high) = self.road_edges(zone, p);
         // Floor (through the right edge), left wall, roof, right wall.
         let sides = [(low[1], high[1]), (low[0], low[1]), (high[0], low[0]), (high[1], high[0])];
         sides.map(|(base, toward)| {

@@ -107,10 +107,18 @@ pub struct Scp {
     pub zones: Vec<Zone>,
     pub sections: Vec<Section>,
     pub planes: Vec<Plane>,
-    /// Tables D (20 bytes each), E (12) and F (32), not yet understood.
+    /// Tables D (20 bytes each) and E (12), not yet understood.
     pub d: Vec<[u8; 20]>,
     pub e: Vec<[u8; 12]>,
-    pub f: Vec<[u8; 32]>,
+    /// The camera's path over the track before a race (0x8003acbc).
+    pub flyby: Vec<Keyframe>,
+}
+
+/// A point on the flyby: where the camera is, and what it looks at.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Keyframe {
+    pub eye: Vec3,
+    pub target: Vec3,
 }
 
 impl Scp {
@@ -161,12 +169,17 @@ impl Scp {
             .collect();
         let d = table(3).map(|o| b[o..o + 20].try_into().unwrap()).collect();
         let e = table(4).map(|o| b[o..o + 12].try_into().unwrap()).collect();
-        let f = table(5).map(|o| b[o..o + 32].try_into().unwrap()).collect();
+        let flyby = table(5)
+            .map(|o| Keyframe {
+                eye: [i32_at(o), i32_at(o + 4), i32_at(o + 8)],
+                target: [i32_at(o + 16), i32_at(o + 20), i32_at(o + 24)],
+            })
+            .collect();
         let grid = std::array::from_fn(|k| {
             let (p, q) = (24 + 16 * k, 120 + 16 * k);
             ([i32_at(p), i32_at(p + 4), i32_at(p + 8)], [i32_at(q), i32_at(q + 4), i32_at(q + 8), i32_at(q + 12)])
         });
-        Some(Scp { grid, zones, sections, planes, d, e, f })
+        Some(Scp { grid, zones, sections, planes, d, e, flyby })
     }
 
     /// The planes bounding `zone`.

@@ -66,6 +66,7 @@ pub struct RaceSetup {
     pub difficulty: u8,
 }
 use crate::car::{Car, Controls, EngineSpec, Handling, Tuning};
+use crate::camera::{Camera, Surroundings};
 use crate::collision::world::Step;
 use crate::collision::{Collision, Scp};
 use crate::rand::Rand;
@@ -90,7 +91,13 @@ pub struct Race {
     /// The system clock (0x800d240c), which the host advances 17 ms a
     /// vertical blank.
     pub clock: u32,
+    /// One camera a player.
+    pub cameras: Vec<Camera>,
 }
+
+/// How many of the views a player cycles through (the fifth, the side view,
+/// is not offered).
+const VIEWS_OFFERED: u8 = 4;
 
 impl Race {
     /// Starts the race `setup` on the track `scp`, with each car's handling
@@ -114,7 +121,8 @@ impl Race {
             collision.add_car(&tables, &mut car);
             cars.push(car);
         }
-        Race { setup, tables, tuning, cars, collision, rand: Rand::default(), time: 0, clock: 0 }
+        let cameras = cars.iter().map(|c| Camera::new(c.slot, &tables.views.one)).collect();
+        Race { setup, tables, tuning, cars, collision, rand: Rand::default(), time: 0, clock: 0, cameras }
     }
 
     /// One step of `STEP_MS`, with each player's controls (in car order).
@@ -129,6 +137,22 @@ impl Race {
         let mut step =
             Step { tuning: &self.tuning, rand: &mut self.rand, time: self.time, clock: self.clock };
         self.collision.update(&self.tables, &mut self.cars, &mut step);
+        let around = Surroundings {
+            tables: &self.tables,
+            tuning: &self.tuning,
+            views: &self.tables.views.one,
+            count: VIEWS_OFFERED,
+            racing: true,
+            time: self.time,
+            flyby: &self.collision.scp.flyby,
+            collision: &self.collision,
+        };
+        for (camera, c) in self.cameras.iter_mut().zip(controls) {
+            camera.button = c.view;
+            if let Some(car) = self.cars.get_mut(camera.car as usize) {
+                camera.step(&around, car, STEP_MS as u32, &mut self.rand);
+            }
+        }
         self.time = self.time.wrapping_add(STEP_MS as u32);
     }
 }

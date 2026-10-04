@@ -91,6 +91,8 @@ pub const STUNT_TURN: u32 = 0x5f4;
 pub const STUNT_PEAK: u32 = 0x604;
 pub const AIR_MS: u32 = 0x614;
 pub const TURBO_HINT: u32 = 0x875;
+pub const BOOSTING: u32 = 0x634;
+pub const BOOST_SPEED: u32 = 0x638;
 pub const STUNT_POINTS: u32 = 0x624;
 pub const AIRBORNE: u32 = 0x628;
 pub const CONTACT_CLOCK: u32 = 0x61c;
@@ -303,6 +305,7 @@ impl InMemory for Car {
             stunt_peak: ram.vec3(at + STUNT_PEAK),
             air_ms: ram.i32(at + AIR_MS) as u32,
             turbo_hint: ram.flag(at + TURBO_HINT),
+            boost: ram.flag(at + BOOSTING).then(|| ram.i32(at + BOOST_SPEED)),
             stunt_points: ram.i32(at + STUNT_POINTS),
             airborne: ram.flag(at + AIRBORNE),
             contact_clock: ram.i32(at + CONTACT_CLOCK) as u32,
@@ -375,6 +378,10 @@ impl InMemory for Car {
         ram.set_vec3(at + STUNT_PEAK, self.stunt_peak);
         ram.set_i32(at + AIR_MS, self.air_ms as i32);
         ram.set_flag(at + TURBO_HINT, self.turbo_hint);
+        ram.set_flag(at + BOOSTING, self.boost.is_some());
+        if let Some(speed) = self.boost {
+            ram.set_i32(at + BOOST_SPEED, speed);
+        }
         ram.set_i32(at + STUNT_POINTS, self.stunt_points);
         ram.set_flag(at + AIRBORNE, self.airborne);
         ram.set_i32(at + CONTACT_CLOCK, self.contact_clock as i32);

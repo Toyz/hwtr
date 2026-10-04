@@ -221,6 +221,7 @@ impl PadReader {
             handbrake: l(8) != 0,
             reset: l(9) != 0,
             turbo: l(10) != 0,
+            view: l(11) != 0,
         }
     }
 }

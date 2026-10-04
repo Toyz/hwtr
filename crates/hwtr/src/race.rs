@@ -18,34 +18,22 @@ use hwtr_render::{Renderer, Scene};
 /// The cars on the grid, the player's first.
 const CARS: [&str; 6] = ["deora", "twinmill", "rocket", "bisector", "snake", "hw500"];
 
-/// A camera that follows a car from behind and above, turned about it by
-/// the right stick.
-#[derive(Default)]
-struct Chase {
-    /// Radians about the car, 0 behind it.
-    around: f32,
-}
-
-impl Chase {
-    const DISTANCE: f32 = 480.0;
-    const HEIGHT: f32 = 170.0;
-    const LOOK_ABOVE: f32 = 60.0;
-
-    /// The view-projection from behind a car at `pos` facing `forward`.
-    fn matrix(&self, pos: Vec3, forward: Vec3, aspect: f32) -> Mat4 {
-        let flat = Vec3::new(forward.x, forward.y, 0.0).normalize_or(Vec3::Y);
-        let back = glam::Quat::from_rotation_z(self.around) * -flat;
-        let eye = pos + back * Self::DISTANCE + Vec3::Z * Self::HEIGHT;
-        let view = glam::camera::rh::view::look_at_mat4(eye, pos + Vec3::Z * Self::LOOK_ABOVE, Vec3::Z);
-        rrt::gpu::projection(60f32.to_radians(), aspect, 16.0, 300_000.0) * view
-    }
+/// The view-projection from a game camera: at its position, looking along
+/// its forward axis with its up axis up; its field of view across the
+/// screen (the game's near plane, 10 inches, and a far one past the track).
+fn camera_matrix(camera: &hwtr_game::camera::Camera, aspect: f32) -> Mat4 {
+    let col = |j: usize| Vec3::from_array(camera.rot.map(|row| row[j] as f32 / 4096.0));
+    let eye = Vec3::from_array(camera.pos.map(|c| c as f32 / 4096.0));
+    let across = camera.fov as f32 / 4096.0;
+    let tall = 2.0 * ((across / 2.0).tan() / aspect).atan();
+    let view = glam::camera::rh::view::look_to_mat4(eye, col(1), col(2));
+    rrt::gpu::projection(tall, aspect, 10.0, 300_000.0) * view
 }
 
 pub struct Race {
     scene: Scene,
     race: hwtr_game::race::Race,
     renderer: Option<(Renderer, wgpu::TextureFormat)>,
-    camera: Chase,
     /// How far the race's clock runs ahead of the real one, milliseconds
     /// (race_frame, 0x80033ed8, steps while it is behind).
     ahead: i64,
@@ -108,7 +96,6 @@ impl Race {
             scene,
             race,
             renderer: None,
-            camera: Chase::default(),
             ahead: 0,
             since_read: 0,
             reader: PadReader::default(),
@@ -152,8 +139,10 @@ impl Race {
     }
 
     fn view(&self, aspect: f32) -> Mat4 {
-        let (pos, rot) = self.player_pose();
-        self.camera.matrix(pos, rot.y_axis, aspect)
+        match self.race.cameras.first() {
+            Some(camera) => camera_matrix(camera, aspect),
+            None => Mat4::IDENTITY,
+        }
     }
 
     fn car_triangles(&self) -> Vec<hwtr_render::Vtx> {
