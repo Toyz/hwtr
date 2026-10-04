@@ -4,7 +4,8 @@
 //! colour with 128 as 1.0. A semi-transparent polygon (bit 31 of its mode)
 //! blends its texels that have the top bit set by its page's mode (0 half
 //! and half, 1 added, 2 subtracted, 3 a quarter added) and draws the rest
-//! as any other.
+//! as any other. An untextured polygon (bit 30) is its colour as it is, and
+//! blends whole when semi-transparent.
 
 use rrt::gpu::{DepthBuffer, GrowBuffer};
 use rrt::kit::{Pack, Staging};
@@ -78,8 +79,18 @@ fn shade(i: Out, c: u32) -> vec4f {
     return vec4f(rgb, 1.0);
 }
 
+fn flat(i: Out) -> bool {
+    return ((i.mode >> 30u) & 1u) == 1u;
+}
+
 @fragment
 fn fs(i: Out) -> @location(0) vec4f {
+    if flat(i) {
+        if (i.mode >> 31u) == 1u {
+            discard;
+        }
+        return vec4f(i.colour / 255.0, 1.0);
+    }
     let c = texel(i);
     if c == 0u || ((i.mode >> 31u) == 1u && (c & 0x8000u) != 0u) {
         discard;
@@ -89,6 +100,9 @@ fn fs(i: Out) -> @location(0) vec4f {
 
 @fragment
 fn fs_semi(i: Out) -> @location(0) vec4f {
+    if flat(i) {
+        return vec4f(i.colour / 255.0, 1.0);
+    }
     let c = texel(i);
     if (c & 0x8000u) == 0u {
         discard;
@@ -111,6 +125,12 @@ pub struct Renderer {
     overlay: GrowBuffer,
     overlay_count: u32,
     overlay_staging: Staging,
+    /// The overlay's semi-transparent shapes, by blend mode, drawn over the
+    /// world and under the overlay (the wreck's flash).
+    overlay_semi_pipelines: [wgpu::RenderPipeline; 4],
+    overlay_semi: GrowBuffer,
+    overlay_semi_ranges: [(u32, u32); 4],
+    overlay_semi_staging: Staging,
     /// What does not move (the track), uploaded once.
     vertices: wgpu::Buffer,
     count: u32,
@@ -253,6 +273,8 @@ impl Renderer {
         let pipeline = make_pipeline(device, &pipeline_layout, &shader, format, true, None);
         // The HUD: drawn over everything, both faces.
         let overlay_pipeline = make_pipeline(device, &pipeline_layout, &shader, format, false, None);
+        let overlay_semi_pipelines =
+            std::array::from_fn(|abr| make_pipeline(device, &pipeline_layout, &shader, format, false, Some(abr as u8)));
         let semi_pipelines =
             std::array::from_fn(|abr| make_pipeline(device, &pipeline_layout, &shader, format, true, Some(abr as u8)));
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -271,6 +293,10 @@ impl Renderer {
             overlay: GrowBuffer::new("overlay", wgpu::BufferUsages::VERTEX),
             overlay_count: 0,
             overlay_staging: Staging::new(),
+            overlay_semi_pipelines,
+            overlay_semi: GrowBuffer::new("overlay semi", wgpu::BufferUsages::VERTEX),
+            overlay_semi_ranges: [(0, 0); 4],
+            overlay_semi_staging: Staging::new(),
             vertices,
             count: tris.len() as u32,
             moving: GrowBuffer::new("moving", wgpu::BufferUsages::VERTEX),
@@ -322,6 +348,21 @@ impl Renderer {
             self.semi_ranges[k] = (from, sorted.len() as u32);
         }
         self.semi.write(device, queue, self.semi_staging.pack(&sorted));
+    }
+
+    /// The overlay's semi-transparent triangles, in the PlayStation screen's
+    /// pixels, each by its page's blend mode.
+    pub fn set_overlay_semi(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, tris: &[Vtx]) {
+        let abr = |v: &Vtx| ((v.mode >> 21) & 3) as usize;
+        let mut sorted = Vec::with_capacity(tris.len());
+        for k in 0..4 {
+            let from = sorted.len() as u32;
+            for t in tris.as_chunks::<3>().0.iter().filter(|t| abr(&t[0]) == k) {
+                sorted.extend_from_slice(t);
+            }
+            self.overlay_semi_ranges[k] = (from, sorted.len() as u32);
+        }
+        self.overlay_semi.write(device, queue, self.overlay_semi_staging.pack(&sorted));
     }
 
     /// The overlay's triangles, in the PlayStation screen's pixels.
@@ -388,6 +429,18 @@ impl Renderer {
                     }
                     pass.set_pipeline(&self.semi_pipelines[k]);
                     pass.set_bind_group(0, &self.group, &[]);
+                    pass.set_blend_constant(wgpu::Color { r: BLEND[k], g: BLEND[k], b: BLEND[k], a: BLEND[k] });
+                    pass.draw(from..to, 0..1);
+                }
+            }
+            if let Some(slice) = self.overlay_semi.slice() {
+                pass.set_vertex_buffer(0, slice);
+                for (k, &(from, to)) in self.overlay_semi_ranges.iter().enumerate() {
+                    if from == to {
+                        continue;
+                    }
+                    pass.set_pipeline(&self.overlay_semi_pipelines[k]);
+                    pass.set_bind_group(0, &self.overlay_group, &[]);
                     pass.set_blend_constant(wgpu::Color { r: BLEND[k], g: BLEND[k], b: BLEND[k], a: BLEND[k] });
                     pass.draw(from..to, 0..1);
                 }

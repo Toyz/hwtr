@@ -52,6 +52,11 @@ pub struct Vtx {
 impl Vtx {
     /// The whole texture page.
     pub const WHOLE: u32 = 0xffff_0000;
+    /// A mode bit: a semi-transparent polygon.
+    pub const SEMI: u32 = 1 << 31;
+    /// A mode bit (the page's unused bit 14): an untextured polygon, its
+    /// colour as it is (a POLY_F4 or POLY_G4), not modulating a texel.
+    pub const FLAT: u32 = 1 << 30;
 
     /// The texels of a sprite whose corners have `u` and `v`: the
     /// PlayStation never reaches its far edges, so neither may sampling.

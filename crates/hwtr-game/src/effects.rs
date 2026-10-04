@@ -134,6 +134,19 @@ pub struct Column {
 #[derive(Clone, Debug, Default)]
 pub struct Pending<T>(pub Option<T>);
 
+/// What a frame draws, worked out with the state but not part of it: any
+/// two are equal.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Drawn<T>(pub T);
+
+impl<T> PartialEq for Drawn<T> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl<T> Eq for Drawn<T> {}
+
 impl<T> PartialEq for Pending<T> {
     fn eq(&self, _: &Self) -> bool {
         true
@@ -310,8 +323,10 @@ pub struct Effects {
     pub origin: Vec3,
     pub embers: [Ember; 20],
     pub columns: [Column; 5],
-    /// Each player's screen flash after a wreck (0x800d0db8).
+    /// Each player's screen flash after a wreck (0x800d0db8), and the grey
+    /// it is drawn at this frame (0 for none).
     pub flash: [i16; 2],
+    pub flash_drawn: Drawn<[u8; 2]>,
     /// The chunks' shared colour (the one quad 0x80126c8c they all draw
     /// through), which every chunk drawn fades.
     pub chunk_colour: [u8; 3],
@@ -402,6 +417,7 @@ impl Effects {
             embers: [Ember::default(); 20],
             columns: [Column { frame: -1, ticks: 0xffff, ..Column::default() }; 5],
             flash: [0; 2],
+            flash_drawn: Drawn([0; 2]),
             chunk_colour: [176; 3],
             root_colour: [[0x80_8080; 3]; 6],
             wrecked: [false; 6],
@@ -682,11 +698,17 @@ impl Effects {
     /// ember moves, its velocity turns, and it leaves a spark. Runs paused
     /// or not.
     fn embers_update(&mut self, fps: i32) {
-        for f in &mut self.flash {
+        // 0x8002e128: a flash is drawn in the grey it was, then dims by 3;
+        // under 130 it is over and not drawn.
+        for (f, drawn) in self.flash.iter_mut().zip(&mut self.flash_drawn.0) {
+            *drawn = 0;
             if *f != 0 {
+                let was = *f;
                 *f = f.wrapping_sub(3);
                 if *f < 130 {
                     *f = 0;
+                } else {
+                    *drawn = was as u8;
                 }
             }
         }

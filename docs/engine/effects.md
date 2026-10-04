@@ -2,8 +2,8 @@
 title: The race's effects: puffs, skid marks, sparks
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8002bdb4 effects_init, 0x8002c0dc pool_init, 0x8002c2b8 pool_alloc, 0x8002f354 particles_update, 0x8002f618 pool_draw, 0x8002b888 trails_emit, 0x80029230 trail_push, 0x800303cc skid_segment_spawn, 0x80030fc8 dust_puff_spawn, 0x8003119c spark_puff_spawn, 0x8002e9f8 collision_sparks, 0x8002c32c spark_spawn, 0x80049ecc car_pose, 0x80068540 view_setup, 0x800d25c0 0x800d25c8 0x800d25d0 0x800d25d8 pools, 0x8011ec2c trails, 0x800d0d98 fx_enable, 0x800d2578 fps, 0x800d0b68 frame_count
-worklog: 45, 46, 47, 56, 61
+covers: US CCCPSX.EXE:0x8002bdb4 effects_init, 0x8002c0dc pool_init, 0x8002c2b8 pool_alloc, 0x8002f354 particles_update, 0x8002f618 pool_draw, 0x8002b888 trails_emit, 0x80029230 trail_push, 0x800303cc skid_segment_spawn, 0x80030fc8 dust_puff_spawn, 0x8003119c spark_puff_spawn, 0x8002e9f8 collision_sparks, 0x8002c32c spark_spawn, 0x80049ecc car_pose, 0x80068540 view_setup, 0x800d25c0 0x800d25c8 0x800d25d0 0x800d25d8 pools, 0x8011ec2c trails, 0x800d0d98 fx_enable, 0x800d2578 fps, 0x800d0b68 frame_count, 0x8002e128 flash_draw
+worklog: 45, 46, 47, 56, 61, 80
 ---
 
 # The race's effects
@@ -186,6 +186,12 @@ It does this through the cvs byte +0x1ef (iface_general+220).
     random numbers
   - a blackened model (root colour 0x181818)
   - a player's screen flash, from 160 down by 3 a frame until under 130
+    (0x8002e128): drawn first each frame in the grey it was, as a flat
+    semi-transparent quad (POLY_F4, code 0x2a) over the whole 384 x 240
+    screen (with two players each view its own, 240 / 2 - 1 high), at
+    ordering-table slot 4, under the HUD. Its blend is the page the frame
+    leaves set: mode 0, half and half (read from the hle GPU's page as the
+    quad drew, every frame of a wreck's flash)
   - twenty embers (0x8002d800), seven random numbers each, then shedding
     a spark puff every frame (0x8002d70c)
   - up to 48 of the model's root faces as chunks: each gets 15 random
@@ -263,7 +269,6 @@ anything else on this page.
 
 ## Unknown
 
-- The wreck flash's POLY_F4 blend mode; the flash is kept but not drawn.
 - The camera-space units of the billboard translation: the draw adds the
   record's acceleration x and y to it.
 - Who sets fx_enable (0x800d0d98); it is 0x1ff in every race seen.

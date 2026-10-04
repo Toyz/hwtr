@@ -1006,6 +1006,8 @@ impl Race {
         let mut overlay = self.overlay(&hud);
         overlay.extend(self.count.map(|c| self.count_quad(&c)).unwrap_or_default());
         let mvp = camera_matrix(shown.eye, Mat3::from_quat(shown.look), shown.fov, size.0 as f32 / size.1 as f32);
+        let screen = self.renderer.as_ref().map_or(hwtr_render::renderer::SCREEN, |(r, _)| r.screen);
+        let flash = self.flash_quads(screen);
         let (renderer, _) = self.renderer.as_mut().unwrap();
         for (slot, colours) in self.palettes.drain(..) {
             renderer.load_vram(queue, 384, 464 + slot as u16, &colours);
@@ -1013,8 +1015,35 @@ impl Race {
         renderer.set_moving(device, queue, &tris);
         let semi: Vec<_> = semi.into_iter().filter(|v| v.mode >> 31 == 1).collect();
         renderer.set_semi(device, queue, &semi);
+        renderer.set_overlay_semi(device, queue, &flash);
         renderer.set_overlay(device, queue, &overlay);
         renderer.draw(device, queue, target, size, mvp)
+    }
+
+    /// 0x8002e128: a wrecked player's screen flash, a grey POLY_F4 over the
+    /// whole screen (half of it, less a line, with two players), blended
+    /// half and half (the page the game leaves it: mode 0), under the HUD.
+    /// With one player every flash shows; with two, each view its own.
+    fn flash_quads(&self, screen: (f32, f32)) -> Vec<hwtr_render::Vtx> {
+        let players = self.race.hud.players;
+        let (w, h) = if players < 2 { screen } else { (screen.0, (screen.1 / 2.0).floor() - 1.0) };
+        let mut out = Vec::new();
+        for (k, &grey) in self.race.effects.flash_drawn.0.iter().enumerate() {
+            // This app draws one view, player one's.
+            if grey == 0 || (players >= 2 && k != 0) {
+                continue;
+            }
+            let corner = |x: f32, y: f32| hwtr_render::Vtx {
+                pos: [x, y, 0.0],
+                colour: grey as u32 * 0x01_01_01,
+                uv: 0,
+                mode: hwtr_render::Vtx::FLAT | hwtr_render::Vtx::SEMI,
+                window: 0,
+            };
+            let c = [corner(0.0, 0.0), corner(w, 0.0), corner(0.0, h), corner(w, h)];
+            out.extend([c[0], c[1], c[2], c[1], c[3], c[2]]);
+        }
+        out
     }
 
     /// The objects drawn apart from the track: each moving object at its
