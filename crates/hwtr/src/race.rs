@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use rrt::glam::{self, Mat3, Mat4, Vec3};
+use rrt::glam::{self, Mat3, Mat4, Quat, Vec3};
 use rrt::input::Pad;
 use rrt::wgpu;
 use hwtr_game::car::{Tuning, handling};
@@ -22,13 +22,46 @@ const CARS: [&str; 6] = ["deora", "twinmill", "rocket", "bisector", "snake", "hw
 /// The view-projection from a game camera: at its position, looking along
 /// its forward axis with its up axis up; its field of view across the
 /// screen (the game's near plane, 10 inches, and a far one past the track).
-fn camera_matrix(camera: &hwtr_game::camera::Camera, aspect: f32) -> Mat4 {
-    let col = |j: usize| Vec3::from_array(camera.rot.map(|row| row[j] as f32 / 4096.0));
-    let eye = Vec3::from_array(camera.pos.map(|c| c as f32 / 4096.0));
-    let across = camera.fov as f32 / 4096.0;
-    let tall = 2.0 * ((across / 2.0).tan() / aspect).atan();
-    let view = glam::camera::rh::view::look_to_mat4(eye, col(1), col(2));
+fn camera_matrix(eye: Vec3, rot: Mat3, fov: f32, aspect: f32) -> Mat4 {
+    let tall = 2.0 * ((fov / 2.0).tan() / aspect).atan();
+    let view = glam::camera::rh::view::look_to_mat4(eye, rot.y_axis, rot.z_axis);
     rrt::gpu::projection(tall, aspect, 10.0, 300_000.0) * view
+}
+
+/// A 4.12 rotation's columns as axes.
+fn axes(rot: &hwtr_game::math::Matrix) -> Mat3 {
+    let col = |j: usize| Vec3::from_array(rot.map(|row| row[j] as f32 / 4096.0));
+    Mat3::from_cols(col(0), col(1), col(2))
+}
+
+fn world(v: hwtr_game::math::Vec3) -> Vec3 {
+    Vec3::from_array(v.map(|c| c as f32 / 4096.0))
+}
+
+/// What is drawn of a race step: each car's pose and the camera's.
+#[derive(Clone)]
+struct Shown {
+    cars: Vec<(Vec3, Quat)>,
+    eye: Vec3,
+    look: Quat,
+    fov: f32,
+}
+
+impl Shown {
+    /// Between `self` (a step back) and `now`, `t` of the way.
+    fn toward(&self, now: &Shown, t: f32) -> Shown {
+        Shown {
+            cars: self
+                .cars
+                .iter()
+                .zip(&now.cars)
+                .map(|(a, b)| (a.0.lerp(b.0, t), a.1.slerp(b.1, t)))
+                .collect(),
+            eye: self.eye.lerp(now.eye, t),
+            look: self.look.slerp(now.look, t),
+            fov: self.fov + (now.fov - self.fov) * t,
+        }
+    }
 }
 
 pub struct Race {
@@ -40,6 +73,14 @@ pub struct Race {
     ahead: i64,
     /// Milliseconds since the pad was last read.
     since_read: u32,
+    /// Microseconds of real time not yet counted as whole milliseconds.
+    carry_us: u32,
+    /// The race as drawn a step before its last, and how far between the two
+    /// the real clock is: the game steps 40 times a second, the display at
+    /// its own rate, so what is drawn is eased between steps (the game's
+    /// logic is untouched).
+    before: Option<Shown>,
+    between: f32,
     /// Player one's controller, read once a frame as the game reads it.
     reader: PadReader,
     mapping: Mapping,
@@ -140,6 +181,9 @@ impl Race {
             renderer: None,
             ahead: 0,
             since_read: 0,
+            carry_us: 0,
+            before: None,
+            between: 1.0,
             reader: PadReader::default(),
             mapping: Mapping::default(),
             analog: false,
@@ -153,15 +197,19 @@ impl Race {
     /// time since the last read going to the first) and driving the
     /// player's car with it.
     pub fn frame(&mut self, pad: &Pad, elapsed: Duration) {
-        let ms = elapsed.as_millis().min(u32::MAX as u128) as u32;
+        let us = (elapsed.as_micros().min(u32::MAX as u128) as u32).saturating_add(self.carry_us);
+        let ms = us / 1000;
+        self.carry_us = us % 1000;
         self.since_read = self.since_read.saturating_add(ms);
         self.ahead -= ms.min(50) as i64;
         let state = pad_state(pad, self.analog);
         while self.ahead < 0 {
+            self.before = Some(self.shown());
             self.reader.read(&state, &self.mapping, std::mem::take(&mut self.since_read));
             self.race.step(&[self.reader.controls()]);
             self.ahead += STEP_MS as i64;
         }
+        self.between = (1.0 - self.ahead as f32 / STEP_MS as f32).clamp(0.0, 1.0);
         let buttons = Buttons { accept: state.holds(&self.mapping, ACCEPT), start: state.holds(&self.mapping, START) };
         self.race.frame(buttons);
         for event in self.race.events.drain(..) {
@@ -181,23 +229,35 @@ impl Race {
             .rot
             .map(|row| (0..3).fold(0i32, |s, k| s.wrapping_add(hwtr_game::math::fx(row[k] as i32, car.origin[k]))));
         let at = hwtr_game::math::sub(hwtr_game::math::add(body.pos, body.centre), turned);
-        let pos = Vec3::from_array(at.map(|c| c as f32 / 4096.0));
-        let col = |j: usize| Vec3::from_array(body.rot.map(|row| row[j] as f32 / 4096.0));
-        (pos, Mat3::from_cols(col(0), col(1), col(2)))
+        (world(at), axes(&body.rot))
     }
 
-    fn view(&self, aspect: f32) -> Mat4 {
-        match self.race.cameras.first() {
-            Some(camera) => camera_matrix(camera, aspect),
-            None => Mat4::IDENTITY,
+    /// The race as its last step left it.
+    fn shown(&self) -> Shown {
+        let cars = (0..self.race.cars.len()).map(|k| {
+            let (pos, rot) = self.pose(k);
+            (pos, Quat::from_mat3(&rot).normalize())
+        });
+        let (eye, look, fov) = match self.race.cameras.first() {
+            Some(c) => (world(c.pos), Quat::from_mat3(&axes(&c.rot)).normalize(), c.fov as f32 / 4096.0),
+            None => (Vec3::ZERO, Quat::IDENTITY, 1.0),
+        };
+        Shown { cars: cars.collect(), eye, look, fov }
+    }
+
+    /// What to draw now: between the step before and the last.
+    fn drawn(&self) -> Shown {
+        let now = self.shown();
+        match &self.before {
+            Some(before) if before.cars.len() == now.cars.len() => before.toward(&now, self.between),
+            _ => now,
         }
     }
 
-    fn car_triangles(&self) -> Vec<hwtr_render::Vtx> {
+    fn car_triangles(&self, shown: &Shown) -> Vec<hwtr_render::Vtx> {
         let mut tris = Vec::new();
-        for (slot, look) in self.scene.cars.iter().enumerate().take(self.race.cars.len()) {
-            let (pos, rot) = self.pose(slot);
-            tris.extend(hwtr_render::mesh::car_triangles(&look.model, look.clut, look.tpage, pos, rot));
+        for (look, &(pos, rot)) in self.scene.cars.iter().zip(&shown.cars) {
+            tris.extend(hwtr_render::mesh::car_triangles(&look.model, look.clut, look.tpage, pos, Mat3::from_quat(rot)));
         }
         tris
     }
@@ -213,10 +273,11 @@ impl Race {
         if self.renderer.as_ref().is_none_or(|(_, f)| *f != format) {
             self.renderer = Some((self.scene.renderer(device, queue, format), format));
         }
-        let tris = self.car_triangles();
+        let shown = self.drawn();
+        let tris = self.car_triangles(&shown);
         let hud = self.race.hud(0);
         let overlay = self.overlay(&hud);
-        let mvp = self.view(size.0 as f32 / size.1 as f32);
+        let mvp = camera_matrix(shown.eye, Mat3::from_quat(shown.look), shown.fov, size.0 as f32 / size.1 as f32);
         let (renderer, _) = self.renderer.as_mut().unwrap();
         renderer.set_moving(device, queue, &tris);
         renderer.set_overlay(device, queue, &overlay);
