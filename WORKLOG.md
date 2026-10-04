@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-26 entries: audio 1, bug 1, build 2, content 5, decomp 6, design 2, disc 1, engine 3, format 7, input 7, physics 8, race 4, render 9, test 13, tooling 13, ui 1.
+27 entries: audio 1, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 3, format 7, input 7, physics 9, race 5, render 9, test 14, tooling 13, ui 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -38,3 +38,4 @@ The [reference](docs/README.md) says what is true now.
 | 24 | [The track holds the car: collision, the pad, and racecheck](worklog/0024-the-track-holds-the-car-collision-the-pad-and-racecheck.md) | 2026-10-03 | physics, collision, input, test, tooling |
 | 25 | [A port, not an emulator; the camera; the race step's missing pieces](worklog/0025-a-port-not-an-emulator-the-camera-and-the-race-step-s-missing-pieces.md) | 2026-10-04 | architecture, physics, camera, input, tooling |
 | 26 | [A race from flyby to results; the HUD; fences](worklog/0026-a-race-from-flyby-to-results-the-hud-fences.md) | 2026-10-03 | race, ui, physics, render, input |
+| 27 | [Computer cars drive their route; cars meet](worklog/0027-computer-cars-drive-their-route-cars-meet.md) | 2026-10-03 | race, physics, decomp, test |
