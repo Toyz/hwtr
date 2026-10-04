@@ -114,7 +114,7 @@ struct Meter {
 
 /// The turbo bars' colours (0x800becdc), and their heights over the meter
 /// by player count (0x800becbe, all 0 in the game).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MeterTables {
     pub colours: [[u8; 3]; 10],
     pub rise: [[u8; 10]; 3],
@@ -198,7 +198,7 @@ impl Countdown {
 }
 
 /// The HUD for the race's players.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Hud {
     /// The players (1 or 2; 0 for a race without one), the cars and the
     /// laps it counts against.
@@ -218,6 +218,116 @@ pub struct Hud {
     /// When each player's car was last seen going the wrong way, while the
     /// warning shows (0x800bead0 +0 and +236).
     wrong_way_from: [Option<u32>; 2],
+    /// Each player's stunt announcement (0x800bead0 + 240 per player).
+    pub announcements: [Announcement; 2],
+}
+
+/// Half of an announced line (16 bytes at 0x800beae4 + 32 k): the clip it
+/// shows in, where its text starts, its row, how far it moves a frame,
+/// its text's width, whether it has come to rest in the middle, whether it
+/// has gone, and how much tighter than the font its letters sit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Slide {
+    pub lo: i16,
+    pub hi: i16,
+    pub x: i16,
+    pub y: i16,
+    pub speed: i16,
+    pub width: u16,
+    pub settled: bool,
+    pub done: bool,
+    pub squeeze: u8,
+}
+
+/// A landed stunt's announcement (0x80064dec): three lines, each drawn in
+/// two halves, the even letters coming in from the right and the odd from
+/// the left (0x80064724).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Announcement {
+    pub active: bool,
+    /// When the halves came to rest (0 before).
+    pub from: u32,
+    pub points: i32,
+    pub lines: [String; 3],
+    pub slides: [[Slide; 2]; 3],
+}
+
+/// The words an announcement puts after its numbers: string 217
+/// ("Points"), 292 ("Turbo") and 293 ("Turbos").
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StuntWords {
+    pub points: String,
+    pub turbo: String,
+    pub turbos: String,
+}
+
+/// 0x80064d44: `s`'s width in the race's text font, each letter's advance
+/// less `squeeze`.
+fn text_width(style: &impl crate::front::screen::Style, s: &str, squeeze: u8) -> u16 {
+    let b = s.as_bytes();
+    let mut w = 0i32;
+    for (i, &c) in b.iter().enumerate() {
+        w += style.advance(c, b.get(i + 1).copied().unwrap_or(0)) - squeeze as i32;
+    }
+    w as u16
+}
+
+/// 0x80063c70 (`leftward`) and 0x80063e5c: half `m` of line `s`, its
+/// letters from the `offset`-th counted in steps of `every` drawn where
+/// they fall inside the clip, in `colour`; then the half moves, until its
+/// middle meets the clip's (it rests there) and on with its speed once
+/// at rest. The left-moving half is gone once its text is past the clip's
+/// left, the other once it starts past the right.
+fn slide_text(
+    style: &impl crate::front::screen::Style,
+    s: &str,
+    m: &mut Slide,
+    every: u8,
+    offset: u8,
+    leftward: bool,
+    colour: [u8; 3],
+    out: &mut Vec<Sprite>,
+) {
+    let b = s.as_bytes();
+    let mut pen = m.x;
+    let mut k = offset;
+    for (i, &c) in b.iter().enumerate() {
+        if m.hi < pen {
+            break;
+        }
+        k = k.wrapping_add(1);
+        if pen >= m.lo && every != 0 && k % every == 0 {
+            out.push(Sprite { font: 0, glyph: c.to_ascii_uppercase(), x: pen, y: m.y, colour, layer: 1 });
+        }
+        let adv = style.advance(c, b.get(i + 1).copied().unwrap_or(0)) - m.squeeze as i32;
+        pen = pen.wrapping_add(adv as i16);
+    }
+    let mid = (m.lo as i32 + m.hi as i32) / 2;
+    let half = (m.width >> 1) as i32;
+    let (x, speed) = (m.x as i32, m.speed as i32);
+    if leftward {
+        if m.lo >= pen {
+            m.done = true;
+            return;
+        }
+        if !m.settled && mid >= x + half + speed {
+            m.settled = true;
+            m.x = (mid - half) as i16;
+        } else {
+            m.x = m.x.wrapping_add(m.speed);
+        }
+    } else {
+        if m.x >= m.hi {
+            m.done = true;
+            return;
+        }
+        if !m.settled && x + half - speed >= mid {
+            m.settled = true;
+            m.x = (mid - half) as i16;
+        } else {
+            m.x = m.x.wrapping_sub(m.speed);
+        }
+    }
 }
 
 /// The sound of a full turbo meter.
@@ -260,6 +370,7 @@ impl Hud {
             sounds: Vec::new(),
             countdown: Countdown::default(),
             wrong_way_from: [None; 2],
+            announcements: Default::default(),
         }
     }
 
@@ -310,6 +421,129 @@ impl Hud {
             let added = if added as u32 + before as u32 >= 11 { 10u8.wrapping_sub(before) } else { added };
             *m = Meter { from: now, before, added, arriving: Some(9), flashing: true, sounded: false };
         }
+    }
+
+    /// The announcement of 0x80064dec: player `player` landed a stunt
+    /// named `name` for `points` (0 when not scored) and `turbos`. The name
+    /// goes on the middle line (a name of 40 letters or more would run on
+    /// to the last and be moved up a line; none is), the points or the
+    /// turbos on the last; the lines are centred on the widest, each set to
+    /// come in from both sides. With two players only the points show.
+    pub fn announce(
+        &mut self,
+        player: usize,
+        points: i32,
+        name: &str,
+        turbos: u8,
+        words: &StuntWords,
+        style: &impl crate::front::screen::Style,
+    ) {
+        let split = self.players == 2;
+        let Some(a) = self.announcements.get_mut(player) else { return };
+        a.active = true;
+        a.from = 0;
+        a.points = points;
+        a.lines = Default::default();
+        let hi = if split { 260 } else { 275 };
+        let rows: [i16; 3] = if split && player == 0 { [54, 74, 94] } else { [160, 180, 200] };
+        for (k, line) in a.slides.iter_mut().enumerate() {
+            line[0] = Slide { lo: 65, hi, x: hi, y: rows[k], speed: -20, ..Slide::default() };
+        }
+        if name.len() >= 40 {
+            a.lines[1] = name[..40].to_string();
+            a.lines[2] = name[40..].to_string();
+        } else {
+            a.lines[1] = name.to_string();
+        }
+        if !a.lines[2].is_empty() {
+            a.lines[0] = std::mem::take(&mut a.lines[1]);
+            a.lines[1] = std::mem::take(&mut a.lines[2]);
+        }
+        a.lines[2] = if points != 0 {
+            format!("{} {}", points as i16, words.points)
+        } else if turbos == 1 {
+            format!("+{turbos} {}", words.turbo)
+        } else {
+            format!("+{turbos} {}", words.turbos)
+        };
+        for k in 0..3 {
+            a.slides[k][0].width = text_width(style, &a.lines[k], a.slides[k][0].squeeze);
+        }
+        // The widest first (a bubble sort), the others moved half the
+        // difference right.
+        let mut order = [0usize, 1, 2];
+        loop {
+            let mut swapped = false;
+            for i in 0..2 {
+                if a.slides[order[i]][0].width < a.slides[order[i + 1]][0].width {
+                    order.swap(i, i + 1);
+                    swapped = true;
+                }
+            }
+            if !swapped {
+                break;
+            }
+        }
+        let widest = a.slides[order[0]][0].width as i32;
+        for &k in &order[1..] {
+            let m = &mut a.slides[k][0];
+            m.x = m.x.wrapping_add(((widest - m.width as i32) / 2) as i16);
+        }
+        for line in &mut a.slides {
+            let m = line[0];
+            line[1] = m;
+            line[1].x = (m.lo as u16).wrapping_sub(m.width).wrapping_sub((m.x as u16).wrapping_sub(m.hi as u16)) as i16;
+        }
+        if split {
+            a.lines[0].clear();
+            a.lines[1].clear();
+            if points == 0 {
+                a.lines[2].clear();
+            }
+        }
+    }
+
+    /// 0x80064724: player `player`'s announcement this frame, at race time
+    /// `now`, in yellow. Once both halves of any line are at rest it stands
+    /// a second, then the lines slide off to the left whole.
+    pub fn announcement(&mut self, player: usize, now: u32, style: &impl crate::front::screen::Style) -> Vec<Sprite> {
+        let mut out = Vec::new();
+        let Some(a) = self.announcements.get_mut(player) else { return out };
+        if !a.active {
+            return out;
+        }
+        if a.slides.iter().all(|l| l[0].done && l[1].done) {
+            a.active = false;
+            return out;
+        }
+        if a.from == 0 {
+            if a.slides.iter().any(|l| l[0].settled || l[1].settled) {
+                a.from = now;
+                for l in &mut a.slides {
+                    l[0].speed = 0;
+                    l[1].speed = 0;
+                }
+            }
+        } else if now.wrapping_sub(a.from) >= 1001 {
+            for l in &mut a.slides {
+                l[0].speed = -20;
+                l[1].done = true;
+            }
+        }
+        let colour = half([255, 255, 0]);
+        for k in 0..3 {
+            if a.lines[k].is_empty() {
+                continue;
+            }
+            let [left, right] = &mut a.slides[k];
+            if left.done || right.done {
+                slide_text(style, &a.lines[k], left, 1, 0, true, colour, &mut out);
+            } else {
+                slide_text(style, &a.lines[k], left, 2, 1, true, colour, &mut out);
+                slide_text(style, &a.lines[k], right, 2, 0, false, colour, &mut out);
+            }
+        }
+        out
     }
 
     /// 0x800638ec: player `player`'s HUD, following `car`, at race time
@@ -579,6 +813,10 @@ pub struct ResultsText {
     /// (216).
     pub demo: String,
     pub wrong_way: String,
+    /// The string table, for the stunts' names, and the words after an
+    /// announcement's numbers.
+    pub strings: Vec<String>,
+    pub stunt_words: StuntWords,
 }
 
 /// 0x80063bc4: `s` in the race's text font from (`x`, `y`), left to

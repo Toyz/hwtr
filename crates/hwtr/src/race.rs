@@ -517,6 +517,12 @@ impl Race {
             no_time: strings.get(215).to_string(),
             demo: strings.get(214).to_string(),
             wrong_way: strings.get(216).to_string(),
+            strings: (0..hwtr_game::front::strings::STRING_COUNT).map(|k| strings.get(k).to_string()).collect(),
+            stunt_words: hwtr_game::hud::StuntWords {
+                points: strings.get(217).to_string(),
+                turbo: strings.get(292).to_string(),
+                turbos: strings.get(293).to_string(),
+            },
             cars: (0..42u32)
                 .map(|k| {
                     let at = word(0x800c_5d8c + 4 * k);

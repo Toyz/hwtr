@@ -1087,6 +1087,13 @@ impl Race {
                 if let Some(player) = self.cameras.iter().position(|c| c.car as usize == slot) {
                     self.hud.turbos_given(player, before, award.turbos, self.time);
                 }
+                // 0x80064dec: the announcement, on the car's player's HUD.
+                if let Some(kit) = &self.pause_kit {
+                    let text = &self.results_text;
+                    let name = award.name.and_then(|n| text.strings.get(n as usize)).map_or("", |s| s.as_str());
+                    let player = self.cars[slot].player as usize;
+                    self.hud.announce(player, award.points, name, award.turbos, &text.stunt_words, kit.style());
+                }
                 self.stunts[slot] = Some(award);
             }
         }
@@ -1155,6 +1162,9 @@ impl Race {
                 self.events.push(RaceEvent::Effect { id: id as u8, importance: 1 });
             }
             if let Some(kit) = &self.pause_kit {
+                if self.hud.show[player] & crate::hud::show::MESSAGES != 0 {
+                    out.extend(self.hud.announcement(player, self.time, kit.style()));
+                }
                 out.extend(self.hud.wrong_way(player, car, self.time, kit.style(), &self.results_text.wrong_way));
             }
             return out;

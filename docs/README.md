@@ -50,6 +50,7 @@ How the game works, subsystem by subsystem.
 | [The race's results: snapshots and the table](engine/results.md) | partial | US | US CCCPSX.EXE:0x8007fe48 snapshot_init, 0x8007fe7c snapshot_reset, 0x8007feb0 snapshot_take, 0x80080014 snapshot_count, 0x80080020 snapshot_put_back, 0x8004a8fc, 0x8004aef8, 0x8003b610, 0x8003bafc, 0x8007e6e0, 0x8007ec08, 0x8006ba48, 0x8007f6f8, 0x80064b8c hud_draw, 0x80064b64 hud_mode, 0x8006452c, 0x80064040, 0x80064294, 0x800644c0, 0x80063ab4, 0x80063bc4, 0x8009b5b8, 0x80135a18 snapshot buffer, 0x800d2718 snapshot count, 0x800d271c bytes used, 0x800d2720 last taken, 0x800d2688 standings order, 0x801399b0 player names |
 | [The rigid body and its integrator](engine/rigid-body.md) | partial | US | US CCCPSX.EXE:0x8006c504 integrate, 0x80071bc0 align, 0x8003d5cc damp_spin, 0x80025be4 orthonormalize, 0x80026884 and 0x800273ec the 64x16-bit matrix products, 0x80026650 vec_length |
 | [The table-driven state machines](engine/state-machine.md) | solid | US | US CCCPSX.EXE:0x8006ba60 fsm_init, 0x8006baac fsm_post, 0x8006bb18 fsm_tick, 0x800c5bdc fsm_main, 0x800c6640 fsm_second |
+| [The stunt announcement](engine/stunt-announcement.md) | complete | US | US CCCPSX.EXE:0x80064dec stunt_announce, 0x80064724 stunt_text, 0x80063c70 slide_left, 0x80063e5c slide_right, 0x80064d44 text_width, 0x80080d6c stunt_name, 0x800bead0 hud_player, 0x800bf114 stunt_names |
 
 ## Content
 
