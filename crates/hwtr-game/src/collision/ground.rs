@@ -13,9 +13,10 @@ impl Collision {
     /// zone's surface under its centre, a plane zone's planes. A road zone
     /// with flag 0x2000 turns gravity toward its surface (the loops), as
     /// does a wheel's ground where the car's zone holds gravity (car flag
-    /// 0x400). (The original keeps
-    /// its best distances across the cars; each car's first candidate resets
-    /// them, so they are kept per car here.)
+    /// 0x400). The best distances so far start at 0 once and run on across
+    /// the cars: a car's first candidate takes its place regardless, but a
+    /// player's car whose wheel gave it a nearest surface and no floor
+    /// measures its zones' against the last car's best.
     pub fn ground(&self, t: &Tables, cars: &mut [Car]) {
         let mut search = vec![false; cars.len()];
         for id in self.cars.iter() {
@@ -50,6 +51,7 @@ impl Collision {
                 }
             }
         }
+        let (mut nearest_d, mut floor_d) = (0i32, 0i32);
         for id in self.cars.iter() {
             let obj = &self.objects[id];
             let Some(slot) = obj.car else { continue };
@@ -57,7 +59,6 @@ impl Collision {
             if car.body.asleep || !search[slot as usize] {
                 continue;
             }
-            let (mut nearest_d, mut floor_d) = (0i32, 0i32);
             for zone_id in obj.zones.iter() {
                 let zone = self.scp.zones[zone_id as usize];
                 let origin = zone.origin();

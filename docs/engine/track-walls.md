@@ -2,8 +2,8 @@
 title: Keeping bodies inside the track (the walls stages)
 status: solid
 discs: US
-covers: US CCCPSX.EXE:0x80054964 walls, 0x800572f0 computer_walls, 0x8012c6ec contacts, 0x800d2674 contact_count, 0x800d2670 computer_objects
-worklog: 65, 66
+covers: US CCCPSX.EXE:0x800536b4 ground, 0x80054964 walls, 0x800572f0 computer_walls, 0x8012c6ec contacts, 0x800d2674 contact_count, 0x800d2670 computer_objects
+worklog: 65, 66, 73
 ---
 
 # Keeping bodies inside the track
@@ -28,6 +28,35 @@ For each side a point is outside of (`d <= 0`):
    flagged takes 0x800 and the wreck stage flips it. Anything else is
    put to sleep.
 3. Otherwise the body moves out along the normal by the depth.
+
+## The ground under each car (0x800536b4)
+
+Just before the walls, each awake car (the cars' list, newest first) gets
+two planes: the nearest surface (+0x8f0) and the nearest floor (+0x8b2,
+with the zone origin it is measured from).
+
+1. **Wheels.** A player's car starts from its wheels, last to first. Each
+   wheel on the ground makes its contact plane the nearest surface. The
+   first that faces up (normal z over 0x800), or any if the car's zone
+   holds gravity (car flag 0x400), is also the floor (origin 0), and ends
+   the car's search. Under 0x400 gravity turns toward it.
+2. **Zones.** Every other car, and a player's with no floor yet, searches
+   the zones its object is in:
+   - A road zone gives its surface under the centre (the right edge's
+     points, mixed between the sections). It is a floor if it faces
+     against gravity (over 0x800). A road zone with flag 0x2000 turns
+     gravity toward it.
+   - A plane zone gives each plane but its portals and kind 1. It is a
+     floor if its normal's z is over 0x800.
+
+   A candidate is taken if the car has none yet, or if it is nearer than
+   the best so far. **The best distances (nearest and floor) start at 0
+   once and run on across the cars.** A car's first candidate takes its
+   place regardless. But a player's car whose wheels gave it a nearest
+   surface and no floor compares its zones' candidates with the best the
+   car before it left.
+3. **Floor wins.** A car with both ends with its nearest surface set to
+   its floor, the floor's distance with its origin folded in.
 
 ## Points (0x80054964)
 
@@ -77,6 +106,9 @@ every such car, then road zones.
 for the sides' reach. Tests in `crates/hwtr-hle/tests/collision.rs`:
 
 - `walls_match_the_original`: 60 shoved steps over four states.
+- `ground_matches_the_original`: 120 steps over nine states, with a
+  player's wheels on a steep surface two steps in three, gravity up and the car
+  before it raised, so the carried-over distance decides.
 - `computer_walls_match_the_original`: 80 steps over four states, with
   computer cars wrecked or finished at random and half-turned about each
   axis. It checks every contact and car, about 1200 boxes, 300 of them on

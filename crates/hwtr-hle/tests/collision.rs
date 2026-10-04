@@ -180,8 +180,11 @@ fn wheels_match_the_original() {
 fn ground_matches_the_original() {
     let Some(exe) = common::exe() else { return };
     let t = hwtr_game::math::Tables::from_exe(&exe);
-    let (mut from_wheels, mut from_zones) = (0, 0);
-    for name in STATES {
+    let (mut from_wheels, mut from_zones, mut steep) = (0, 0, 0);
+    // The other tracks too: Snake River Mine's walls are where a steep
+    // wheel's search first told.
+    let more = ["desert2-race", "desert3-race", "glacial1-race", "glacial2-race", "glacial3-race"];
+    for name in STATES.into_iter().chain(more) {
         let Some(mut m) = common::state(&exe, name) else { continue };
         // Every other road zone turns gravity toward its surface, as a
         // loop's do (Desert has none).
@@ -197,10 +200,17 @@ fn ground_matches_the_original() {
         let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
         let mut cars = cars_from(&mut m.bus.ram);
         let mut rng = common::Rng(0x6e0d_0000_0000_000d);
-        for step in 0..40 {
+        for step in 0..120 {
+            let steep_step = rng.below(3) != 0;
             for (k, car) in cars.iter_mut().enumerate() {
                 let mut push = [0; 3].map(|_| (rng.word() as i32) >> (10 + rng.below(8)));
                 push[2] = (rng.word() as i32) >> (13 + rng.below(6));
+                // The car searched just before the player's (the list runs
+                // newest first) well above its road, so its best distance
+                // is a long one.
+                if steep_step && k == 1 {
+                    push[2] = push[2].wrapping_add(0x6_0000);
+                }
                 car.body.pos = hwtr_game::math::add(car.body.pos, push);
                 car.body.asleep = false;
                 // Now and then the car's zone holds gravity.
@@ -221,6 +231,27 @@ fn ground_matches_the_original() {
             for addr in [0x8004_e47c, 0x8005_15e0, 0x8005_1bc0] {
                 m.call(addr, &[]).unwrap();
             }
+            // Two steps in three a player's wheels stand on something steep: a
+            // nearest surface but no floor, so its zones are searched
+            // against the best distances the cars before it left.
+            if steep_step {
+                let mut original = cars_from(&mut m.bus.ram);
+                for (k, car) in original.iter_mut().enumerate() {
+                    if car.flags & 1 != 0 && car.flags & 0x400 == 0 {
+                        for w in car.wheels.iter_mut() {
+                            w.on_ground = true;
+                            w.normal = [0xec8, 0x100, 0x680];
+                        }
+                        // Upside down to gravity, so a road is no floor.
+                        car.body.gravity_dir = [0, 0, 0x1000];
+                        car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
+                    }
+                }
+                for (c, o) in cars.iter_mut().zip(&original) {
+                    c.wheels = o.wheels.clone();
+                    c.body.gravity_dir = o.body.gravity_dir;
+                }
+            }
             world.ground(&t, &mut cars);
             m.call(0x8005_36b4, &[]).unwrap();
             let original = cars_from(&mut m.bus.ram);
@@ -229,6 +260,9 @@ fn ground_matches_the_original() {
                 assert_eq!(a, b, "{name} step {step}: car {k}");
                 if a.ground.floor.found {
                     if a.ground.origin == [0; 3] { from_wheels += 1 } else { from_zones += 1 }
+                } else if a.ground.nearest.found && a.flags & 1 != 0 && a.ground.nearest.normal != [0xec8, 0x100, 0x680]
+                {
+                    steep += 1;
                 }
             }
             let (w, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
@@ -236,7 +270,11 @@ fn ground_matches_the_original() {
             cars = original;
         }
     }
-    assert!(from_wheels > 0 && from_zones > 0, "floors from wheels {from_wheels}, from zones {from_zones}");
+    eprintln!("floors from wheels {from_wheels}, from zones {from_zones}, players with no floor {steep}");
+    assert!(
+        from_wheels > 0 && from_zones > 0 && steep > 0,
+        "floors from wheels {from_wheels}, from zones {from_zones}, players with no floor {steep}"
+    );
 }
 
 #[test]

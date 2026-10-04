@@ -123,6 +123,7 @@ fn main() {
     // The other cars as the original's collision step finds them (its
     // computer cars have moved by then).
     let at_collision: Rc<RefCell<Vec<Car>>> = Rc::default();
+    let at_collision_ram: Rc<RefCell<Vec<u8>>> = Rc::default();
     // A frame ends at the vertical blank wherever the game is, so a step
     // may straddle two frames: only a frame that ran a whole step (the
     // cars' update, 0x8004064c, through the collision's return) is
@@ -133,11 +134,12 @@ fn main() {
     let whole: Rc<RefCell<Vec<&'static str>>> = Rc::default();
     let start: Rc<RefCell<Vec<u8>>> = Rc::default();
     let end: Rc<RefCell<Vec<u8>>> = Rc::default();
-    let snap = at_collision.clone();
+    let (snap, snap_ram) = (at_collision.clone(), at_collision_ram.clone());
     let (log, keep) = (whole.clone(), end.clone());
     hle.m.check_through_interrupts(0x8004_de6c, move |_, bus| {
         let mut copy = bus.ram.clone();
         *snap.borrow_mut() = cars(&mut copy);
+        *snap_ram.borrow_mut() = copy;
         let (log, keep) = (log.clone(), keep.clone());
         Box::new(move |_, bus| {
             log.borrow_mut().push("collided");
@@ -203,9 +205,18 @@ fn main() {
         n.laps.place = o.laps.place;
         // cars_update for the player's car: its timers, then car_update
         // (a reset needs the whole race, and is only reported).
+        // (The reset's grace over, the car is back in the collision: the
+        // world below is the original's as the collision begins.)
         n.run_timers(25);
         if n.wants_reset() {
             tracing::info!("frame {f}: a reset (not checked here)");
+            resets += 1;
+            continue;
+        }
+        // A power-up taken (0x80067f98 in the pair search) is the race's
+        // to give.
+        if o.power_up != n.power_up {
+            tracing::info!("frame {f}: a power-up (not checked here)");
             resets += 1;
             continue;
         }
@@ -234,9 +245,16 @@ fn main() {
         for (n, o) in native.iter_mut().zip(at_collision.borrow().iter()).skip(1) {
             *n = o.clone();
         }
+        // And the collision world as it begins: the cars' update may have
+        // taken objects out of it, put them back on the road or made new
+        // ones (the player's own object is the cars' update's only to
+        // put back, which the original has done by then too).
+        world = hwtr_hle::original::world::collision(&Ram(&mut at_collision_ram.borrow_mut())).0;
         world.contacts.clear();
         world.pairs.clear();
         world.step = world.step.wrapping_add(1);
+        // Wheels a wreck threw join the world first.
+        world.add_flying();
         world.update_points(&mut native);
         world.find_pairs(&tables, &mut native);
         // The player's car as the collision step finds it, and the world
@@ -262,6 +280,7 @@ fn main() {
             let n = &mut native[0];
             (n.crashed, n.turbo_fired, n.flame_out) = (Pending(None), Pending(None), Pending(None));
             (n.wreck_draws, n.sounds, n.lines) = (Pending(None), Pending(None), Pending(None));
+            n.jolted = false;
         }
         let d = diff(&original[0], &native[0]);
         if d.is_empty() {
@@ -342,7 +361,17 @@ fn main() {
             }
             if let Some((_, w0, c0)) = stages.first() {
                 for (k, (a, b)) in w0.objects.iter().zip(&before_stages.0.objects).enumerate() {
-                    for line in diff(a, b).iter().take(4) {
+                    let d = diff(a, b);
+                    if !d.is_empty() {
+                        tracing::warn!(
+                            "  before the stages, object {k}: kind {:?}, volume {:?}, heft {}, flags {:#x}",
+                            a.kind,
+                            a.volume,
+                            a.heft,
+                            a.flags
+                        );
+                    }
+                    for line in d.iter().take(4) {
                         tracing::warn!("  before the stages, object {k}: {line}");
                     }
                 }
@@ -352,6 +381,11 @@ fn main() {
                 for line in diff(&c0[0], &before_stages.1[0]).iter().take(10) {
                     tracing::warn!("  before the stages, car: {line}");
                 }
+            }
+            // A trigger the step fires can make objects in the original's
+            // step (the port's race makes them after), which renumbers them.
+            if original_world.objects.len() != world.objects.len() {
+                tracing::warn!("  objects: original {}, port {}", original_world.objects.len(), world.objects.len());
             }
             // The player's object: the zones its points are in.
             if let Some(k) = world.objects.iter().position(|o| o.car == Some(0)) {
@@ -372,5 +406,5 @@ fn main() {
         }
         reported += 1;
     }
-    tracing::info!("{steps} steps: {same} the same, {reported} different, {resets} resets not checked");
+    tracing::info!("{steps} steps: {same} the same, {reported} different, {resets} resets and power-ups not checked");
 }
