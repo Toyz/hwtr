@@ -5,9 +5,10 @@ use std::path::Path;
 use std::time::Duration;
 
 use glam::{Mat3, Mat4, Vec3};
-use hwtr_game::car::{Controls, Tuning, handling};
+use hwtr_game::car::{Tuning, handling};
 use hwtr_game::collision::Scp;
 use hwtr_game::math::Tables;
+use hwtr_game::pad::{Mapping, PadKind, PadReader, PadState};
 use hwtr_game::race::{Driver, Entrant, RaceSetup, STEP_MS};
 use hwtr_input::{Pad, buttons};
 use hwtr_render::scene::Layout;
@@ -46,30 +47,19 @@ pub struct Race {
     camera: Chase,
     /// Time not yet stepped.
     pending: Duration,
+    /// Player one's controller, read once a frame as the game reads it.
+    reader: PadReader,
+    mapping: Mapping,
 }
 
-/// A pad as the race's actions (0 to 255 each): the left stick or the
-/// d-pad steers, Cross or R2 accelerates, Square or L2 brakes, Circle or R1
-/// is the handbrake, and the left stick or the d-pad is also the stick in
-/// the air (as the original reads the d-pad into both).
-fn controls(pad: &Pad) -> Controls {
-    let held = |b: u16| if pad.held(b) { 255 } else { 0 };
-    let side = |v: u8, positive: bool| -> u8 {
-        let d = v as i32 - 128;
-        let d = if positive { d } else { -d };
-        (d.max(0) * 2).min(255) as u8
-    };
-    let (right, left) = (side(pad.lx, true).max(held(buttons::RIGHT)), side(pad.lx, false).max(held(buttons::LEFT)));
-    let (down, up) = (side(pad.ly, true).max(held(buttons::DOWN)), side(pad.ly, false).max(held(buttons::UP)));
-    Controls {
-        steer_left: left,
-        steer_right: right,
-        accelerate: held(buttons::CROSS).max(held(buttons::R2)),
-        brake: held(buttons::SQUARE).max(held(buttons::L2)),
-        stick_across: [right, left],
-        stick_along: [down, up],
-        handbrake: (held(buttons::CIRCLE) | held(buttons::R1)) & 1,
-        ..Controls::default()
+/// The pad as the original's controller read takes it: a DualShock in
+/// analog mode or a digital pad, by the pad's ANALOG state.
+fn pad_state(pad: &Pad) -> PadState {
+    PadState {
+        kind: if pad.analog { PadKind::Analog } else { PadKind::Digital },
+        buttons: pad.buttons,
+        left: [pad.lx, pad.ly],
+        right: [pad.rx, pad.ry],
     }
 }
 
@@ -107,19 +97,24 @@ impl Race {
         };
         let race = hwtr_game::race::Race::new(setup, scp, &[parts], Tables::from_exe(&exe), tuning);
         tracing::info!("race on {t}: {} car(s) ported", race.cars.len());
-        Ok(Race { scene, race, renderer: None, camera: Chase::default(), pending: Duration::ZERO })
+        Ok(Race {
+            scene,
+            race,
+            renderer: None,
+            camera: Chase::default(),
+            pending: Duration::ZERO,
+            reader: PadReader::default(),
+            mapping: Mapping::default(),
+        })
     }
 
-    /// One display frame of `elapsed`: the pad drives the player's car for
-    /// as many race steps as have come due; the right stick turns the camera.
+    /// One display frame of `elapsed`: the pad is read, then drives the
+    /// player's car for as many race steps as have come due.
     pub fn frame(&mut self, pad: &Pad, elapsed: Duration) {
-        let axis = (pad.rx as f32 - 128.0) / 127.5;
-        if axis.abs() > 0.15 {
-            self.camera.around -= axis * 0.05;
-        }
         let step = Duration::from_millis(STEP_MS as u64);
         self.pending = (self.pending + elapsed).min(step * 8);
-        let c = controls(pad);
+        self.reader.read(&pad_state(pad), &self.mapping, elapsed.as_millis().min(u32::MAX as u128) as u32);
+        let c = self.reader.controls();
         while self.pending >= step {
             self.race.step(&[c]);
             self.pending -= step;
@@ -178,7 +173,8 @@ impl Race {
     pub fn shot(&mut self, width: u32, height: u32, steps: u32) -> Result<(Vec<u8>, [f32; 3]), String> {
         let pad = Pad { buttons: buttons::CROSS, ..Pad::default() };
         for _ in 0..steps {
-            self.race.step(&[controls(&pad)]);
+            self.reader.read(&pad_state(&pad), &self.mapping, STEP_MS as u32);
+            self.race.step(&[self.reader.controls()]);
         }
         let (pos, _) = self.player_pose();
         let tris = self.car_triangles();
