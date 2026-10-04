@@ -264,8 +264,9 @@ impl PowerUps {
         }
     }
 
-    /// 0x80065520 for power-up `def`, with the cars it unlocks noted.
-    fn apply(&mut self, def: usize, car: &mut Car, _now: u32) {
+    /// 0x80065520 for power-up `def`, with the cars it unlocks noted (a
+    /// player's car in slot 0 or 1 only).
+    pub fn apply(&mut self, def: usize, car: &mut Car, _now: u32) {
         let d = self.defs[def].clone();
         let [first, second] = apply(&d, car);
         if car.flags & 1 != 0 && (car.slot as usize) < 2 {
