@@ -7,6 +7,7 @@
 
 pub mod body;
 pub mod car;
+pub mod collision;
 pub mod fsm;
 pub mod math;
 pub mod race;
