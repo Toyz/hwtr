@@ -3,7 +3,7 @@ title: The race's effects: puffs, skid marks, sparks
 status: partial
 discs: US
 covers: US CCCPSX.EXE:0x8002bdb4 effects_init, 0x8002c0dc pool_init, 0x8002c2b8 pool_alloc, 0x8002f354 particles_update, 0x8002f618 pool_draw, 0x8002b888 trails_emit, 0x80029230 trail_push, 0x800303cc skid_segment_spawn, 0x80030fc8 dust_puff_spawn, 0x8003119c spark_puff_spawn, 0x8002e9f8 collision_sparks, 0x8002c32c spark_spawn, 0x80049ecc car_pose, 0x80068540 view_setup, 0x800d25c0 0x800d25c8 0x800d25d0 0x800d25d8 pools, 0x8011ec2c trails, 0x800d0d98 fx_enable, 0x800d2578 fps, 0x800d0b68 frame_count
-worklog: 45
+worklog: 45, 46, 47
 ---
 
 # The race's effects
@@ -174,12 +174,55 @@ The view set-up (0x80068540) hides a car in two cases:
 
 It does this through the cvs byte +0x1ef (iface_general+220).
 
+## Wrecks, knocks and the boost flame
+
+- **A wreck (0x80029e10 mode 0, from every caller of 0x8004619c):** stops
+  the boost flame and marks the car wrecked (cvs +0x28). Then
+  `wreck_spawn` (0x8002e574) works from the car's centre, which is the
+  model's place plus its handling origin, turned:
+  - five smoke columns that follow the car (0x8003063c), each drawing two
+    random numbers
+  - a blackened model (root colour 0x181818)
+  - a player's screen flash, from 160 down by 3 a frame until under 130
+  - twenty embers (0x8002d800), seven random numbers each, then shedding
+    a spark puff every frame (0x8002d70c)
+  - up to 48 of the model's root faces as chunks: each gets 15 random
+    numbers (0x8002c5dc) and flies with an eighth of the car's velocity
+    and gravity -2 a frame squared
+- **Smoke columns (0x800307d0):** start three frames apart and run for
+  20 frames, stepping every second frame through sheet frames 5..14. The
+  quad grows 4 units a step from 188. They shed grey smoke in their last
+  two steps.
+- **Chunks:** all draw through one quad, so they share its colour. Each
+  chunk drawn takes 3 off it, and a chunk dies when the shared red is
+  exactly 0 at its turn.
+- **A knock (0x8006b958 in the pair loop) always throws the prop's debris
+  (0x8002e27c):**
+  - flag 2: smoke columns 100 units above its foot
+  - flag 1: ten dust puffs around its foot
+  - unless flag 0x20: its object's quads as chunks lasting 180 frames
+- **A turbo lights the boost flame (0x8002af60)** on a player's car that
+  is shown. It burns for 97 frames, drawn by `car_draw` (0x8002b05c):
+  - on each side, a body quad and a tip quad behind the car in car space
+  - placed from the handling's size, rear mounts, tyre width and diameter
+    and the exhaust table 0x800be088
+  - each quad's length takes a random factor, `rand()%1375`, every frame
+  - colour 112 less the frames shown, sheet entry 15 (additive)
+  - meanwhile the car's root colour pulses from 128 to 248 and back, a
+    step every 20 ms of the system clock (0x8002bc04)
+- **A reset (0x80029f04):** clears every puff and spark, idles the
+  columns and restores a wrecked car's colour.
+
+The wreck's and the knock's random numbers are drawn where the original
+draws them: in `Car::wreck` and in the knock, as `WreckDraws` and
+`PropDraws`. The effects use them after the step.
+
 ## Unknown
 
-- The debris chunks (0x8002e574, 0x8002e27c, 0x8002c5dc), the wreck's
-  embers and smoke columns (0x8002d800, 0x8003063c, 0x800307d0), the screen
-  flash (0x8002e128), the boost flame (0x8002b05c) and the exhaust puffs
-  from car_draw are not ported yet.
+- The exhaust puffs from car_draw (0x80022694) and the lamp glows
+  (0x80029fb0, which also draws random numbers) are not ported yet.
+- The wreck flash's POLY_F4 blend mode; the flash is kept but not drawn.
 - The camera-space units of the billboard translation: the draw adds the
   record's acceleration x and y to it.
 - Who sets fx_enable (0x800d0d98); it is 0x1ff in every race seen.
+- cvs +0x18, added to the flame body's z; taken as 0.

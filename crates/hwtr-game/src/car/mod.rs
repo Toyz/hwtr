@@ -405,6 +405,8 @@ pub struct Car {
     /// random numbers a wreck's effects drew, for the race to use.
     pub model_faces: u16,
     pub wreck_draws: crate::effects::Pending<crate::effects::WreckDraws>,
+    /// A turbo fired this step (it lights the boost flame, 0x8002af60).
+    pub turbo_fired: crate::effects::Pending<()>,
     /// Its checkpoints and laps; once they are run it drives itself, the
     /// controls ignored.
     pub laps: crate::laps::Laps,

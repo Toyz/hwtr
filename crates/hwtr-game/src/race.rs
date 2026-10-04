@@ -640,6 +640,11 @@ impl Race {
             // The step's wrecks' effects (0x80029e10), their random numbers
             // drawn as each happened.
             for slot in 0..self.cars.len() {
+                if self.cars[slot].turbo_fired.0.take().is_some() {
+                    let human = self.cars[slot].flags & 3 != 0;
+                    let shown = self.car_shown(slot);
+                    self.effects.flame_start(slot as u8, human, shown);
+                }
                 if let Some(d) = self.cars[slot].wreck_draws.0.take() {
                     let pose = self.cars[slot].pose();
                     let faces = self.car_faces.get(slot).map_or(&[][..], |f| &f[..]);
@@ -919,6 +924,14 @@ impl Race {
         let mut quads = self.effects.draw(&self.tables, &cam, fps, paused);
         let poses: Vec<_> = self.cars.iter().map(|c| c.pose()).collect();
         quads.extend(self.effects.draw_columns(&self.tables, &mut self.rand, &cam, fps, paused, &poses));
+        // car_draw's boost flames (0x8002b05c).
+        for slot in 0..self.cars.len() {
+            let id = self.setup.cars.get(slot).map_or(0, |e| e.car_id);
+            let exhaust = self.tables.exhausts.get(id as usize).copied().unwrap_or_default();
+            let special = id == 8 || id == 21;
+            let car = &self.cars[slot];
+            quads.extend(self.effects.draw_flame(&self.tables, &mut self.rand, slot as u8, &poses[slot], &car.handling, exhaust, special, paused, self.clock));
+        }
         tracing::trace!("effects: {} quads", quads.len());
         self.effects.frame_done(paused);
         if !paused {

@@ -100,7 +100,8 @@ impl Car {
         let top = mph(130);
         let dir = t.normalize(vel).map(|c| fx(c, top));
         self.body.momentum = dir.map(|c| fx(c, self.body.mass));
-        tracing::trace!("car {}: the turbo's sound and flames, not yet ported", self.slot);
+        tracing::trace!("car {}: the turbo's sound, not yet ported", self.slot);
+        self.turbo_fired.0 = Some(());
         self.boost = Some(top);
         self.body.speed = top;
         true

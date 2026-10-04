@@ -315,9 +315,29 @@ pub struct Effects {
     /// The chunks' shared colour (the one quad 0x80126c8c they all draw
     /// through), which every chunk drawn fades.
     pub chunk_colour: [u8; 3],
-    /// Each car's model blackened by its wreck (root colour 0x181818).
-    pub charred: [bool; 6],
+    /// Each car's model's colour (its root node's, +0x44: grey 0x808080,
+    /// 0x181818 when wrecked, pulsing while it boosts), whether its
+    /// effects take it as wrecked (cvs +0x28), its boost flame, and the
+    /// flame's colour pulse (0x8011ec14 phase, -1 off; 0x8011ebf4 when it
+    /// last stepped, by the system clock).
+    pub root_colour: [u32; 6],
+    pub wrecked: [bool; 6],
+    pub flames: [Flame; 6],
+    pub pulse: [(i32, u32); 6],
 }
+
+/// A car's boost flame (cvs +0x1f0 on, +0x24 the frame it began, +0x1ec
+/// frames shown).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Flame {
+    pub on: bool,
+    pub start: u32,
+    pub count: u8,
+}
+
+/// The cars' exhaust offsets by car number (0x800be088, 41 bytes a car;
+/// the first three are x, y, z in model units).
+pub const EXHAUSTS: u32 = 0x800b_e088;
 
 impl Default for Effects {
     fn default() -> Effects {
@@ -373,8 +393,132 @@ impl Effects {
             columns: [Column { frame: -1, ticks: 0xffff, ..Column::default() }; 5],
             flash: [0; 2],
             chunk_colour: [176; 3],
-            charred: [false; 6],
+            root_colour: [0x80_8080; 6],
+            wrecked: [false; 6],
+            flames: [Flame::default(); 6],
+            pulse: [(-1, 0); 6],
         }
+    }
+
+    /// Whether car `slot`'s model is blackened.
+    pub fn charred(&self, slot: usize) -> bool {
+        self.root_colour.get(slot) == Some(&0x18_1818)
+    }
+
+    /// 0x8002e51c: car `slot`'s model blackened, or grey again.
+    fn set_charred(&mut self, slot: u8, on: bool) {
+        if let Some(c) = self.root_colour.get_mut(slot as usize) {
+            *c = if on { 0x18_1818 } else { 0x80_8080 };
+        }
+    }
+
+    /// 0x8002af60: a turbo lights car `slot`'s boost flame (a player's car
+    /// that is shown).
+    pub fn flame_start(&mut self, slot: u8, human: bool, shown: bool) {
+        if human && shown && let Some(f) = self.flames.get_mut(slot as usize) {
+            *f = Flame { on: true, start: self.frame_count, count: 0 };
+        }
+    }
+
+    /// 0x8002aff4 (with 0x8002bd48): the flame out, the colour pulse
+    /// stopped (grey again unless wrecked), and the wreck mark cleared.
+    fn flame_stop(&mut self, slot: u8) {
+        let s = slot as usize;
+        if s >= 6 {
+            return;
+        }
+        self.pulse[s].0 = -1;
+        if !self.wrecked[s] {
+            self.root_colour[s] = 0x80_8080;
+        }
+        self.wrecked[s] = false;
+        self.flames[s].on = false;
+        self.flames[s].count = 0;
+    }
+
+    /// 0x8002bc04: the colour pulse, a step every 20 ms of the system
+    /// clock `now`: grey from 128 to 248 and back over 32 steps.
+    fn pulse_step(&mut self, slot: usize, now: u32) {
+        let (phase, last) = &mut self.pulse[slot];
+        if *phase < 0 {
+            *last = now;
+            *phase = 0;
+            return;
+        }
+        let dt = if now < *last { *last - now } else { now - *last };
+        let steps = dt / 20;
+        if steps == 0 {
+            return;
+        }
+        *last = last.wrapping_add(steps * 20);
+        let mut ph = (*phase as u32).wrapping_add(steps) & 0x1f;
+        *phase = ph as i32;
+        if ph & 0x10 != 0 {
+            ph = 31 - ph;
+        }
+        let c = ph * 8 + 128;
+        self.root_colour[slot] = c << 16 | c << 8 | c;
+    }
+
+    /// 0x8002b05c: car `slot`'s boost flame, for 97 frames from its start:
+    /// on each side a body and a tip, flickering in length (a random draw
+    /// each, unless paused) and fading, behind the car (`pose`, its
+    /// handling `h`, car number `car_id`, and the exhaust table), while the
+    /// car's colour pulses.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_flame(&mut self, t: &crate::math::Tables, rand: &mut Rand, slot: u8, pose: &CarPose, h: &crate::car::handling::Handling, exhaust: [i8; 3], special: bool, paused: bool, now: u32) -> Vec<EffectQuad> {
+        let s = slot as usize;
+        let mut out = Vec::new();
+        if s >= 6 || !self.flames[s].on || self.wrecked[s] {
+            return out;
+        }
+        if self.frame_count.wrapping_sub(self.flames[s].start) >= 97 {
+            self.flame_stop(slot);
+            return out;
+        }
+        if !paused {
+            self.pulse_step(s, now);
+            self.flames[s].count = self.flames[s].count.wrapping_add(1);
+        }
+        let k = if h.wheel_count < 5 { 2 } else { 4 };
+        let (width, diameter) = (h.widths[k], h.diameters[k]);
+        let (wa, wb) = (h.mounts[k], h.mounts.get(k + 1).copied().unwrap_or_default());
+        let (clut, tpage) = sheet(t, 15);
+        let col = 112u8.wrapping_sub(self.flames[s].count);
+        for q in 0..4 {
+            let mut off = [0i32; 3];
+            off[0] = if q & 2 != 0 {
+                (h.size[0] >> 1).wrapping_add((exhaust[0] as i32) << 12)
+            } else {
+                (h.size[0].wrapping_neg() >> 1).wrapping_sub((exhaust[0] as i32) << 12)
+            };
+            let mut len = -fx(7000, 0x1_e000);
+            if !paused {
+                let r = rand.below(1375) as i32;
+                len = fx(len, ((r << 12) / 1000) + 512);
+            }
+            let l = (len >> 12) as i16;
+            let (verts, uv): ([[i16; 3]; 4], [[u8; 2]; 4]) = if q & 1 != 0 {
+                let w = (if q & 2 != 0 { width.wrapping_neg() } else { width } >> 12) as i16;
+                ([[0, 0, 0], [w, 0, 0], [w, l, 0], [0, l, 0]], [[0xff, 0x5f], [0xff, 0x40], [0x80, 0x40], [0x80, 0x5f]])
+            } else {
+                off[0] = if q & 2 != 0 {
+                    wa[0].wrapping_add(if special { 29952 } else { 1280 })
+                } else {
+                    wb[0].wrapping_sub(if special { 17664 } else { 1280 })
+                };
+                let z = ((diameter - 20480) >> 12) as i16;
+                ([[0, 0, 0], [0, 0, z], [0, l, 0], [0, l, 0]], [[0xff, 0x5f], [0xff, 0x40], [0x80, 0x40], [0x80, 0x5f]])
+            };
+            off[1] = off[1].wrapping_add((exhaust[1] as i32) << 12);
+            off[2] = off[2].wrapping_add((exhaust[2] as i32) << 12);
+            let corners = verts.map(|v| {
+                let local = [0, 1, 2].map(|i| off[i].wrapping_add((v[i] as i32) << 12));
+                crate::math::add(pose.at, crate::math::apply_matrix_lv(&pose.rot, local))
+            });
+            out.push(EffectQuad { corners, uv, clut, tpage, colour: [col; 3], semi: true });
+        }
+        out
     }
 
     /// 0x80030fc8: a puff at `pos` (sprite growth from `frame0`): dust the
@@ -631,10 +775,12 @@ impl Effects {
     pub fn car_wreck(&mut self, t: &crate::math::Tables, draws: &WreckDraws, pose: &CarPose, faces: &[ChunkFace]) {
         let mut rands = draws.rands.iter().copied();
         let centre = pose.centre();
-        self.columns_spawn(centre, draws.vel, 1, draws.slot, &mut rands);
-        if let Some(c) = self.charred.get_mut(draws.slot as usize) {
-            *c = true;
+        self.flame_stop(draws.slot);
+        if let Some(w) = self.wrecked.get_mut(draws.slot as usize) {
+            *w = true;
         }
+        self.columns_spawn(centre, draws.vel, 1, draws.slot, &mut rands);
+        self.set_charred(draws.slot, true);
         if draws.human && let Some(f) = self.flash.get_mut(draws.slot as usize) {
             *f = 160;
         }
@@ -709,9 +855,11 @@ impl Effects {
 
     /// 0x80029e10 mode 2: a car shown wrecked (a snapshot put back).
     pub fn car_charred(&mut self, slot: u8) {
-        if let Some(c) = self.charred.get_mut(slot as usize) {
-            *c = true;
+        self.flame_stop(slot);
+        if let Some(w) = self.wrecked.get_mut(slot as usize) {
+            *w = true;
         }
+        self.set_charred(slot, true);
     }
 
     /// 0x80029f04: the puffs and sparks of every car gone, the smoke
@@ -725,8 +873,11 @@ impl Effects {
         for c in &mut self.columns {
             c.frame = -1;
         }
-        if let Some(c) = self.charred.get_mut(slot as usize) {
-            *c = false;
+        if self.wrecked.get(slot as usize) == Some(&true) {
+            self.set_charred(slot, false);
+        }
+        if let Some(w) = self.wrecked.get_mut(slot as usize) {
+            *w = false;
         }
     }
 

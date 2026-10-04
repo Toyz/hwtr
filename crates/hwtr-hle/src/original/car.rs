@@ -334,6 +334,7 @@ impl InMemory for Car {
                 if model == 0 { 0 } else { ram.i32(ram.i32(model + 4) as u32 + 0x34).clamp(0, 0xffff) as u16 }
             },
             wreck_draws: Default::default(),
+            turbo_fired: Default::default(),
             laps: laps(ram, at),
             lap_distance: ram.i32(at + LAP_DISTANCE),
             ground: Ground {

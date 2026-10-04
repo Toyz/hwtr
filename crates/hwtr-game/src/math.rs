@@ -46,6 +46,9 @@ pub struct Tables {
     pub sprite_slots: [(u16, u16); 24],
     /// How rough each kind of ground feels through the pad (0x800bea7c).
     pub surface_rumble: Vec<u8>,
+    /// Each car's exhaust offset, x, y, z in model units, by car number
+    /// (0x800be088, 41 bytes a car).
+    pub exhausts: Vec<[i8; 3]>,
     /// How far the attract race's trackside cameras see, a twelfth of it
     /// in world units, by world and number (0x800be934).
     pub camera_ranges: [[u16; 3]; 4],
@@ -79,7 +82,8 @@ impl Tables {
         });
         let surface_rumble = (0..256).map(|i| byte(0x800b_ea7c + i)).collect();
         let camera_ranges = std::array::from_fn(|w| std::array::from_fn(|n| u16_at(0x800b_e934 + 2 * (3 * w + n) as u32)));
-        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints, meter, acos, rcossin, sprite_slots, surface_rumble, camera_ranges }
+        let exhausts = (0..42u32).map(|id| std::array::from_fn(|k| byte(0x800b_e088 + 41 * id + k as u32) as i8)).collect();
+        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints, meter, acos, rcossin, sprite_slots, surface_rumble, camera_ranges, exhausts }
     }
 
     /// The checkpoints a lap of `world` (a name from [`crate::race::WORLDS`])

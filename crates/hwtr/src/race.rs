@@ -699,7 +699,7 @@ impl Race {
                 continue;
             }
             // A wrecked car's model is blackened (0x8002e51c).
-            let rgb = if self.race.effects.charred.get(k).copied().unwrap_or(false) { 0x18_18_18 } else { 0x80_80_80 };
+            let rgb = self.race.effects.root_colour.get(k).copied().unwrap_or(0x80_8080);
             tris.extend(hwtr_render::mesh::car_triangles(&look.model, look.clut, look.tpage, pos, Mat3::from_quat(rot), rgb));
         }
         tris

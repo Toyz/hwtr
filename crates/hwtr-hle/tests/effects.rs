@@ -60,7 +60,7 @@ fn effects_match_the_original() {
             miss = Some(format!("{what}: {detail}"));
         }
     };
-    for round in 0..350 {
+    for round in 0..400 {
         m.bus.ram.copy_from_slice(&start);
         let mut ours = codec::read(&Ram(&mut m.bus.ram));
         scramble(&mut rng, &mut ours);
@@ -70,7 +70,48 @@ fn effects_match_the_original() {
         let mut ours = ours0.clone();
         Ram(&mut m.bus.ram).set_i32(SEED, seed as i32);
         let mut rand = Rand { seed };
-        match round % 7 {
+        match round % 8 {
+            7 => {
+                // Player one's boost flame lit, then drawn frame after frame
+                // to its end.
+                let slot = 0u32;
+                let (model, pose, h, exhaust, special, human, shown) = {
+                    let ram = Ram(&mut m.bus.ram);
+                    let model = codec::model(&ram, slot);
+                    let root = ram.i32(model + 4) as u32;
+                    let cvs = ram.i32(model + 16) as u32;
+                    let rot: hwtr_game::math::Matrix = std::array::from_fn(|r| std::array::from_fn(|c| ram.i16(root + 6 * r as u32 + 2 * c as u32)));
+                    let at = ram.vec3(root + 0x14).map(|c| c >> 1);
+                    let car = Car::read(&ram, CARS);
+                    let id = ram.u8(cvs + 0x10) as u32;
+                    let ex = std::array::from_fn(|k| ram.u8(effects::EXHAUSTS + 41 * id + k as u32) as i8);
+                    let flags = ram.i32(cvs + 0x20) as u32;
+                    (model, effects::CarPose { at, rot, origin: car.handling.origin }, car.handling.clone(), ex, id == 8 || id == 21, flags & 0x80 != 0, ram.u8(cvs + 0x1ef) != 0)
+                };
+                ours.flame_start(slot as u8, human, shown);
+                m.call(0x8002_af60, &[slot]).unwrap();
+                check(format!("round {round} flame lit"), &ours, rand.seed, &mut m);
+                assert!(ours.flames[0].on, "the flame lit");
+                {
+                    let mut ram = Ram(&mut m.bus.ram);
+                    for k in 0..8 {
+                        ram.set_i32(ARGS + 0x40 + 4 * k, 0);
+                    }
+                    ram.set_i16(ARGS + 0x40, 4096);
+                    ram.set_i16(ARGS + 0x48, 4096);
+                    ram.set_i16(ARGS + 0x50, 4096);
+                }
+                for f in 0..100u32 {
+                    let now = Ram(&mut m.bus.ram).i32(0x800d_240c) as u32;
+                    let _ = ours.draw_flame(&t, &mut rand, slot as u8, &pose, &h, exhaust, special, false, now);
+                    m.call(0x8002_b05c, &[model, ARGS + 0x40]).unwrap();
+                    check(format!("round {round} flame frame {f}"), &ours, rand.seed, &mut m);
+                    ours.frame_count = ours.frame_count.wrapping_add(1);
+                    let mut ram = Ram(&mut m.bus.ram);
+                    ram.set_i32(codec::FRAME_COUNT, ours.frame_count as i32);
+                    ram.set_i32(0x800d_240c, now.wrapping_add(17) as i32);
+                }
+            }
             6 => {
                 // A world volume knocked over: its dust, smoke and quads.
                 let (o, flags, pos, height, quads) = {
@@ -147,7 +188,8 @@ fn effects_match_the_original() {
                 Ram(&mut m.bus.ram).set_vec3(ARGS, vel);
                 let draws = effects::WreckDraws::take(&mut rand, slot as u8, vel, human, faces.len());
                 ours.car_wreck(&t, &draws, &pose, &faces);
-                m.call(0x8002_e574, &[model, ARGS, 0]).unwrap();
+                let _ = model;
+                m.call(0x8002_9e10, &[slot, 0, vel[0] as u32, vel[1] as u32, vel[2] as u32]).unwrap();
                 check(format!("round {round} wreck"), &ours, rand.seed, &mut m);
                 // Then a few frames of it: embers, the update, the
                 // columns and the chunks drawn.
