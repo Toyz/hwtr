@@ -5,9 +5,62 @@ name        = "hwtr"
 slug        = "hwtr"
 description = "Reverse engineering Hot Wheels Turbo Racing for the PlayStation (Stormfront Studios / Electronic Arts, 1999, SLUS-00964) and porting it natively to the PC, using tools written for the job in Rust. No game data included."
 
+[site]
+readme = "README.md"
+
 [docs]
 dir   = "docs"
 label = "Reference"
+
+[[link]]
+label = "GitHub"
+icon = "github"
+url  = "https://github.com/toyz/hwtr"
+
+[[link]]
+label = "GitHub Issues"
+icon = "github"
+url  = "https://github.com/toyz/hwtr/issues"
+
+# Hot Wheels, loosely: the logo's flame red and orange, its blue, the yellow
+# of the track. Accents only; the page stays a neutral grey for long reads.
+[colors.dark]
+paper         = "#141518"
+paper-sunk    = "#1c1e22"
+ink           = "#ebecef"
+ink-soft      = "#babdc4"
+ink-faint     = "#83878f"
+rule          = "#2d3036"
+rule-faint    = "#22252a"
+link          = "#5fa8ff"
+accent        = "#ff5a1f"
+code-bg       = "#1a1c20"
+mark          = "#4a2a14"
+code-keyword  = "#ff5a5f"
+code-string   = "#ffc93c"
+code-comment  = "#7c8089"
+code-number   = "#ff9a3c"
+code-function = "#ffb37a"
+code-type     = "#6fb6ff"
+
+[colors.light]
+paper         = "#f6f7f9"
+paper-sunk    = "#eceef2"
+ink           = "#1b1c1f"
+ink-soft      = "#45484f"
+ink-faint     = "#777b84"
+rule          = "#d9dce2"
+rule-faint    = "#e6e8ed"
+link          = "#0053a5"
+accent        = "#d9230f"
+code-bg       = "#eef0f4"
+mark          = "#ffe0b8"
+code-keyword  = "#c8102e"
+code-string   = "#9a6200"
+code-comment  = "#868a92"
+code-number   = "#c45500"
+code-function = "#8a3a0a"
+code-type     = "#0053a5"
 
 [index]
 header = """
