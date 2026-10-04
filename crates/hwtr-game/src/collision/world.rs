@@ -30,6 +30,16 @@ pub struct Collision {
     pub contacts: Vec<super::walls::Contact>,
 }
 
+/// What a race step's collision needs besides the world and the cars.
+pub struct Step<'a> {
+    pub tuning: &'a crate::car::Tuning,
+    pub rand: &'a mut crate::rand::Rand,
+    /// The race clock (0x800d0e34) and the system clock (0x800d240c),
+    /// milliseconds.
+    pub time: u32,
+    pub clock: u32,
+}
+
 /// Bit 4 of an object's flags: its lead point changed zone.
 pub const ZONE_CHANGED: u32 = 16;
 
@@ -241,20 +251,21 @@ impl Collision {
     /// The part of `collision_update` (0x8004de6c) ported so far: the step
     /// counted, the points moved, the stages, then each contact's impulse.
     /// (Contacts between cars, 0x8004e938, are not yet ported.)
-    pub fn update(&mut self, t: &crate::math::Tables, cars: &mut [Car]) {
+    pub fn update(&mut self, t: &crate::math::Tables, cars: &mut [Car], step: &mut Step) {
         self.contacts.clear();
         self.step = self.step.wrapping_add(1);
         self.update_points(cars);
-        self.stages(t, cars);
-        self.contact_impulses(t, cars);
+        self.stages(t, cars, step);
+        self.contact_impulses(t, cars, step);
     }
 
     /// The part of 0x8005148c ported so far: the zones, the players'
     /// wheels, the ground under each car, the walls, then the effects of
-    /// the zones cars' lead points entered. (The computer cars' walls,
-    /// 0x800572f0, the players' zone edges, 0x8005a4cc, and the crashes
-    /// the walls flag are not yet ported.)
-    pub fn stages(&mut self, t: &crate::math::Tables, cars: &mut [Car]) {
+    /// the zones cars' lead points entered, then the wrecks the walls
+    /// flagged: through a wall (a flip), or into a wrecking surface. (The
+    /// computer cars' walls, 0x800572f0, and the players' zone edges,
+    /// 0x8005a4cc, are not yet ported.)
+    pub fn stages(&mut self, t: &crate::math::Tables, cars: &mut [Car], step: &mut Step) {
         self.track_zones(cars);
         self.wheels(t, cars);
         self.ground(t, cars);
@@ -268,6 +279,16 @@ impl Collision {
                 self.zone_effects(&mut cars[slot as usize], zone, false);
             }
             self.objects[id].flags &= !ZONE_CHANGED;
+        }
+        for id in self.cars.iter().collect::<Vec<_>>() {
+            let Some(slot) = self.objects[id].car else { continue };
+            let car = &mut cars[slot as usize];
+            use super::walls::{HIT_KIND_3, HIT_KIND_4, THROUGH_WALL};
+            if car.flags & THROUGH_WALL != 0 {
+                car.wreck(true, step.rand);
+            } else if car.flags & (HIT_KIND_4 | HIT_KIND_3) != 0 {
+                car.wreck(false, step.rand);
+            }
         }
     }
 }

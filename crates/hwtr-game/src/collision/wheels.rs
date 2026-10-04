@@ -29,7 +29,7 @@ impl Collision {
             let obj = &self.objects[id];
             let Some(slot) = obj.car else { continue };
             let car = &mut cars[slot as usize];
-            if car.body.asleep != 0 || car.unknown_62c != 0 {
+            if car.body.asleep != 0 || car.wrecked != 0 {
                 continue;
             }
             let up = column(&car.body.rot, 2);

@@ -107,7 +107,9 @@ pub mod layout {
 }
 
 use crate::car::{Car, Controls, EngineSpec, Handling, Tuning};
+use crate::collision::world::Step;
 use crate::collision::{Collision, Scp};
+use crate::rand::Rand;
 use crate::math::Tables;
 
 /// One race step: the game logic runs at 40 steps a second (`race_frame`,
@@ -122,6 +124,13 @@ pub struct Race {
     pub tuning: Tuning,
     pub cars: Vec<Car>,
     pub collision: Collision,
+    /// The game's random numbers.
+    pub rand: Rand,
+    /// The race clock (0x800d0e34), 25 ms a step.
+    pub time: u32,
+    /// The system clock (0x800d240c), which the host advances 17 ms a
+    /// vertical blank.
+    pub clock: u32,
 }
 
 impl Race {
@@ -146,7 +155,7 @@ impl Race {
             collision.add_car(&tables, &mut car);
             cars.push(car);
         }
-        Race { setup, tables, tuning, cars, collision }
+        Race { setup, tables, tuning, cars, collision, rand: Rand::default(), time: 0, clock: 0 }
     }
 
     /// One step of `STEP_MS`, with each player's controls (in car order).
@@ -158,6 +167,9 @@ impl Race {
         for car in &mut self.cars {
             car.update(&self.tables, &self.tuning, dt);
         }
-        self.collision.update(&self.tables, &mut self.cars);
+        let mut step =
+            Step { tuning: &self.tuning, rand: &mut self.rand, time: self.time, clock: self.clock };
+        self.collision.update(&self.tables, &mut self.cars, &mut step);
+        self.time = self.time.wrapping_add(STEP_MS as u32);
     }
 }

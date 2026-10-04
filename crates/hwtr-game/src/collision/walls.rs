@@ -2,8 +2,9 @@
 //! that leaves for the impulses.
 
 use super::object::Kind;
-use super::world::{Collision, ObjectId};
+use super::world::{Collision, ObjectId, Step};
 use crate::car::Car;
+use crate::car::righting::Righting;
 use crate::math::{Tables, Vec3, add, cross, div_fx, dot, fx, sub};
 
 /// A point of a body pressing into a surface, moving into it: the impulse
@@ -44,22 +45,42 @@ pub fn contact_friction(t: &Tables, surface: u8, computer: bool) -> i32 {
 const BOUNCE: i32 = 0x800;
 
 impl Collision {
-    /// The contacts' part of `collision_update` (0x8004de6c): each pushes its
-    /// body back with an impulse, sliding against the surface's friction
-    /// ([`contact_friction`]); the object remembers the step and the point. The hit's sounds, sparks and
-    /// damage are not yet ported.
-    pub fn contact_impulses(&mut self, t: &Tables, cars: &mut [Car]) {
+    /// The contacts' part of `collision_update` (0x8004de6c). For a
+    /// player's car not yet wrecked: at the step's first contact the contact
+    /// timers run, then each contact may wreck it (hard enough, 0x8007db14)
+    /// and, against the floor, works to right it (0x80046ac0), and the race
+    /// clock is noted. Then each pushes its body back with an impulse,
+    /// sliding against the surface's friction ([`contact_friction`]); the
+    /// object remembers the step and the point. The hit's sounds, sparks and
+    /// rumble are not yet ported.
+    pub fn contact_impulses(&mut self, t: &Tables, cars: &mut [Car], step: &mut Step) {
         for c in self.contacts.clone() {
-            let step = self.step;
             let obj = &mut self.objects[c.object];
             let Some(slot) = obj.car else { continue };
             let car = &mut cars[slot as usize];
-            if obj.stamp != step {
+            let first = obj.stamp != self.step;
+            if first {
                 tracing::trace!("contact sound for car {slot}: not yet ported");
             }
-            obj.stamp = step;
+            let was_wrecked = car.wrecked != 0;
+            if obj.kind == Kind::PlayerCar && !was_wrecked {
+                if first {
+                    car.contact_timers(step.clock);
+                }
+                if car.hard_impact(c.normal) {
+                    car.wreck(false, step.rand);
+                }
+                if car.ground.floor.found != 0
+                    && dot(c.normal, car.ground.floor.normal) > 3547
+                    && car.right_itself(step.tuning, step.rand) == Righting::Wreck
+                {
+                    car.wreck(false, step.rand);
+                }
+                car.contact_time = step.time;
+            }
+            obj.stamp = self.step;
             obj.contact_point = c.point;
-            let friction = contact_friction(t, c.surface, obj.kind == Kind::ComputerCar && car.unknown_62c == 0);
+            let friction = contact_friction(t, c.surface, obj.kind == Kind::ComputerCar && !was_wrecked);
             car.body.impulse(t, c.point, c.normal, BOUNCE, friction);
         }
     }

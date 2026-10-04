@@ -128,6 +128,8 @@ impl Race {
             self.race.step(&[self.reader.controls()]);
             self.ahead += STEP_MS as i64;
         }
+        // The vertical blank at the frame's end advances the system clock.
+        self.race.clock = self.race.clock.wrapping_add(ms);
     }
 
     /// The player's car where the game draws it (0x80049ecc): its body's

@@ -26,7 +26,10 @@ use hwtr_game::body::Body;
 use hwtr_game::car::Car;
 use hwtr_game::car::layout::{CAR_COUNT, CAR_SIZE, CARS};
 use hwtr_game::collision::Collision;
+use hwtr_game::collision::world::Step;
 use hwtr_game::collision::world::layout::STEP;
+use hwtr_game::rand::Rand;
+use hwtr_game::rand::layout::SEED;
 use hwtr_game::math::Tables;
 use hwtr_game::ram::Ram;
 use hwtr_hle::Hle;
@@ -113,7 +116,10 @@ fn main() {
     for f in 0..frames {
         let (mut world, _) = Collision::read(&Ram(&mut hle.m.bus.ram));
         let mut native = cars(&mut hle.m.bus.ram);
-        let before = Ram(&mut hle.m.bus.ram).i32(STEP);
+        let (before, seed, time, clock) = {
+            let ram = Ram(&mut hle.m.bus.ram);
+            (ram.i32(STEP), ram.i32(SEED) as u32, ram.i32(0x800d_0e34) as u32, ram.i32(0x800d_240c) as u32)
+        };
         entries.borrow_mut().clear();
         exits.borrow_mut().clear();
         script.apply(&mut hle, f);
@@ -131,9 +137,13 @@ fn main() {
         world.contacts.clear();
         world.step = world.step.wrapping_add(1);
         world.update_points(&mut native);
-        world.stages(&tables, &mut native);
+        // The step's clocks, both as the frame begins (the vertical blank
+        // advances the system clock at its end).
+        let mut rand = Rand { seed };
+        let mut step = Step { tuning: &tuning, rand: &mut rand, time, clock };
+        world.stages(&tables, &mut native, &mut step);
         let at_impulse = native[0].body.clone();
-        world.contact_impulses(&tables, &mut native);
+        world.contact_impulses(&tables, &mut native, &mut step);
         let d = diff(&original[0], &native[0]);
         if d.is_empty() {
             same += 1;

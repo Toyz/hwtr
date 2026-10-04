@@ -74,7 +74,8 @@ pub const SPRING_PRELOAD: u32 = 0x790;
 pub const EXTENSION: u32 = 0x794;
 pub const UNKNOWN_865: u32 = 0x865;
 pub const STATE: u32 = 0x891;
-pub const UNKNOWN_62C: u32 = 0x62c;
+pub const WRECKED: u32 = 0x62c;
+pub const WRECK_VIEW: u32 = 0x62d;
 pub const UNKNOWN_25: u32 = 0x25;
 pub const UNKNOWN_26: u32 = 0x26;
 pub const UNKNOWN_27: u32 = 0x27;
@@ -86,7 +87,10 @@ pub const FLOOR: [u32; 4] = [0x8b2, 0x8b4, 0x8c4, 0x8d4];
 pub const NEAREST: [u32; 3] = [0x8f0, 0x8f4, 0x904];
 pub const UNKNOWN_618: u32 = 0x618;
 pub const UNKNOWN_624: u32 = 0x624;
-pub const UNKNOWN_628: u32 = 0x628;
+pub const AIRBORNE: u32 = 0x628;
+pub const CONTACT_CLOCK: u32 = 0x61c;
+pub const CONTACT_MS: u32 = 0x620;
+pub const CONTACT_TIME: u32 = 0x920;
 pub const UNKNOWN_7CC: u32 = 0x7cc;
 pub const TURBOS: u32 = 0x874;
 pub const AIR_CONTROL: u32 = 0x86a;
@@ -314,7 +318,8 @@ impl Car {
             extension: [ram.i32(at + EXTENSION), ram.i32(at + EXTENSION + 4)],
             unknown_865: ram.u8(at + UNKNOWN_865),
             state: ram.u8(at + STATE),
-            unknown_62c: ram.u8(at + UNKNOWN_62C),
+            wrecked: ram.u8(at + WRECKED),
+            wreck_view: ram.u8(at + WRECK_VIEW),
             unknown_25: ram.u8(at + UNKNOWN_25),
             unknown_26: ram.u8(at + UNKNOWN_26),
             unknown_27: ram.u8(at + UNKNOWN_27),
@@ -335,7 +340,10 @@ impl Car {
             },
             unknown_618: ram.i32(at + UNKNOWN_618),
             unknown_624: ram.i32(at + UNKNOWN_624),
-            unknown_628: ram.u8(at + UNKNOWN_628),
+            airborne: ram.u8(at + AIRBORNE),
+            contact_clock: ram.i32(at + CONTACT_CLOCK) as u32,
+            contact_ms: ram.i32(at + CONTACT_MS) as u32,
+            contact_time: ram.i32(at + CONTACT_TIME) as u32,
             unknown_7cc: ram.i32(at + UNKNOWN_7CC),
             turbos: ram.u8(at + TURBOS),
             air_control: ram.u8(at + AIR_CONTROL),
@@ -387,7 +395,8 @@ impl Car {
         ram.set_i32(at + EXTENSION + 4, self.extension[1]);
         ram.set_u8(at + UNKNOWN_865, self.unknown_865);
         ram.set_u8(at + STATE, self.state);
-        ram.set_u8(at + UNKNOWN_62C, self.unknown_62c);
+        ram.set_u8(at + WRECKED, self.wrecked);
+        ram.set_u8(at + WRECK_VIEW, self.wreck_view);
         ram.set_u8(at + UNKNOWN_25, self.unknown_25);
         ram.set_u8(at + UNKNOWN_26, self.unknown_26);
         ram.set_u8(at + UNKNOWN_27, self.unknown_27);
@@ -403,7 +412,10 @@ impl Car {
         ram.set_i32(at + NEAREST[2], g.nearest.d);
         ram.set_i32(at + UNKNOWN_618, self.unknown_618);
         ram.set_i32(at + UNKNOWN_624, self.unknown_624);
-        ram.set_u8(at + UNKNOWN_628, self.unknown_628);
+        ram.set_u8(at + AIRBORNE, self.airborne);
+        ram.set_i32(at + CONTACT_CLOCK, self.contact_clock as i32);
+        ram.set_i32(at + CONTACT_MS, self.contact_ms as i32);
+        ram.set_i32(at + CONTACT_TIME, self.contact_time as i32);
         ram.set_i32(at + UNKNOWN_7CC, self.unknown_7cc);
         ram.set_u8(at + TURBOS, self.turbos);
         ram.set_u8(at + AIR_CONTROL, self.air_control);

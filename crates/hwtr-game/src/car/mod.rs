@@ -10,6 +10,8 @@
 mod controls;
 pub mod handling;
 pub mod righting;
+pub mod wreck;
+pub mod impact;
 pub mod layout;
 mod load;
 
@@ -307,8 +309,10 @@ pub struct Car {
     pub unknown_865: u8,
     /// 2: full physics (players), 1: computer cars, 0: (not yet known).
     pub state: u8,
-    /// Non-zero: out of the race's collision (meaning not yet known).
-    pub unknown_62c: u8,
+    /// Non-zero once wrecked (0x8004619c), until put back on the road.
+    pub wrecked: u8,
+    /// Which way the camera shows a player's wreck, chosen at random.
+    pub wreck_view: u8,
     /// Set by the controls from actions 9 and 10; meanings not yet known.
     pub unknown_25: u8,
     pub unknown_26: u8,
@@ -322,7 +326,15 @@ pub struct Car {
     /// Set as the car is loaded; meanings not yet known.
     pub unknown_618: i32,
     pub unknown_624: i32,
-    pub unknown_628: u8,
+    /// Set while a player's car is off the ground, for its stunt
+    /// (0x8003cb74); scraping a wall for half a second clears it.
+    pub airborne: u8,
+    /// The system clock at its last contact, and how long its contacts have
+    /// run on with gaps of at most 100 ms (0x8003caec).
+    pub contact_clock: u32,
+    pub contact_ms: u32,
+    /// The race clock at its last contact.
+    pub contact_time: u32,
     pub unknown_7cc: i32,
     /// Turbos in hand, at most 10 (0x8003c850 adds, a boost spends one).
     pub turbos: u8,

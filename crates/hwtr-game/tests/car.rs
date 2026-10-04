@@ -434,7 +434,7 @@ fn righting_matches_the_original() {
             let original = Car::read(&Ram(&mut m.bus.ram), at);
             *seen.entry(format!("{outcome:?}")).or_insert(0) += 1;
             if outcome == Righting::Wreck {
-                assert_eq!(original.unknown_62c, 1, "{name} round {round}: the original wrecked the car too");
+                assert_eq!(original.wrecked, 1, "{name} round {round}: the original wrecked the car too");
                 continue;
             }
             let ported = Car::read(&Ram(&mut port), at);
@@ -443,4 +443,40 @@ fn righting_matches_the_original() {
         }
     }
     assert!(seen.len() == 2, "outcomes {seen:?}");
+}
+
+#[test]
+fn wreck_matches_the_original_for_computer_cars() {
+    use hwtr_game::rand::{Rand, layout::SEED};
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0x3eec_0000_0000_0011);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let start = m.bus.ram.clone();
+        let cars = m.bus.read_u32(car::CAR_COUNT);
+        for round in 0..200 {
+            m.bus.ram.copy_from_slice(&start);
+            // A computer car (the player's wreck also throws its wheels off,
+            // not yet ported), moving and spinning every way.
+            let at = CARS + (1 + rng.below(cars - 1)) * CAR_SIZE;
+            let flip = rng.below(2) as u32;
+            on_car(&mut m.bus.ram, at, |car, _| {
+                assert_eq!(car.flags & 1, 0, "{name}: a computer car");
+                car.wrecked = (rng.below(8) == 0) as u8;
+                car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (6 + rng.below(8)));
+                car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (14 + rng.below(6)));
+            });
+            let seed = rng.word();
+            m.bus.write_u32(SEED, seed);
+            let mut port = m.bus.ram.clone();
+            let mut rand = Rand { seed };
+            on_car(&mut port, at, |car, _| car.wreck(flip != 0, &mut rand));
+            m.call(0x8004_619c, &[at, 0, flip]).unwrap();
+            let original = Car::read(&Ram(&mut m.bus.ram), at);
+            // The car takes the generator's first draws; the wreck's effects
+            // then draw a few hundred more to crumple the model (0x8002e574,
+            // not yet ported), so the seeds part here.
+            assert_eq!(original, Car::read(&Ram(&mut port), at), "{name} round {round}");
+        }
+    }
 }

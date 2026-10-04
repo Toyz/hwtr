@@ -83,7 +83,7 @@ impl Collision {
     /// the lap trigger. The laps, power-ups and special zones are not yet
     /// ported.
     pub fn zone_effects(&self, car: &mut Car, zone: u16, initial: bool) {
-        if car.unknown_62c != 0 {
+        if car.wrecked != 0 {
             return;
         }
         let z = self.scp.zones[zone as usize];
