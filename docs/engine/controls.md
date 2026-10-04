@@ -2,8 +2,8 @@
 title: Controls and the pad
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8001bec0 controls_frame, 0x8001bf1c, 0x8001c998, 0x8001cee4 controls_read_analog, 0x8001d9ec curve, 0x8001b170 action_level, 0x8011b2b8 action_levels, 0x8001d320 controls_init, 0x8001c344 controls_read_port, 0x8001c480, 0x8001cee4, 0x8001abe8 controls_action_held, 0x8011b388 pad_buffer, 0x8011b3d8 control_mapping, 0x800bdc08 control_mapping_default, interface table 0x8012fcdc, 0x8001b7b4 motors_road, 0x8001b934 motors_jolt, 0x8001ccc4 motors_fade, 0x8005fba8 race_controls_frame, 0x8005fd4c wall_jolt, 0x8005fed0 pair_jolt, 0x800d0e2c jolt_wait, 0x8006545c hud_button
-worklog: 11, 63, 79
+covers: US CCCPSX.EXE:0x8001bec0 controls_frame, 0x8001bf1c, 0x8001c998, 0x8001cee4 controls_read_analog, 0x8001d9ec curve, 0x8001b170 action_level, 0x8011b2b8 action_levels, 0x8001d320 controls_init, 0x8001c344 controls_read_port, 0x8001c480, 0x8001cee4, 0x8001abe8 controls_action_held, 0x8011b388 pad_buffer, 0x8011b3d8 control_mapping, 0x800bdc08 control_mapping_default, interface table 0x8012fcdc, 0x8001b7b4 motors_road, 0x8001b934 motors_jolt, 0x8001ccc4 motors_fade, 0x8005fba8 race_controls_frame, 0x8005fd4c wall_jolt, 0x8005fed0 pair_jolt, 0x800d0e2c jolt_wait, 0x8006545c hud_button, 0x80034940 race_controls
+worklog: 11, 63, 79, 88
 ---
 
 # Controls and the pad
@@ -106,6 +106,18 @@ brake's, else 0) by 7 a frame. `action_level` (0x8001b170, interface slot
 0x8012fce4) returns an action's level; the race's controls (0x80034940)
 read actions 0 to 10 through it. Ported as `hwtr_game::pad`, checked by a
 differential test against 0x8001bec0.
+
+The controls into the car (0x80034940) are `PadReader::controls` and
+`Car::apply_controls`. `controls_into_the_car_match_the_original` (hle
+tests/car.rs) checks them over 1200 rounds:
+
+- any action levels: a button's 255, nothing, or an analog stick's
+  anything between
+- any speed, the race over or not
+- the whole car compared after the call
+
+So an analog stick reaches the car as a digital pad does, through the same
+levels.
 
 ## Notes for the port
 

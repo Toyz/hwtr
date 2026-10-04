@@ -971,3 +971,47 @@ fn flying_wheels_step_as_in_the_original() {
     }
     assert!(stepped > 10000, "{stepped} stepped");
 }
+
+/// 0x80034940: player one's controls into their car, from any action
+/// levels (a button's 255 or nothing, an analog stick's anything between)
+/// at any speed, against `PadReader::controls` and `apply_controls`; the
+/// whole car compared.
+#[test]
+fn controls_into_the_car_match_the_original() {
+    use hwtr_game::pad::PadReader;
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0xc0_4740);
+    let (mut rounds, mut steered) = (0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let start = m.bus.ram.clone();
+        for round in 0..400 {
+            m.bus.ram.copy_from_slice(&start);
+            let mut ram = Ram(&mut m.bus.ram);
+            let slot = ram.u8(0x800d_25f2) as u32;
+            let at = CARS + CAR_SIZE * slot;
+            let level = |rng: &mut common::Rng| match rng.below(3) {
+                0 => 0u16,
+                1 => 255,
+                _ => rng.below(256) as u16,
+            };
+            let mut pad = <PadReader as InMemory>::read(&ram, hwtr_hle::original::pad::port(0));
+            pad.levels = std::array::from_fn(|_| level(&mut rng));
+            pad.held = std::array::from_fn(|_| if rng.below(4) == 0 { 255 } else { 0 });
+            pad.write(&mut ram, hwtr_hle::original::pad::port(0));
+            let mut car = Car::read(&ram, at);
+            car.body.speed = (rng.below(0xa0_0000) as i32) - 0x10_0000;
+            car.laps.finished = rng.below(10) == 0;
+            car.write(&mut ram, at);
+            let tuning = hwtr_hle::original::car::tuning(&ram);
+            car.apply_controls(&pad.controls(), &tuning);
+            m.call(0x8003_4940, &[0]).unwrap();
+            let ram = Ram(&mut m.bus.ram);
+            let theirs = Car::read(&ram, at);
+            assert_eq!(theirs, car, "{name} round {round}: levels {:?} held {:?}", pad.levels, pad.held);
+            rounds += 1;
+            steered += (car.steer != 0 && !car.laps.finished) as u32;
+        }
+    }
+    assert!(rounds >= 1200 && steered > 500, "{rounds} rounds, {steered} steered");
+}
