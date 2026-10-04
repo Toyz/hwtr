@@ -9,7 +9,7 @@ pub struct Rand {
 
 impl Rand {
     /// 0x800a60c8: the next number, 0 to 0x7fff.
-    pub fn next(&mut self) -> u32 {
+    pub fn rand(&mut self) -> u32 {
         self.seed = self.seed.wrapping_mul(0x41c6_4e6d).wrapping_add(0x3039);
         (self.seed >> 16) & 0x7fff
     }
@@ -17,7 +17,7 @@ impl Rand {
     /// 0x800145f0: the next number below `n` (the remainder; for `n` of 0,
     /// the R3000A's `divu` leaves the number itself).
     pub fn below(&mut self, n: u32) -> u32 {
-        let r = self.next();
+        let r = self.rand();
         r.checked_rem(n).unwrap_or(r)
     }
 }
