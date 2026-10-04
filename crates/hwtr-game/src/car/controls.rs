@@ -7,9 +7,9 @@ use crate::math::{div, div_fx, fx};
 /// held is 255; an analog stick or trigger anything between).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Controls {
-    /// Actions 0 and 1.
-    pub steer_right: u8,
+    /// Actions 0 and 1 (the d-pad's Left and Right in the original).
     pub steer_left: u8,
+    pub steer_right: u8,
     /// Actions 2 and 3.
     pub accelerate: u8,
     pub brake: u8,
@@ -41,8 +41,8 @@ impl Car {
             return;
         }
         let over = |a: u8, b: u8| div(((a as i32) - (b as i32)) << 12, 255).0;
-        // Positive steers left.
-        let mut steer = fx(over(c.steer_left, c.steer_right), self.handling.unknown_04);
+        // Positive steers right.
+        let mut steer = fx(over(c.steer_right, c.steer_left), self.handling.unknown_04);
         let mph = div_fx(176 << 12, 10 << 12);
         let threshold = fx((tuning.steer_mph as i32) << 12, mph);
         let speed = self.body.speed;

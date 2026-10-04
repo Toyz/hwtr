@@ -50,7 +50,8 @@ pub struct Race {
 
 /// A pad as the race's actions (0 to 255 each): the left stick or the
 /// d-pad steers, Cross or R2 accelerates, Square or L2 brakes, Circle or R1
-/// is the handbrake, and the left stick is also the stick in the air.
+/// is the handbrake, and the left stick or the d-pad is also the stick in
+/// the air (as the original reads the d-pad into both).
 fn controls(pad: &Pad) -> Controls {
     let held = |b: u16| if pad.held(b) { 255 } else { 0 };
     let side = |v: u8, positive: bool| -> u8 {
@@ -58,13 +59,15 @@ fn controls(pad: &Pad) -> Controls {
         let d = if positive { d } else { -d };
         (d.max(0) * 2).min(255) as u8
     };
+    let (right, left) = (side(pad.lx, true).max(held(buttons::RIGHT)), side(pad.lx, false).max(held(buttons::LEFT)));
+    let (down, up) = (side(pad.ly, true).max(held(buttons::DOWN)), side(pad.ly, false).max(held(buttons::UP)));
     Controls {
-        steer_right: side(pad.lx, true).max(held(buttons::RIGHT)),
-        steer_left: side(pad.lx, false).max(held(buttons::LEFT)),
+        steer_left: left,
+        steer_right: right,
         accelerate: held(buttons::CROSS).max(held(buttons::R2)),
         brake: held(buttons::SQUARE).max(held(buttons::L2)),
-        stick_across: [side(pad.lx, true), side(pad.lx, false)],
-        stick_along: [side(pad.ly, true), side(pad.ly, false)],
+        stick_across: [right, left],
+        stick_along: [down, up],
         handbrake: (held(buttons::CIRCLE) | held(buttons::R1)) & 1,
         ..Controls::default()
     }
