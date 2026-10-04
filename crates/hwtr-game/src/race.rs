@@ -144,10 +144,26 @@ pub enum RaceEvent {
     PowerUp {
         car: u8,
     },
-    /// A world object was knocked over, with its sound (0x80036270).
-    Knock {
-        sound: u8,
+    /// A sound at a spot (0x80036270): a knocked object's, or a trigger's
+    /// (`trigger`: the trigger and which of its animations, for a looping
+    /// one, which follows the animation until it stops).
+    Spot {
         at: crate::math::Vec3,
+        sound: u8,
+        volume: u8,
+        looped: bool,
+        trigger: Option<(u16, u8)>,
+    },
+    /// A trigger's looping sounds follow its animations (0x8006a4cc).
+    SpotsFollow {
+        trigger: u16,
+        at: [Option<crate::math::Vec3>; 2],
+    },
+    /// A trigger's animations stopped: its looping sounds stop
+    /// (0x8006a424; the second animation's only under flag 4).
+    SpotsStop {
+        trigger: u16,
+        both: bool,
     },
     /// Sound effect `id` with its importance (0x800157f8), as the cars or
     /// the HUD ask.
@@ -238,6 +254,8 @@ pub struct WorldVolume {
     pub object: Option<usize>,
     pub follows: bool,
     pub sound: Option<u8>,
+    /// The knock's sound's volume (0-255).
+    pub volume: u8,
     pub collision: usize,
     /// Its flags, centre and height, for its debris.
     pub flags: u32,
@@ -534,17 +552,18 @@ impl Race {
     /// each a collision object.
     pub fn set_volumes(
         &mut self,
-        volumes: &[(u32, Option<usize>, crate::math::Vec3, crate::math::Matrix, crate::math::Vec3, u32, u8)],
+        volumes: &[(u32, Option<usize>, crate::math::Vec3, crate::math::Matrix, crate::math::Vec3, u32, [u8; 2])],
     ) {
         self.world_volumes = volumes
             .iter()
             .enumerate()
-            .map(|(k, &(flags, object, centre, rot, size, heft, sound))| {
+            .map(|(k, &(flags, object, centre, rot, size, heft, [sound, volume]))| {
                 let collision = self.collision.add_world_object(&self.tables, k as u16, flags, centre, rot, size, heft);
                 WorldVolume {
                     object,
                     follows: flags & 8 != 0,
                     sound: (flags & 4 != 0).then_some(sound),
+                    volume,
                     collision,
                     flags,
                     pos: centre,
@@ -637,7 +656,12 @@ impl Race {
         car.wrecked = false;
         car.wreck_ms = 0;
         car.flags &= !0x3800;
-        tracing::trace!("car {slot}: the wreck's debris cleared, the reset's effects, not yet ported");
+        // Its flying wheels taken away (0x8007da78: the wheels are not yet
+        // ported), its effects reset (0x80029f04: the puffs and sparks
+        // cleared, the model its colour) and its boost flame out
+        // (0x8002aff4).
+        self.effects.car_reset(slot as u8);
+        self.effects.flame_stop(slot as u8);
         body.ang_momentum = [0; 3];
         body.torque = [0; 3];
         body.momentum = [0; 3];
@@ -660,8 +684,6 @@ impl Race {
         self.power_ups.drop_all(car);
         car.reset_grace_ms = 2000;
         car.just_reset = true;
-        // 0x80029f04: the puffs and sparks cleared, the model its colour.
-        self.effects.car_reset(slot as u8);
         if let Some(obj) = self.collision.objects.iter_mut().find(|o| o.car == Some(slot as u8)) {
             obj.flags |= 1;
         }
@@ -764,7 +786,8 @@ impl Race {
                     }
                     if let Some(sound) = vol.sound {
                         let at = self.collision.objects[vol.collision].centre;
-                        self.events.push(RaceEvent::Knock { sound, at });
+                        let volume = vol.volume;
+                        self.events.push(RaceEvent::Spot { at, sound, volume, looped: false, trigger: None });
                     }
                 }
                 tracing::trace!(
@@ -859,9 +882,32 @@ impl Race {
         // 0x8007f17c: the track's objects move, by the race clock and the
         // time before the start, unless the race stands still.
         if !self.frozen {
-            // The triggers' looped sounds (0x8006a4cc, 0x8006a424) are
-            // played once, so nothing follows their animations.
-            let _running = self.anims.step(self.time.wrapping_add(self.before_start));
+            let running = self.anims.step(self.time.wrapping_add(self.before_start));
+            // 0x8006a4cc and 0x8006a424: a trigger whose animations run
+            // and that loops a sound (flags 2 and 0x10) has it follow them
+            // (the second only under flag 4), or stop with them.
+            for (trigger, stopped) in running
+                .moving
+                .iter()
+                .map(|&t| (t, false))
+                .chain(running.stopped.iter().map(|&t| (t, true)))
+                .collect::<Vec<_>>()
+            {
+                let Some(t) = self.collision.scp.triggers.get(trigger as usize).copied() else { continue };
+                if t.flags & 2 == 0 || t.flags & 0x10 == 0 {
+                    continue;
+                }
+                if stopped {
+                    self.events.push(RaceEvent::SpotsStop { trigger, both: t.flags & 4 != 0 });
+                } else {
+                    let at = std::array::from_fn(|k| {
+                        (k == 0 || t.flags & 4 != 0)
+                            .then(|| self.anims.pose(&self.tables, t.anims[k] as usize).map(|(_, pos)| pos))
+                            .flatten()
+                    });
+                    self.events.push(RaceEvent::SpotsFollow { trigger, at });
+                }
+            }
         }
         self.rumble();
         match self.phase {
@@ -1329,9 +1375,10 @@ impl Race {
         let player = self.cars.get(slot as usize).is_some_and(|c| c.flags & 1 != 0);
         for f in self.anims.fire(&t, trigger, player) {
             match f {
-                crate::world_anim::Fired::Sound { anim, sound } => {
+                crate::world_anim::Fired::Sound { anim, k, sound, volume, looped } => {
                     let at = self.anims.pose(&self.tables, anim).map_or([0; 3], |(_, pos)| pos);
-                    self.events.push(RaceEvent::Knock { sound, at });
+                    let trigger = looped.then_some((trigger, k));
+                    self.events.push(RaceEvent::Spot { at, sound, volume, looped, trigger });
                 }
                 crate::world_anim::Fired::Effect27 => self.events.push(RaceEvent::Effect { id: 27, importance: 0 }),
             }

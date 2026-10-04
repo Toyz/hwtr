@@ -101,8 +101,9 @@ fn triggers_start_animations_as_the_original() {
     let heard = Rc::new(RefCell::new(Vec::new()));
     let log = heard.clone();
     m.hook(0x8003_6270, move |cpu, bus| {
-        let sound = bus.read(cpu.r[29] + 16, 4).unwrap() as u8;
-        log.borrow_mut().push(Fired::Sound { anim: usize::MAX, sound });
+        let arg = |bus: &mut hwtr_cpu::Bus, k: u32| bus.read(cpu.r[29] + 16 + 4 * k, 4).unwrap() as u8;
+        let (sound, volume, looped) = (arg(bus, 0), arg(bus, 1), arg(bus, 2) != 0);
+        log.borrow_mut().push(Fired::Sound { anim: usize::MAX, k: 0, sound, volume, looped });
         0
     });
     let log = heard.clone();
@@ -181,7 +182,9 @@ fn triggers_start_animations_as_the_original() {
         let ours_heard: Vec<Fired> = fired
             .iter()
             .map(|f| match *f {
-                Fired::Sound { sound, .. } => Fired::Sound { anim: usize::MAX, sound },
+                Fired::Sound { sound, volume, looped, .. } => {
+                    Fired::Sound { anim: usize::MAX, k: 0, sound, volume, looped }
+                }
                 f => f,
             })
             .collect();

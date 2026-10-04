@@ -3,7 +3,7 @@ title: The race's sound: engines, hits and tyres
 status: partial
 discs: US
 covers: US CCCPSX.EXE:0x8001924c sound_race_init, 0x80019870 iface_sound_fill, 0x80019abc voice_alloc, 0x800354ac sound_frame, 0x80045a84 car_sound_input, 0x80017928 mixer_one, 0x80035a88 contact_sound, 0x80035c7c pair_sound, 0x80016280 impact_on, 0x80016820 scrape_on, 0x800169a8 scrape_off, 0x80016a18 crash_on, 0x80016490 tyres_on, 0x800167b0 tyres_off, 0x80015b88 tyres_volume, 0x80015bcc scrape_volume, 0x800364cc race_sound_off, 0x80036634 pause_sound_off, 0x80016004 engine_off, 0x80016078 wreck_on, 0x800161f4 wreck_off, 0x80015b44 wreck_volume, 0x80016c0c crash_off, 0x80016404 impact_off, 0x8001a824 voice_key, 0x8001a8dc voice_off, 0x8003bebc camera_shake, 0x80036484 commentary_ask, 0x80019754 dialog_play, 0x800d2628 commentary, 0x8011a840 car_sound, 0x80128e94 car_sound_state, 0x800be888 tyre_effects, 0x800be8a4 contact_effects, 0x800bea6c ground_priority, 0x800d0c28 tyre_voices, 0x800d0c2c scrape_voices
-worklog: 48, 51, 60
+worklog: 48, 51, 60, 62
 ---
 
 # The race's sound
@@ -27,7 +27,7 @@ numbers. Through 0x8001924c it opens these banks:
 | --- | --- |
 | 0 | `MAINSFX2`, the effects |
 | 1 | one of `CRASHES1`, `CRASHES3`, `CRASHES4`: `rand()%4` is drawn until it is not 1, then 1 is added |
-| 2 | a bank named by the track |
+| 2 | the track's own, named `"%s%d"` from its name and number (`DESERT1`); see [the track's sounds](world-sound.md) |
 | 3 | `DIALOG1` to `DIALOG12` (`rand()%12 + 1`) |
 | 4+ | each car's engine bank |
 
@@ -216,9 +216,7 @@ Each frame the one-player mixer:
 
 ## Unknown
 
-- The world's own sounds (12 records of 36 bytes at 0x8011aab0, mixed
-  after the cars).
 - The two-player mixer's handling of the hits' voices.
-- VAB 2's name and what the dialog bank is played for.
+- What the dialog bank is played for.
 - Whether props' bodies give a velocity (+100) to the pair sound; the
   port takes none.

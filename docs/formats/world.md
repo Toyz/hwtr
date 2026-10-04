@@ -3,7 +3,7 @@ title: The world model (WLD, DLW, WLB)
 status: partial
 discs: US
 covers: US <TRACK>.WLD, <TRACK>.DLW, <TRACK>.WLB in the 11 track archives; US CCCPSX.EXE:0x800246d4 world_model_load, 0x8001e744 world_load, 0x8001e2c8 race_load_world, 0x8001ef24 world_cull_and_draw_view, 0x800317e0 world_cell_emit_gt4, 0x8001e87c world_object_draw, 0x80010344 mesh_draw_gt4, 0x800242a4 clut_anim_update
-worklog: 12
+worklog: 12, 62
 ---
 
 # The world model (WLD, DLW, WLB)
@@ -46,8 +46,10 @@ header, 104 bytes
   +76  off  pickups
   +80  u32  n_clutanim        44-byte records
   +84  off  clutanim
-  +88  u32  n_rec24b          24-byte records, meaning unknown
-  +92  off  rec24b
+  +88  u32  n_sounds          24-byte records: the track's sounds
+  +92  off  sounds            s32 x, y, z (20.12), u32 flags (1: follows the
+                              animation whose +20 word names it), u32 sound,
+                              u32 volume (0-255); see ../engine/world-sound.md
   +96  u32  flags             bit 0: +100 is the background colour (set in every WLB, clear in every WLD)
   +100 u32  background        0x00BBGGRR
 
@@ -137,7 +139,7 @@ mirrored export re-split some polygons.
 
 ## Unknown
 
-- Trackside camera flags other than bit 1, rec24b, anim fields +4/+16/+20, dyn +72..+80, object flags 0x2,
+- Trackside camera flags other than bit 1, anim field +16 (+20 names the track sound that follows it), dyn +72..+80, object flags 0x2,
   0x4, 0x8, and pickup +12.
 - Whether 0x800328dc subdivides near polygons, and the stray `gpf` in
   0x800317e0.

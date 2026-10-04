@@ -146,6 +146,18 @@ pub struct AnimKey {
     pub quat: [i32; 4],
 }
 
+/// One of the track's own sounds (24 bytes; 0x800215f4 reads them): where
+/// it plays (20.12), its flags (1: it follows the animation that names it),
+/// the sound (below 10 the track's bank, else an effect), and its volume
+/// (0-255).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SoundSource {
+    pub pos: [i32; 3],
+    pub flags: u32,
+    pub sound: u32,
+    pub volume: u32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Pickup {
     /// Position, 20.12.
@@ -171,6 +183,8 @@ pub struct World {
     pub volumes: Vec<Volume>,
     pub cameras: Vec<CameraSpot>,
     pub pickups: Vec<Pickup>,
+    /// The track's sounds (24-byte records, the table at +92).
+    pub sounds: Vec<SoundSource>,
     pub counts: Counts,
     pub flags: u32,
     /// RGB, when `flags` bit 0 is set.
@@ -408,7 +422,18 @@ impl World {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        r.table(92, counts.rec24b, 24)?;
+        let sounds_at = r.table(92, counts.rec24b, 24)?;
+        let sounds = (0..counts.rec24b as usize)
+            .map(|k| {
+                let a = sounds_at + 24 * k;
+                Ok(SoundSource {
+                    pos: [r.i32(a)?, r.i32(a + 4)?, r.i32(a + 8)?],
+                    flags: r.u32(a + 12)?,
+                    sound: r.u32(a + 16)?,
+                    volume: r.u32(a + 20)?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         let n_pick = r.u32(72)?;
         let pick_at = r.table(76, n_pick, 32)?;
@@ -460,6 +485,7 @@ impl World {
             volumes,
             cameras,
             pickups,
+            sounds,
             counts,
             flags: r.u32(96)?,
             background: [bg as u8, (bg >> 8) as u8, (bg >> 16) as u8],

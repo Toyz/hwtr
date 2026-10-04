@@ -121,9 +121,11 @@ struct RaceSound {
     /// their samples.
     crashes: Option<(hwtr_game::snd::Bank, std::sync::Arc<[u8]>)>,
     dialog: Option<(hwtr_game::snd::Bank, std::sync::Arc<[u8]>)>,
+    /// The track's own bank (VAB 2, named after the track), for its sounds.
+    track: Option<(hwtr_game::snd::Bank, std::sync::Arc<[u8]>)>,
     /// What each voice was keyed with by the engines (libsnd's record of
-    /// it, which a bend checks): the car, program, tone and note.
-    owners: [Option<(usize, u8, u8, u8)>; 24],
+    /// it, which a bend checks): the bank, program, tone and note.
+    owners: [Option<(hwtr_game::engines::Bank, u8, u8, u8)>; 24],
 }
 
 impl RaceSound {
@@ -143,6 +145,19 @@ impl RaceSound {
         }
     }
 
+    /// A bank the engines key from, and its samples, if loaded.
+    fn bank(&self, bank: hwtr_game::engines::Bank) -> Option<(&hwtr_game::snd::Bank, &std::sync::Arc<[u8]>)> {
+        use hwtr_game::engines::Bank;
+        let slot = match bank {
+            Bank::Car(car) => self.banks.get(car)?,
+            Bank::Effects => return Some((&self.effects.bank, &self.effects.samples)),
+            Bank::Crashes => &self.crashes,
+            Bank::Track => &self.track,
+            Bank::Dialog => &self.dialog,
+        };
+        slot.as_ref().map(|(b, s)| (b, s))
+    }
+
     /// Whether each voice plays.
     fn alive(&self) -> [bool; 24] {
         match self.spu.lock() {
@@ -158,22 +173,7 @@ impl RaceSound {
         for &c in changes {
             match c {
                 Change::KeyOn { voice, bank, program, tone, note, fine, left, right } => {
-                    use hwtr_game::engines::Bank;
-                    let (b, samples) = match bank {
-                        Bank::Car(car) => match self.banks.get(car) {
-                            Some(Some((b, s))) => (b, s),
-                            _ => continue,
-                        },
-                        Bank::Effects => (&self.effects.bank, &self.effects.samples),
-                        Bank::Crashes => match &self.crashes {
-                            Some((b, s)) => (b, s),
-                            None => continue,
-                        },
-                        Bank::Dialog => match &self.dialog {
-                            Some((b, s)) => (b, s),
-                            None => continue,
-                        },
-                    };
+                    let Some((b, samples)) = self.bank(bank) else { continue };
                     let keyed = hwtr_game::snd::key_on(
                         b,
                         &self.effects.notes,
@@ -186,23 +186,22 @@ impl RaceSound {
                         self.effects.mono,
                         0,
                     );
-                    if let (Some(v), Some(owner)) = (keyed, self.owners.get_mut(voice)) {
+                    if let Some(v) = keyed {
                         spu.key_on(voice, samples, &v);
-                        *owner = match bank {
-                            Bank::Car(car) => Some((car, program, tone, note)),
-                            _ => None,
-                        };
+                        if let Some(owner) = self.owners.get_mut(voice) {
+                            *owner = Some((bank, program, tone, note));
+                        }
                     }
                 }
                 Change::KeyOff { voice } => spu.key_off(voice),
-                Change::Bend { voice, program, bend } => {
-                    let Some(Some((car, p, tone, note))) = self.owners.get(voice).copied() else { continue };
-                    let Some(Some((bank, _))) = self.banks.get(car) else { continue };
-                    if p != program {
+                Change::Bend { voice, bank, program, bend } => {
+                    let Some(Some((b, p, tone, note))) = self.owners.get(voice).copied() else { continue };
+                    if b != bank || p != program {
                         continue;
                     }
+                    let Some((vh, _)) = self.bank(bank) else { continue };
                     let pitch = hwtr_game::snd::bend_pitch(
-                        bank,
+                        vh,
                         &self.effects.notes,
                         p as usize,
                         tone as usize,
@@ -465,7 +464,7 @@ impl Race {
                         Some(o) => (o.pos.map(|c| c << 12), o.rot),
                         None => (v.pos, v.rot),
                     };
-                    (v.flags, v.object, centre, rot, v.size, v.heft, v.extra[0] as u8)
+                    (v.flags, v.object, centre, rot, v.size, v.heft, [v.extra[0] as u8, v.extra[1] as u8])
                 })
                 .collect();
             race.set_volumes(&volumes);
@@ -570,6 +569,7 @@ impl Race {
                 engines: Default::default(),
                 banks: Vec::new(),
                 crashes: None,
+                track: None,
                 dialog: None,
                 owners: [None; 24],
             }),
@@ -592,6 +592,36 @@ impl Race {
                 s.dialog = hwtr_game::snd::Bank::from_vh(vh, 0).map(|b| (b, std::sync::Arc::from(vb)));
                 tracing::info!("dialog bank {n}");
             }
+            // ... and the track's own, as VAB 2 (named "%s%d", the track
+            // and its number). Then 0x800350d4 keys the track's sounds where
+            // its world puts them, and 0x80036174 sets the two spots.
+            if let (Ok(vh), Ok(vb)) = (get(&format!("{t}VH")), get(&format!("{t}VB"))) {
+                s.track = hwtr_game::snd::Bank::from_vh(vh, 0).map(|b| (b, std::sync::Arc::from(vb)));
+            }
+            let world = &scene.world;
+            let defs: Vec<hwtr_game::world_sound::SourceDef> = world
+                .sounds
+                .iter()
+                .map(|w| hwtr_game::world_sound::SourceDef {
+                    pos: w.pos,
+                    flags: w.flags,
+                    sound: w.sound,
+                    volume: w.volume,
+                })
+                .collect();
+            let links: Vec<usize> = (0..defs.len())
+                .map(|k| world.anims.iter().position(|a| a.trigger[1] == k as u32).unwrap_or(0))
+                .collect();
+            s.engines.trigger_spots = vec![[0; 2]; race.collision.scp.triggers.len()];
+            let alive = s.alive();
+            let changes = s.engines.start_world(&race.tables, &defs, &links, &|v| alive[v]);
+            s.apply(&changes);
+            tracing::info!(
+                "{} track sounds (bank {t}: {}), {} keyed",
+                defs.len(),
+                if s.track.is_some() { "loaded" } else { "missing" },
+                changes.iter().filter(|c| matches!(c, hwtr_game::engines::Change::KeyOn { .. })).count()
+            );
         }
         tracing::info!(
             "race on {t}: {} car(s) ported, flyby of {} keyframes, countdown from {} ms",
@@ -695,6 +725,40 @@ impl Race {
                 }
                 continue;
             }
+            // 0x80036270, 0x8006a4cc, 0x8006a424: the spots' sounds.
+            if let Some(s) = &mut self.sound {
+                let alive = s.alive();
+                let alive = |v: usize| alive.get(v).copied().unwrap_or(false);
+                match event {
+                    RaceEvent::Spot { at, sound, volume, looped, trigger } => {
+                        let (spot, changes) = s.engines.spot_sound(
+                            &self.race.tables,
+                            self.race.clock,
+                            at,
+                            sound as u32,
+                            volume as u32,
+                            looped,
+                            self.race.collision.hushed,
+                            &alive,
+                        );
+                        s.apply(&changes);
+                        if let Some((t, k)) = trigger {
+                            s.engines.set_trigger_spot(t, k, spot.unwrap_or(255));
+                        }
+                        continue;
+                    }
+                    RaceEvent::SpotsFollow { trigger, at } => {
+                        s.engines.follow_trigger(trigger, at);
+                        continue;
+                    }
+                    RaceEvent::SpotsStop { trigger, both } => {
+                        let changes = s.engines.stop_trigger(trigger, both, &alive);
+                        s.apply(&changes);
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
             if let RaceEvent::Dialog { tone } = event {
                 tracing::info!("the commentator's tone {tone} at {} ms", self.race.time);
                 if let Some(s) = &mut self.sound {
@@ -711,7 +775,17 @@ impl Race {
                 && let Some(s) = &mut self.sound
             {
                 let alive = s.alive();
-                let changes = s.engines.silence(&|v| alive.get(v).copied().unwrap_or(false));
+                let alive = |v: usize| alive.get(v).copied().unwrap_or(false);
+                // The track's sounds silenced too: after the cars at the
+                // pause, before them at the end.
+                let mut changes = Vec::new();
+                if matches!(event, RaceEvent::Finish) {
+                    changes.extend(s.engines.mute_sources(&alive));
+                }
+                changes.extend(s.engines.silence(&alive));
+                if matches!(event, RaceEvent::Pause) {
+                    changes.extend(s.engines.mute_sources(&alive));
+                }
                 s.apply(&changes);
             }
             // What each sounds (the calls to 0x800157f8): the countdown,
@@ -729,7 +803,6 @@ impl Race {
                 RaceEvent::Pause => Some((14, 0)),
                 RaceEvent::Wreck { .. } => Some((29, 1)),
                 RaceEvent::PowerUp { .. } => Some((24, 0)),
-                RaceEvent::Knock { sound, .. } => Some((sound, 0)),
                 RaceEvent::Effect { id, importance } => Some((id, importance)),
                 _ => None,
             };
@@ -753,7 +826,12 @@ impl Race {
                         let changes = s.engines.key_on(car as usize);
                         s.apply(&changes);
                     }
-                    RaceEvent::Resume => s.engines_on(),
+                    RaceEvent::Resume => {
+                        s.engines_on();
+                        let alive = s.alive();
+                        let changes = s.engines.rekey_sources(&self.race.tables, &|v| alive[v]);
+                        s.apply(&changes);
+                    }
                     _ => {}
                 }
             }
@@ -779,6 +857,10 @@ impl Race {
                 alive.get(v).copied().unwrap_or(false)
             });
             s.apply(&changes);
+            // Then the track's sounds that follow animations go where they
+            // are now.
+            let race = &mut self.race;
+            s.engines.follow_sources(&mut |anim| race.anims.pose(&race.tables, anim).map(|(_, pos)| pos));
         }
         if let (Some(p), Some(s)) = (&self.race.paused, &mut self.sound) {
             for &id in &p.sounds {

@@ -302,9 +302,11 @@ fn main() {
             Some(c) => c,
             None => rrt::disc::Image::find(Path::new("work/disc")).map_err(|e| e.to_string())?,
         };
-        // Sound only with a window.
+        // Sound only with a window (or, for a shot, a silent sound chip
+        // with HWTR_SHOT_SOUND set, to run the sound's code).
         let (spu, audio) = if shot_mode {
-            (None, None)
+            let silent = std::env::var_os("HWTR_SHOT_SOUND").is_some();
+            (silent.then(|| std::sync::Arc::new(std::sync::Mutex::new(spu::Spu::default()))), None)
         } else {
             let spu = std::sync::Arc::new(std::sync::Mutex::new(spu::Spu::default()));
             match rrt::audio::Output::open(spu.clone()) {

@@ -27,7 +27,16 @@ pub struct ObjectAnim {
 /// stands, or effect 27 for a player's car.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fired {
-    Sound { anim: usize, sound: u8 },
+    /// Animation `anim`, the trigger's `k`th, sounds `sound` at `volume`
+    /// where it stands: looping (flag 0x10) unless flag 0x8 or 0x20 asks
+    /// for one sounding.
+    Sound {
+        anim: usize,
+        k: u8,
+        sound: u8,
+        volume: u8,
+        looped: bool,
+    },
     Effect27,
 }
 
@@ -112,7 +121,8 @@ impl WorldAnims {
                 continue;
             }
             if t.flags & 0x38 != 0 {
-                out.push(Fired::Sound { anim, sound: t.sounds[k] });
+                let looped = t.flags & 0x28 == 0;
+                out.push(Fired::Sound { anim, k: k as u8, sound: t.sounds[k], volume: t.params[k], looped });
             } else if player && k == 0 {
                 out.push(Fired::Effect27);
             }

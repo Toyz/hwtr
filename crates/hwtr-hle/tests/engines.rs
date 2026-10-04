@@ -163,7 +163,7 @@ fn the_revs_bend_and_the_throttle_split_match_the_original() {
                     let got = (ram.i16(r) as u16, ram.i16(r + 2) as u16);
                     assert_eq!(got, (left as u16 * 129, right as u16 * 129), "round {round}: voice {voice}'s volume");
                 }
-                engines::Change::Bend { voice, program, bend } => {
+                engines::Change::Bend { voice, program, bend, .. } => {
                     // The voice must still be the engine's (libsnd checks).
                     let owner = 0x8014_33c0 + 56 * voice as u32;
                     if ram.i16(owner + 0x14) != program as i16 {
@@ -266,7 +266,7 @@ fn the_mixer_matches_the_original() {
                 engines::Change::Volume { voice, left, right } => {
                     volumes.insert(voice, (left as u16 * 129, right as u16 * 129));
                 }
-                engines::Change::Bend { voice, program, bend } => {
+                engines::Change::Bend { voice, program, bend, .. } => {
                     let owner = 0x8014_33c0 + 56 * voice as u32;
                     if ram.i16(owner + 0x14) != program as i16 {
                         continue;

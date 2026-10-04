@@ -30,3 +30,4 @@ pub mod rand;
 pub mod snapshot;
 pub mod snd;
 pub mod world_anim;
+pub mod world_sound;

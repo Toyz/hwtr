@@ -18,6 +18,7 @@ use hwtr_game::collision::world::Hit;
 use hwtr_game::engines::{self, Bank, Change, Effect, Engines, HitTables, Listener};
 use hwtr_game::math::Tables;
 use hwtr_game::rand::Rand;
+use hwtr_game::world_sound::{Spot, WorldSound};
 use hwtr_hle::original::car::{CAR_SIZE, CARS};
 use hwtr_hle::original::rand::SEED;
 use hwtr_hle::original::{InMemory, Ram};
@@ -39,6 +40,11 @@ const HUSH: u32 = 0x800d_2623;
 const FIFTH: u32 = 0x800d_0c38;
 const THREE_FIFTHS: u32 = 0x800d_0c3c;
 const SHADOW: u32 = 0x8014_31e4;
+/// The voices held by own keys (0x8011aca0), the world sounds' records
+/// (36 bytes) and the two spots (8 bytes).
+const HELD: u32 = 0x8011_aca0;
+const WORLD: u32 = 0x8011_aab0;
+const SPOTS: u32 = 0x8012_8ef4;
 /// Scratch memory for the contacts, pairs and bodies made up here.
 const ARGS: u32 = 0x801f_8000;
 
@@ -107,6 +113,25 @@ fn voice_at(ram: &Ram, at: u32) -> Option<usize> {
     (v >= 0).then_some(v as usize)
 }
 
+fn world_at(ram: &Ram, k: u32) -> WorldSound {
+    let at = WORLD + 36 * k;
+    WorldSound {
+        voice: voice_at(ram, at),
+        tone: ram.i16(at + 2) as u8,
+        bank: ram.i16(at + 4) as u8,
+        note: ram.i16(at + 6) as u16,
+        program: ram.i16(at + 8) as u8,
+        looped: ram.u8(at + 12) != 0,
+        pos: ram.vec3(at + 16),
+        level: ram.i32(at + 32),
+    }
+}
+
+fn spot_at(ram: &Ram, k: u32) -> Spot {
+    let at = SPOTS + 8 * k;
+    Spot { record: ram.u8(at), looped: ram.u8(at + 1) != 0, time: ram.i32(at + 4) as u32 }
+}
+
 /// The engines' sound as the state holds it, for the port.
 fn engines_from(m: &mut hwtr_cpu::Machine, byte: &dyn Fn(u32) -> u8) -> Engines {
     let ram = Ram(&mut m.bus.ram);
@@ -152,6 +177,9 @@ fn engines_from(m: &mut hwtr_cpu::Machine, byte: &dyn Fn(u32) -> u8) -> Engines 
             0
         };
     }
+    e.held = std::array::from_fn(|v| ram.u8(HELD + v as u32) != 0);
+    e.world = std::array::from_fn(|k| world_at(&ram, k as u32));
+    e.spots = std::array::from_fn(|k| spot_at(&ram, k as u32));
     e
 }
 
@@ -164,6 +192,7 @@ fn keyed_of(changes: &[Change]) -> Vec<Keyed> {
                 vab: match bank {
                     Bank::Effects => 0,
                     Bank::Crashes => 1,
+                    Bank::Track => 2,
                     Bank::Dialog => 3,
                     Bank::Car(_) => -1,
                 },
@@ -228,6 +257,29 @@ fn scramble(m: &mut hwtr_cpu::Machine, rng: &mut common::Rng, rig: &Rig) {
             ram.set_u8(THREE_FIFTHS + slot, (keyed == 2) as u8);
         }
     }
+    for v in 0..24 {
+        ram.set_u8(HELD + v, rng.below(2) as u8);
+    }
+    // The world's sounds and the spots, any way.
+    let world_voices = [-1i16, -1, 6, 8, 9, 12, 14, 15, 17, 19];
+    for k in 0..12 {
+        let at = WORLD + 36 * k;
+        ram.set_i16(at, world_voices[rng.below(world_voices.len() as u32) as usize]);
+        ram.set_i16(at + 2, rng.below(10) as i16);
+        ram.set_i16(at + 4, [0, 2][rng.below(2) as usize]);
+        ram.set_i16(at + 6, (50 + rng.below(20)) as i16);
+        ram.set_i16(at + 8, rng.below(8) as i16);
+        ram.set_u8(at + 12, rng.below(2) as u8);
+        let near = [1 << 16, 1 << 22, 1 << 25][rng.below(3) as usize];
+        ram.set_vec3(at + 16, std::array::from_fn(|i| listener[i] + rng.below(2 * near) as i32 - near as i32));
+        ram.set_i32(at + 32, rng.below(4097) as i32);
+    }
+    for k in 0..2 {
+        let at = SPOTS + 8 * k;
+        ram.set_u8(at, rng.below(12) as u8);
+        ram.set_u8(at + 1, (rng.below(3) == 0) as u8);
+        ram.set_i32(at + 4, [0, 100, 5000, 9000][rng.below(4) as usize]);
+    }
     let mut alive = rig.alive.borrow_mut();
     for v in alive.iter_mut() {
         *v = rng.below(2) == 0;
@@ -252,6 +304,18 @@ fn check_records(m: &mut hwtr_cpu::Machine, e: &Engines, slot: usize, what: &str
     assert_eq!(voice_at(&ram, at + 0x48), car.wreck_voice, "{what}: wreck voice");
     let importance: [u8; 24] = std::array::from_fn(|v| ram.u8(IMPORTANCE + v as u32));
     assert_eq!(importance, e.importance, "{what}: importance");
+    check_world(&ram, e, what);
+}
+
+fn check_world(ram: &Ram, e: &Engines, what: &str) {
+    let held: [bool; 24] = std::array::from_fn(|v| ram.u8(HELD + v as u32) != 0);
+    assert_eq!(held, e.held, "{what}: held");
+    for k in 0..12u32 {
+        assert_eq!(world_at(ram, k), e.world[k as usize], "{what}: world sound {k}");
+    }
+    for k in 0..2u32 {
+        assert_eq!(spot_at(ram, k), e.spots[k as usize], "{what}: spot {k}");
+    }
 }
 
 /// A wreck's sounds (0x8004619c's calls): the car's engine let go
@@ -328,7 +392,7 @@ fn a_contact_sounds_as_in_the_original() {
     let mut rng = common::Rng(0xc0_47ac);
     let cars = Ram(&mut m.bus.ram).u8(COUNT) as u32;
     let (mut impacts, mut scrapes) = (0, 0);
-    for round in 0..3000 {
+    for round in 0..4000 {
         scramble(&mut m, &mut rng, &rig);
         let slot = rng.below(cars);
         let surface = rng.below(14) as u8;
@@ -508,10 +572,6 @@ fn the_mixer_sets_the_hits_volumes_as_the_original() {
         for v in 14..24 {
             ram.set_i16(SHADOW + 16 * v as u32, -1);
         }
-        // Nor do the world's sounds (0x8011aab0, 12 of 36 bytes).
-        for k in 0..12 {
-            ram.set_i16(0x8011_aab0 + 36 * k, -1);
-        }
         let mut e = engines_from(&mut m, &byte);
         let listener = e.listener;
         let inputs: Vec<_> =
@@ -595,4 +655,170 @@ fn the_commentator_asks_and_speaks_as_in_the_original() {
         spoken += rig.keyed.borrow().len();
     }
     assert!(spoken > 1000, "{spoken} spoken");
+}
+
+/// A world sound keyed (0x80016e54): any record, sound (some past the
+/// table), importance, looping or not, with any voices playing and held.
+#[test]
+fn world_sounds_key_as_in_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-race") else { return };
+    let t = Tables::from_exe(&exe);
+    let view = exe.view();
+    let byte = |a: u32| view.u8(a).unwrap_or(0);
+    let rig = rig(&mut m);
+    let mut rng = common::Rng(0x3b0_4d5);
+    let (mut looped_keyed, mut once_keyed) = (0, 0);
+    for round in 0..3000 {
+        scramble(&mut m, &mut rng, &rig);
+        let k = rng.below(12) as u8;
+        let id = rng.below(19);
+        let importance = rng.below(3) as u8;
+        let looped = rng.below(2) == 0;
+        let mut e = engines_from(&mut m, &byte);
+        m.call(0x8001_6e54, &[k as u32, id, importance as u32, looped as u32]).unwrap();
+        let alive = *rig.alive.borrow();
+        let changes = e.world_key(&t, k, id, importance, looped, &|v| alive[v]);
+        let what = format!("round {round}: record {k} sound {id} importance {importance} looped {looped}");
+        assert_eq!(*rig.keyed.borrow(), keyed_of(&changes), "{what}: keyed");
+        assert_eq!(*rig.off.borrow(), offs_of(&changes), "{what}: let go");
+        check_records(&mut m, &e, 0, &what);
+        let n = rig.keyed.borrow().len();
+        if looped { looped_keyed += n } else { once_keyed += n }
+    }
+    assert!(looped_keyed > 300 && once_keyed > 300, "{looped_keyed} looping, {once_keyed} once");
+}
+
+/// A world sound stopped (0x80016d5c) or silenced (0x80017208).
+#[test]
+fn world_sounds_stop_as_in_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-race") else { return };
+    let view = exe.view();
+    let byte = |a: u32| view.u8(a).unwrap_or(0);
+    let rig = rig(&mut m);
+    let mut rng = common::Rng(0x5709_d5);
+    let (mut stopped, mut muted) = (0, 0);
+    for round in 0..2000 {
+        scramble(&mut m, &mut rng, &rig);
+        let k = rng.below(12) as u8;
+        let mut e = engines_from(&mut m, &byte);
+        let alive = *rig.alive.borrow();
+        let what = format!("round {round}: record {k}");
+        if rng.below(2) == 0 {
+            m.call(0x8001_6d5c, &[k as u32]).unwrap();
+            let changes = e.world_stop(k, &|v| alive[v]);
+            assert_eq!(*rig.off.borrow(), offs_of(&changes), "{what}: let go");
+            stopped += changes.len();
+        } else {
+            for v in 0..24u32 {
+                Ram(&mut m.bus.ram).set_i16(SHADOW + 16 * v, 0x55);
+            }
+            m.call(0x8001_7208, &[k as u32]).unwrap();
+            let change = e.world_mute(k, &|v| alive[v]);
+            let ram = Ram(&mut m.bus.ram);
+            for v in 0..24u32 {
+                let muted_here = change == Some(Change::Volume { voice: v as usize, left: 0, right: 0 });
+                assert_eq!(ram.i16(SHADOW + 16 * v) == 0, muted_here, "{what}: voice {v} silenced");
+            }
+            muted += change.is_some() as usize;
+        }
+        check_records(&mut m, &e, 0, &what);
+    }
+    assert!(stopped > 200 && muted > 200, "{stopped} stopped, {muted} silenced");
+}
+
+/// A sound at a spot (0x80036270): any place, sound, volume, looping or
+/// not, the system clock anywhere against the spots' times; sometimes with
+/// the race's sound shut.
+#[test]
+fn spot_sounds_as_in_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-race") else { return };
+    let t = Tables::from_exe(&exe);
+    let view = exe.view();
+    let byte = |a: u32| view.u8(a).unwrap_or(0);
+    let rig = rig(&mut m);
+    let now = Rc::new(RefCell::new(0u32));
+    let n = now.clone();
+    m.hook(0x8006_122c, move |_, _| *n.borrow());
+    let mut rng = common::Rng(0x5b07_5d);
+    let (mut played, mut refused) = (0, 0);
+    for round in 0..3000 {
+        scramble(&mut m, &mut rng, &rig);
+        let hushed = rng.below(10) == 0;
+        Ram(&mut m.bus.ram).set_u8(HUSH, hushed as u8);
+        *now.borrow_mut() = [0, 100, 4000, 9000, 20000][rng.below(5) as usize];
+        let pos: [i32; 3] = std::array::from_fn(|_| (rng.word() as i32) >> 6);
+        let id = rng.below(17);
+        let volume = rng.below(256);
+        let looped = rng.below(3) == 0;
+        let mut e = engines_from(&mut m, &byte);
+        let r =
+            m.call(0x8003_6270, &[pos[0] as u32, pos[1] as u32, pos[2] as u32, 0, id, volume, looped as u32]).unwrap();
+        let alive = *rig.alive.borrow();
+        let (ours, changes) = e.spot_sound(&t, *now.borrow(), pos, id, volume, looped, hushed, &|v| alive[v]);
+        let what = format!("round {round}: sound {id} volume {volume} looped {looped} hushed {hushed}");
+        assert_eq!(r & 0xff, ours.map_or(255, |k| k as u32), "{what}: spot");
+        assert_eq!(*rig.keyed.borrow(), keyed_of(&changes), "{what}: keyed");
+        assert_eq!(*rig.off.borrow(), offs_of(&changes), "{what}: let go");
+        check_records(&mut m, &e, 0, &what);
+        if ours.is_some() { played += 1 } else { refused += 1 }
+    }
+    assert!(played > 1000 && refused > 300, "{played} played, {refused} refused");
+}
+
+/// The track's sounds as the race's sound starts them (0x800350d4): from
+/// the world's records and the animations' second trigger words, each
+/// source's record, flags, animation and sound, and each record's sound,
+/// level and (unless it follows an animation, which has moved since)
+/// place, against DESERT1 under way; then the spots' record.
+#[test]
+fn track_sounds_start_as_in_the_original() {
+    use hwtr_game::world_sound::SourceDef;
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-race") else { return };
+    let t = Tables::from_exe(&exe);
+    let view = exe.view();
+    let byte = |a: u32| view.u8(a).unwrap_or(0);
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../work/big/DESERT1BIG/DESERT1WLD");
+    let Ok(file) = std::fs::read(path) else { return };
+    let world = hwtr_data::world::World::parse(&file).expect("the world parses");
+    let defs: Vec<SourceDef> = world
+        .sounds
+        .iter()
+        .map(|s| SourceDef { pos: s.pos, flags: s.flags, sound: s.sound, volume: s.volume })
+        .collect();
+    let links: Vec<usize> =
+        (0..defs.len()).map(|k| world.anims.iter().position(|a| a.trigger[1] == k as u32).unwrap_or(0)).collect();
+    let mut e = engines_from(&mut m, &byte);
+    e.world = Default::default();
+    e.held = [false; 24];
+    let _ = e.start_world(&t, &defs, &links, &|_| false);
+    let ram = Ram(&mut m.bus.ram);
+    let count = ram.u8(0x800d_0df0) as usize;
+    let list = ram.i32(0x800d_0df4) as u32;
+    assert_eq!(count, e.sources.len(), "the sources");
+    assert!(count > 0);
+    for (k, s) in e.sources.iter().enumerate() {
+        let at = list + 16 * k as u32;
+        assert_eq!(ram.u8(at), s.record, "source {k}'s record");
+        assert_eq!(ram.i32(at + 4) as u32, s.flags, "source {k}'s flags");
+        if s.flags & 1 != 0 {
+            assert_eq!(ram.i32(at + 8) as usize, s.anim, "source {k}'s animation");
+        }
+        assert_eq!(ram.i32(at + 12) as u32, s.sound, "source {k}'s sound");
+        let (theirs, ours) = (world_at(&ram, s.record as u32), e.world[s.record as usize]);
+        assert_eq!(
+            (theirs.bank, theirs.program, theirs.note, theirs.level, theirs.looped),
+            (ours.bank, ours.program, ours.note, ours.level, ours.looped),
+            "source {k}'s record"
+        );
+        if s.flags & 1 == 0 {
+            assert_eq!(theirs.pos, ours.pos, "source {k}'s place");
+        }
+    }
+    for k in 0..2u32 {
+        assert_eq!(spot_at(&ram, k).record, e.spots[k as usize].record, "spot {k}'s record");
+    }
 }

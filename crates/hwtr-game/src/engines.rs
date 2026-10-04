@@ -285,6 +285,8 @@ pub enum Bank {
     Car(usize),
     Effects,
     Crashes,
+    /// The track's own bank (VAB 2, named after the track).
+    Track,
     Dialog,
 }
 
@@ -306,9 +308,10 @@ pub enum Change {
     KeyOff {
         voice: usize,
     },
-    /// Bend `voice`, if it plays `program` (0x800a63d8).
+    /// Bend `voice`, if it plays `program` of `bank` (0x800a63d8).
     Bend {
         voice: usize,
+        bank: Bank,
         program: u8,
         bend: i32,
     },
@@ -363,6 +366,16 @@ pub struct Engines {
     /// importance each was last keyed at (0x8011acc0).
     pub first: usize,
     pub importance: [u8; 24],
+    /// The voices keyed through 0x8001a824 and not let go (0x8011aca0).
+    pub held: [bool; 24],
+    /// The world's sounds, the track's sources and the two spots
+    /// (crate::world_sound).
+    pub world: [crate::world_sound::WorldSound; crate::world_sound::RECORDS],
+    pub sources: Vec<crate::world_sound::Source>,
+    pub spots: [crate::world_sound::Spot; 2],
+    /// The spot each trigger's animations' looping sound took (0x800d0fd8,
+    /// two bytes a trigger, zeroed at the track's load).
+    pub trigger_spots: Vec<[u8; 2]>,
 }
 
 impl Engines {
@@ -548,6 +561,7 @@ impl Engines {
         let e = self.effect(id);
         self.cars[slot].scrape_voice = Some(voice);
         self.importance[voice] = 0;
+        self.held[voice] = true;
         vec![Change::KeyOn {
             voice,
             bank: Bank::Effects,
@@ -566,9 +580,12 @@ impl Engines {
     }
 
     /// 0x8001a8dc: voice `v` let go, its importance cleared.
-    fn let_go(&mut self, v: usize) -> Change {
+    pub(crate) fn let_go(&mut self, v: usize) -> Change {
         if let Some(i) = self.importance.get_mut(v) {
             *i = 0;
+        }
+        if let Some(h) = self.held.get_mut(v) {
+            *h = false;
         }
         Change::KeyOff { voice: v }
     }
@@ -595,6 +612,7 @@ impl Engines {
         let e = self.effect(id);
         self.cars[slot].tyre_voice = Some(voice);
         self.importance[voice] = 0;
+        self.held[voice] = true;
         vec![Change::KeyOn {
             voice,
             bank: Bank::Effects,
@@ -635,8 +653,10 @@ impl Engines {
         }];
         self.cars[slot].bend = e.note as u16;
         self.importance[slot] = 1;
+        self.held[slot] = true;
         if slot < self.players {
             self.importance[self.cars.len() + slot] = 1;
+            self.held[self.cars.len() + slot] = true;
             out.push(Change::KeyOn {
                 voice: self.cars.len() + slot,
                 bank: Bank::Car(slot),
@@ -827,7 +847,12 @@ impl Engines {
                 out.extend(self.mix(slot, left, right));
                 if let Some(kind) = self.kind(slot) {
                     let bend = (kind.key_note as i32 + shift) as i16 as i32;
-                    out.push(Change::Bend { voice: watched, program: self.effect.program, bend });
+                    out.push(Change::Bend {
+                        voice: watched,
+                        bank: Bank::Car(slot),
+                        program: self.effect.program,
+                        bend,
+                    });
                 }
             }
             let car = &self.cars[slot];
@@ -857,6 +882,11 @@ impl Engines {
                 out.push(volume(voice, scaled(car.impact_level, left) / 2, scaled(car.impact_level, right) / 2));
             }
         }
+        // Then the world's sounds (the two-player mixer's own pass is not
+        // yet ported).
+        if self.players < 2 {
+            out.extend(self.world_mixer(t, alive));
+        }
         out
     }
 
@@ -883,12 +913,12 @@ impl Engines {
             }
             let byte = |v: i32| ((v as u32 >> 12) & 255) as u8;
             let [el, er, ol, or] = car.levels.map(byte);
-            out.push(Change::Bend { voice: cars + slot, program: 1, bend });
+            out.push(Change::Bend { voice: cars + slot, bank: Bank::Car(slot), program: 1, bend });
             out.push(Change::Volume { voice: cars + slot, left: ol, right: or });
-            out.push(Change::Bend { voice: slot, program, bend });
+            out.push(Change::Bend { voice: slot, bank: Bank::Car(slot), program, bend });
             out.push(Change::Volume { voice: slot, left: el, right: er });
         } else {
-            out.push(Change::Bend { voice: slot, program, bend });
+            out.push(Change::Bend { voice: slot, bank: Bank::Car(slot), program, bend });
             out.push(Change::Volume { voice: slot, left: (left / 2) as u8, right: (right / 2) as u8 });
         }
         out
