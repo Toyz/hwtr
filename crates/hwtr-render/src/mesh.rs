@@ -267,8 +267,10 @@ pub fn place_car_texture(vram: &mut Vram, tim: &hwtr_data::Tim, slot: usize) -> 
 /// half their model's scale (inferred: at full scale the grid's cars would
 /// overlap). Faces are lit at the base colour 0x80, a texel modulation of 1.
 /// `wheels` turns and places each wheel node (rotation, translation in
-/// model units) as the game last posed it; a wheel without one sits where
-/// the model puts it.
+/// model units, and whether it rides on the body) as the game last posed
+/// it; a wheel without one sits where the model puts it. The body and the
+/// wheels on it are drawn at `body_scale` about the root (the scale cheats,
+/// 0x80022274); a wheel off the car is not.
 pub fn car_triangles(
     m: &hwtr_data::car::Model,
     clut: u16,
@@ -276,7 +278,8 @@ pub fn car_triangles(
     pos: glam::Vec3,
     rot: glam::Mat3,
     root_rgb: u32,
-    wheels: &[(glam::Mat3, glam::Vec3)],
+    body_scale: f32,
+    wheels: &[(glam::Mat3, glam::Vec3, bool)],
 ) -> Vec<Vtx> {
     let mut out = Vec::new();
     let root = glam::Vec3::new(m.root.pos[0] as f32, m.root.pos[1] as f32, m.root.pos[2] as f32);
@@ -289,8 +292,9 @@ pub fn car_triangles(
                 let v = node.verts[f.v[k] as usize];
                 let v = glam::Vec3::new(v.x as f32, v.y as f32, v.z as f32);
                 let placed = match n.checked_sub(1).and_then(|w| wheels.get(w)) {
-                    Some((turn, at)) => *turn * v + *at,
-                    None => v + offset,
+                    Some(&(turn, at, true)) => (turn * v + at) * body_scale,
+                    Some(&(turn, at, false)) => turn * v + at,
+                    None => (v + offset) * body_scale,
                 };
                 let local = (placed + root) * 0.5;
                 Vtx {

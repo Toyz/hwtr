@@ -3,7 +3,7 @@ title: The car's lights (exhaust glows, headlights, tail lights, darkening)
 status: solid
 discs: US
 covers: US CCCPSX.EXE:0x80029fb0 car_draw_glows, 0x8002a81c car_draw_beams, 0x8002ad48 car_fade_light, 0x8002bb0c car_aim_lights, 0x8002bad0 car_set_glow, 0x80021f60 car_upload_lamp_clut, 0x800291b4 car_light_mask, 0x80028fb0 car_effect_matrix, 0x80010678 quad_list_draw, 0x80022cd0 fxp_parse
-worklog: 58, 59
+worklog: 58, 59, 86
 ---
 
 # The car's lights
@@ -77,7 +77,8 @@ After the shadow, in this order:
      - The beam has three quads (0x800bdf10, faces 0x800bdf70) on sheet 17,
        coloured at the level, additive.
      - The far corners (2, 3, 6, 7) are pushed 170 units along the lamp's
-       direction, then scaled 3.5 across and 1.5 along and up.
+       direction (times the scale, so twice as far under cheat 32), then
+       scaled 3.5 across and 1.5 along and up.
    - **The body's fade (0x8002ad48 with 0).** The drawn model's root colour
      steps 5 toward +0x1e9, to at most 128.
 3. **The headlights' fade (0x8002ad48 with 1), while +0x1f1 is set.** The
@@ -124,6 +125,9 @@ Tests: `crates/hwtr-hle/tests/lights.rs`.
 
 - **The FXP's records.** The test parses the FXP from memory, as
   fxp_parse left it, and checks its records against the view state's.
+  `fxp_lamps_scale_as_the_original` runs fxp_parse under cheats 0, 2, 4,
+  32 and 6: under 2 or 4 each glow's place is at the model's scale
+  (`Lamps::scale`).
 - **The off palettes.** The test checks them against 0x8011d470.
 - **The frame's end.** 900 rounds of 0x80049ecc for every car, with any
   revs, zone bits, brake, wreck and light bytes, compare the glow strength
@@ -137,7 +141,8 @@ Tests: `crates/hwtr-hle/tests/lights.rs`.
   - the random seed
 
   The rounds cover any lights, glow strength, wreck mark, body colour,
-  pause, draw mode and the medium or low model.
+  pause, draw mode, the medium or low model, and the model's scale (one,
+  two or a third).
 
 ## Unknown
 

@@ -20,7 +20,7 @@
 //! brakes); the computer cars drive their routes.
 //!
 //! ```text
-//! hwtr [--cue DISC.cue] [--track NAME] [--analog] [--shot OUT.png [--frames N] [--press SCRIPT] [--intro] [--race-frames N]]
+//! hwtr [--cue DISC.cue] [--track NAME [--cheats BITS]] [--analog] [--shot OUT.png [--frames N] [--press SCRIPT] [--intro] [--race-frames N]]
 //! ```
 //!
 //! `--track` goes straight to a race on that track (DESERT1 by default);
@@ -61,6 +61,8 @@ struct Hwtr {
     front: Option<FrontEnd>,
     cue: PathBuf,
     track: String,
+    /// The cheats a `--track` race runs under (`--cheats`).
+    cheats: u32,
     /// The race under way, and whether it came from the front end.
     race: Option<Race>,
     from_front: bool,
@@ -94,7 +96,7 @@ impl Hwtr {
     }
 
     fn start_race(&mut self) {
-        match Race::load(&self.cue, &self.track, self.spu.clone()) {
+        match Race::load(&self.cue, &self.track, self.cheats, self.spu.clone()) {
             Ok(mut r) => {
                 r.analog = self.analog;
                 // The settings' defaults (0x80088544).
@@ -276,6 +278,7 @@ fn main() {
     let mut analog = false;
     let mut with_intro = false;
     let mut race_frames = None;
+    let mut cheats = 0u32;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--cue" => cue = args.next().map(PathBuf::from),
@@ -286,9 +289,10 @@ fn main() {
             "--press" => press = args.next(),
             "--intro" => with_intro = true,
             "--race-frames" => race_frames = args.next().and_then(|s| s.parse().ok()),
+            "--cheats" => cheats = args.next().and_then(|s| s.parse().ok()).unwrap_or(0),
             _ => {
                 eprintln!(
-                    "usage: hwtr [--cue DISC.cue] [--track NAME] [--analog] [--shot OUT.png [--frames N] [--press SCRIPT] [--intro] [--race-frames N]]"
+                    "usage: hwtr [--cue DISC.cue] [--track NAME [--cheats BITS]] [--analog] [--shot OUT.png [--frames N] [--press SCRIPT] [--intro] [--race-frames N]]"
                 );
                 std::process::exit(2);
             }
@@ -337,6 +341,7 @@ fn main() {
             buzz_ticks: 0,
             analog,
             race_frames: race_frames.filter(|_| shot_mode),
+            cheats,
             race_ran: 0,
             plain_format: wgpu::TextureFormat::Rgba8Unorm,
         };

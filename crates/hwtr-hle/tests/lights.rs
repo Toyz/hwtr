@@ -61,6 +61,41 @@ fn fxp_lamps_match_the_original() {
     assert!(seen >= 12, "{seen} cars");
 }
 
+/// fxp_parse (0x80022cd0) under the cheats: under 2 or 4 the glows' places
+/// at the model's scale, as `Lamps::scale` puts them.
+#[test]
+fn fxp_lamps_scale_as_the_original() {
+    const BYTES: u32 = 0x801f_0000;
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-race") else { return };
+    let start = m.bus.ram.clone();
+    let mut scaled = 0;
+    for options in [0u32, 2, 4, 32, 6] {
+        for slot in 0..6u32 {
+            m.bus.ram.copy_from_slice(&start);
+            let mut ram = Ram(&mut m.bus.ram);
+            let cvs = ram.i32(codec::model(&ram, slot) + 16) as u32;
+            let (a, b) = (ram.u8(cvs + 0x2c) as u32, ram.u8(cvs + 0x2d) as u32);
+            let first = if a > 0 { ram.i32(cvs + 0x30) as u32 - 4 } else { ram.i32(cvs + 0x134) as u32 - 4 };
+            let bytes: Vec<u8> = (0..4 + 40 * a + 92 * b).map(|k| ram.u8(first + k)).collect();
+            for (k, &v) in bytes.iter().enumerate() {
+                ram.set_u8(BYTES + k as u32, v);
+            }
+            ram.set_u8(0x800d_2468, options as u8);
+            ram.set_i32(cvs + 0x14, hwtr_game::car::draw::model_scale(options));
+            m.call(0x8002_2cd0, &[BYTES, slot]).unwrap();
+            let ram = Ram(&mut m.bus.ram);
+            let f = hwtr_data::car::fxp(&bytes).unwrap();
+            let mut ours = Lamps { glows: f.glows, headlights: f.headlights };
+            let before = ours.clone();
+            ours.scale(options);
+            assert_eq!(ours, lamps_of(&ram, cvs), "options {options:#x}: car {slot}");
+            scaled += (ours != before) as u32;
+        }
+    }
+    assert!(scaled >= 6, "{scaled} scaled");
+}
+
 /// 0x8002b05c's palettes: the tail lights off are each colour at half.
 #[test]
 fn tail_light_palettes_match_the_original() {
@@ -215,6 +250,8 @@ fn lamps_draw_as_the_original() {
             let paused = rng.below(10) == 0;
             let d2 = 1350 * 1350 + 1 + rng.below(8_000_000);
             let grey = [48u32, 53, 100, 123, 128, 130, 0x18][rng.below(7) as usize];
+            // The model's scale, as the cheats set it (cvs +0x14).
+            let scale = [4096, 4096, 8192, 1365][rng.below(4) as usize];
             let (before, pose, lamps, cvs, body_node, id, skin) = {
                 let mut ram = Ram(&mut m.bus.ram);
                 let model = codec::model(&ram, slot);
@@ -229,6 +266,7 @@ fn lamps_draw_as_the_original() {
                 ram.set_u8(cvs + 0x28, wrecked as u8);
                 ram.set_u8(cvs + 0x1f0, 0);
                 ram.set_u8(cvs + 0x1ef, 1);
+                ram.set_i32(cvs + 0x14, scale);
                 ram.set_u8(0x800d_25a0 + slot, 0);
                 ram.set_u8(MODE, if frozen { 3 } else { 0 });
                 ram.set_u8(PAUSED, paused as u8);
@@ -250,12 +288,12 @@ fn lamps_draw_as_the_original() {
             let mut rand = Rand { seed };
             let mut l = before;
             let ours_glows =
-                if wrecked { Vec::new() } else { lights::glows(&l, &lamps, id, &mut rand, &pose, paused || frozen) };
+                if wrecked { Vec::new() } else { lights::glows(&l, &lamps, id, scale, &mut rand, &pose, paused || frozen) };
             let mut ours_beams = Vec::new();
             let mut body = grey << 16 | grey << 8 | grey;
             if l.lamp != 0 {
                 if !wrecked {
-                    ours_beams = lights::beams(&l, &lamps, &pose);
+                    ours_beams = lights::beams(&l, &lamps, scale, &pose);
                 }
                 l.fade(Fade::Body, &mut body, wrecked, frozen);
             }

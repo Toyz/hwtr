@@ -763,7 +763,10 @@ fn shadows_match_the_original() {
             ram.set_vec3(0x8011_dbe4 + 20 * slot, n);
             ram.set_i32(0x8011_dbe4 + 20 * slot + 16, d);
             ram.set_u8(cvs + 0x1ef, 1);
-            ram.set_u8(0x800d_2468, 0);
+            // Any cheat, the model's scale as it sets it.
+            let options = [0u32, 0, 2, 4, 32, 6][rng.below(6) as usize];
+            ram.set_u8(0x800d_2468, options as u8);
+            ram.set_i32(cvs + 0x14, hwtr_game::car::draw::model_scale(options));
             let id = ram.u8(cvs + 0x10) as usize;
             let prims = 0x8011_e124 + 304 * slot;
             for k in 0..4 * 76 {
@@ -771,6 +774,11 @@ fn shadows_match_the_original() {
             }
             m.call(0x8002_9478, &[slot, model]).unwrap();
             let ram = Ram(&mut m.bus.ram);
+            let rot = if hwtr_game::car::draw::body_scaled(options) {
+                hwtr_game::car::draw::scale_columns(&rot, hwtr_game::car::draw::model_scale(options))
+            } else {
+                rot
+            };
             let ours = shadow_quads(&car.handling, table[id], pos, &rot, n, d);
             let what = format!("{name} round {round}: car {slot} (id {id}) at {pos:?} on {n:?} {d}");
             match ours {

@@ -3,7 +3,7 @@ title: Cheats (the button codes and the race options)
 status: partial
 discs: US
 covers: US CCCPSX.EXE:0x8007f87c code_apply, 0x8007f710 cheat_code, 0x8007f79c car_code, 0x800bee6c cheat_codes, 0x800d1004 car_codes, 0x80088370 car_name_to_id, 0x80086ad0 code_press, 0x80086a70 codes_clear, 0x80086aa0 codes_clear_2, 0x80136c70 codes, 0x8008cff4 menu_pad, 0x8008d12c menu_pad_2, 0x80013ff8 cheat_on, 0x80013f00 race_setup_apply, 0x800d2468 cheats, 0x80021888 car_bind_state, 0x80022064 car_draw, 0x80022cd0 fxp_parse, 0x8002bdb4 effects_init, 0x80012864
-worklog: 84, 85
+worklog: 84, 85, 86
 ---
 
 # Cheats
@@ -64,7 +64,7 @@ Slots 1 and 7 to 9 hold 77777777 too, so slot 0 always wins. **Cheats 2,
 | 4 | **small cars**: a third of the size (below) | |
 | 8 | **flat textures**: each track texture is filled with its first texel as it loads | 0x80012ac4 |
 | 16 | **the DUDE sounds**: the race's effects bank is DUDE, every effect one of its eight tones | [race sound](race-sound.md) |
-| 32 | **big wheels**: wheels twice the diameter; a model scale of 2 for one of the car draw's matrices and the glows | |
+| 32 | **big wheels**: wheels twice the diameter, and drawn twice the size; glows and headlight beams twice as big | |
 | 64 | nothing found: no `cheat_on(64)` | |
 | 128 | (cannot be had) the race's flag 16; the collision's 0x80 (0x8005c470) | |
 | 256 | (cannot be had) the race's flag 0x40 | |
@@ -84,8 +84,17 @@ Slots 1 and 7 to 9 hold 77777777 too, so slot 0 always wins. **Cheats 2,
   28 smaller.
 
 **Big wheels (32).** 0x8004528c doubles each wheel's diameter. The scale
-(cvs +0x14) is 8192. The car draw (0x8002269c) scales a second matrix by
-it under 32 alone, and the glows are twice the size.
+(cvs +0x14) is 8192. The car draw (0x8002269c) scales each wheel node's
+own rotation (the model's +0x8 nodes, 72 bytes each) by it under 32
+alone. The glows are twice the size, and the headlight beams reach twice
+as far (0x8002a81c).
+
+**How the car draw scales (0x80022064).** Under 2 or 4 the body node's
+rotation (the model's +0x4) is scaled in place, each column times the
+scale. A wheel on the car is drawn through the body's matrix, so it
+shrinks or grows with it, its place included. A wheel off the car (its
+bit in cvs +0x1e8) is drawn through the car's world matrix alone
+(0x8002295c), at its own size.
 
 ## In the port
 
@@ -99,18 +108,24 @@ answer, the cars and the cheats. `a_code_pressed_on_the_main_menu_is_taken`
 presses 16522561 on the original's main menu, frame by frame from
 `menu-main`, and checks player one's cheats and the spaced buffer.
 
-Ported: the small cars' and big wheels' bodies (car/load.rs), the effects
-turned off, the small cars' puffs, and the DUDE sounds.
+Ported:
 
-Not ported:
+- the small cars' and big wheels' bodies (car/load.rs)
+- the effects turned off, and the small cars' puffs
+- the DUDE sounds
+- the model's scale in the draws (`car::draw::model_scale`,
+  `body_scaled`, `wheels_scaled`): the car and its wheels (the app's
+  `car_triangles`), its shadow, its glows' places and sizes, and its
+  beams
 
-- the model scale in the draws (the car, its wheels, its light points,
-  its glows, its shadow)
-- the flat textures
+The shadow, glows, beams and glow places are checked against the
+original under the cheats (car.rs, lights.rs). The car model itself is
+drawn by the app's renderer, so its scale is not checked against hle.
+
+`hwtr --track NAME --cheats BITS` races under cheats directly.
+
+Not ported: the flat textures (8).
 
 ## Unknown
 
 - What cheats 1 and 64 were for; nothing in this build reads them.
-- Which of the car draw's matrices the big-wheel scale goes to
-  (0x8002269c scales the one in s3; under 2 or 4, 0x80022274 scales
-  the one in s7).

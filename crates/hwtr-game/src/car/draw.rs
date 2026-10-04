@@ -77,6 +77,37 @@ impl WheelPose {
     }
 }
 
+/// 0x80021888: the model's scale (cvs +0x14, 4.12): twice under cheat 2 or
+/// 32, a third under 4 (the small cars), else one.
+pub fn model_scale(options: u32) -> i32 {
+    if options & (2 | 32) != 0 {
+        0x2000
+    } else if options & 4 != 0 {
+        crate::math::div_fx(0x1000, 0x3000)
+    } else {
+        0x1000
+    }
+}
+
+/// Under cheat 2 or 4 the car is drawn at its model's scale: its body and
+/// the wheels on it (0x80022274), its shadow (0x80029728) and its glows'
+/// places (0x80022cd0).
+pub fn body_scaled(options: u32) -> bool {
+    options & (2 | 4) != 0
+}
+
+/// Under cheat 32 each wheel's own rotation is drawn at the model's scale
+/// (0x8002269c).
+pub fn wheels_scaled(options: u32) -> bool {
+    options & 32 != 0
+}
+
+/// `m` times the diagonal `s` as the draws make it (the GTE's mvmva, sf=1,
+/// lm=0): each entry times `s`, kept to a half word.
+pub fn scale_columns(m: &Matrix, s: i32) -> Matrix {
+    m.map(|row| row.map(|v| fx(v as i32, s).clamp(-0x8000, 0x7fff) as i16))
+}
+
 /// How far each car's shadow reaches (0x800be00c, by car id): out past its
 /// rear right wheel's tyre, in from its half length, and along.
 pub const SHADOW_TABLE: u32 = 0x800b_e00c;
@@ -94,8 +125,8 @@ pub fn shadow_table(byte: &dyn Fn(u32) -> u8) -> Vec<[i8; 3]> {
 /// the car less `reach[1]` and at half its height below, moved by the
 /// handling's origin (and `reach[2]` along), each corner dropped straight
 /// down onto the ground. None on ground that faces less than 60 degrees up.
-/// (The original also scales the box by the model's scale under two cheats,
-/// which the port does not draw.)
+/// Under cheat 2 or 4 `rot` comes scaled by the model's scale
+/// ([`scale_columns`]), which shrinks or grows the box with the car.
 pub fn shadow_quads(
     h: &super::handling::Handling,
     reach: [i8; 3],

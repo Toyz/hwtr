@@ -52,6 +52,7 @@ impl SceneCar {
             self.pos,
             glam::Mat3::from_quat(self.rot),
             0x80_80_80,
+            1.0,
             &[],
         )
     }

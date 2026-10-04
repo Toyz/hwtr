@@ -1324,11 +1324,17 @@ impl Race {
                 if ground.found {
                     let id = self.setup.cars.get(slot).map_or(0, |e| e.car_id) as usize;
                     let reach = self.tables.shadows.get(id).copied().unwrap_or_default();
+                    let options = self.setup.options;
+                    let rot = if crate::car::draw::body_scaled(options) {
+                        crate::car::draw::scale_columns(&pose.rot, crate::car::draw::model_scale(options))
+                    } else {
+                        pose.rot
+                    };
                     if let Some(shadow) = crate::car::draw::shadow_quads(
                         &car.handling,
                         reach,
                         pose.at,
-                        &pose.rot,
+                        &rot,
                         ground.normal,
                         ground.d,
                     ) {
@@ -1355,13 +1361,15 @@ impl Race {
                     use crate::lights::{Fade, beams, glows};
                     let lights = self.effects.lights[slot];
                     if !wrecked {
-                        let g = glows(&lights, lamps, id, &mut self.rand, &pose, paused || self.frozen);
+                        let scale = crate::car::draw::model_scale(self.setup.options);
+                        let g = glows(&lights, lamps, id, scale, &mut self.rand, &pose, paused || self.frozen);
                         quads.extend(crate::lights::quads(&self.tables, &g, &pose, None));
                     }
                     if lights.lamp != 0 {
                         // 0x8002a81c: the beams, unless turned off (0x20).
                         if !wrecked && self.effects.enabled & 0x20 != 0 {
-                            let b = beams(&lights, lamps, &pose);
+                            let scale = crate::car::draw::model_scale(self.setup.options);
+                            let b = beams(&lights, lamps, scale, &pose);
                             quads.extend(crate::lights::quads(&self.tables, &b, &pose, Some(lights.lamp)));
                         }
                         let colour = &mut self.effects.root_colour[slot][lod];
@@ -1402,9 +1410,13 @@ impl Race {
         quads
     }
 
-    /// Each car's lamps, from its FXP (fxp_parse, 0x80022cd0), and its
-    /// lights as they start (0x800291b4).
-    pub fn set_lamps(&mut self, lamps: Vec<crate::lights::Lamps>) {
+    /// Each car's lamps, from its FXP (fxp_parse, 0x80022cd0, which puts
+    /// the glows at the model's scale under cheat 2 or 4), and its lights
+    /// as they start (0x800291b4).
+    pub fn set_lamps(&mut self, mut lamps: Vec<crate::lights::Lamps>) {
+        for l in &mut lamps {
+            l.scale(self.setup.options);
+        }
         for (slot, l) in lamps.iter().enumerate().take(6) {
             let human = self.cars.get(slot).is_some_and(|c| c.flags & 1 != 0);
             self.effects.lights[slot] = crate::lights::Lights::new(human, l);

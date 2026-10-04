@@ -3,7 +3,7 @@ title: The car's wheels and shadow as drawn
 status: solid
 discs: US
 covers: US CCCPSX.EXE:0x80049ecc car_pose, 0x80020a14 wheel_pose, 0x80020888 car_set_pose, 0x80021830 shadow_plane, 0x80029478 shadow_draw, 0x80028b34 shadow_prims, 0x800be00c shadow_reach, 0x800bdd48 shadow_places, 0x800bdde8 shadow_columns
-worklog: 54, 55
+worklog: 54, 55, 86
 ---
 
 # The car's wheels as drawn
@@ -86,6 +86,7 @@ faces up by more than 60 degrees (normal z > 2047).
    - Colour is 96, and the page's blend is set to 2 (subtract). The
      texels are greys with STP set, so the ground darkens by about 36.
 
-Under the cheat options 2 and 4 (0x800d2468) the box is first scaled by
-the model's scale (cvs +0x14). The port does not scale cars and leaves
-this out.
+Under the cheat options 2 and 4 (0x800d2468) the car's matrix is first
+scaled by the model's scale (cvs +0x14, each column times it), so the box
+grows or shrinks with the car. `shadows_match_the_original` covers it
+under cheats 0, 2, 4, 32 and 6.

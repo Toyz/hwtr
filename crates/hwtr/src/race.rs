@@ -299,10 +299,11 @@ fn pad_state(pad: &Pad, analog: bool) -> PadState {
 
 impl Race {
     /// A quick race on `track` ("DESERT1"): the player first on the grid
-    /// in the Deora, five computer cars behind.
+    /// in the Deora, five computer cars behind, under the cheats `options`.
     pub fn load(
         cue: &Path,
         track: &str,
+        options: u32,
         spu: Option<std::sync::Arc<std::sync::Mutex<crate::spu::Spu>>>,
     ) -> Result<Race, String> {
         let disc = rrt::disc::Image::open(cue).map_err(|e| e.to_string())?;
@@ -325,7 +326,7 @@ impl Race {
             // The grid is behind the line: crossing it the first time is
             // the first of four, as the front end sets it.
             laps: 4,
-            options: 0,
+            options,
             time_limit: 0,
             cars: CARS
                 .iter()
@@ -951,10 +952,17 @@ impl Race {
             // full model is drawn here).
             let lod = self.race.drawn_lod.get(k).copied().unwrap_or(0);
             let rgb = self.race.effects.root_colour.get(k).map_or(0x80_8080, |c| c[lod]);
+            // The scale cheats (0x80021888): the body and the wheels on it
+            // at the model's scale under 2 or 4 (0x80022274), each wheel's
+            // turn under 32 (0x8002269c).
+            let options = self.race.setup.options;
+            let scale = hwtr_game::car::draw::model_scale(options) as f32 / 4096.0;
+            let body_scale = if hwtr_game::car::draw::body_scaled(options) { scale } else { 1.0 };
+            let wheel_scale = if hwtr_game::car::draw::wheels_scaled(options) { scale } else { 1.0 };
             // Each wheel steered, turned and lifted as last posed
             // (0x80020a14): at twice its record's mount, raised by twice
             // its lift.
-            let wheels: Vec<(Mat3, Vec3)> = self
+            let wheels: Vec<(Mat3, Vec3, bool)> = self
                 .race
                 .wheel_poses
                 .get(k)
@@ -970,7 +978,7 @@ impl Race {
                                 2.0 * rec[1] as f32,
                                 2.0 * (rec[2] as f32 + p.lift as f32 / 4096.0),
                             );
-                            (Mat3::from_cols(col(0), col(1), col(2)), at)
+                            (Mat3::from_cols(col(0), col(1), col(2)) * wheel_scale, at, true)
                         })
                         .collect()
                 })
@@ -987,7 +995,8 @@ impl Race {
                 // Wheels with no pose yet sit where the model puts them.
                 while wheels.len() < look.model.wheels.len() {
                     let c = &look.model.children[wheels.len()];
-                    wheels.push((Mat3::IDENTITY, Vec3::new(c.pos[0] as f32, c.pos[1] as f32, c.pos[2] as f32)));
+                    let at = Vec3::new(c.pos[0] as f32, c.pos[1] as f32, c.pos[2] as f32);
+                    wheels.push((Mat3::IDENTITY * wheel_scale, at, true));
                 }
                 let col = |j: usize| Vec3::from_array([0, 1, 2].map(|i| f.body.rot[i][j] as f32 / 4096.0));
                 let body_rot = Mat3::from_cols(col(0), col(1), col(2));
@@ -998,7 +1007,7 @@ impl Race {
                     look.model.root.pos[2] as f32,
                 );
                 let inverse = car_rot.transpose();
-                wheels[w] = (inverse * body_rot, inverse * (at - pos) * 2.0 - root);
+                wheels[w] = (inverse * body_rot * wheel_scale, inverse * (at - pos) * 2.0 - root, false);
             }
             tris.extend(hwtr_render::mesh::car_triangles(
                 &look.model,
@@ -1007,6 +1016,7 @@ impl Race {
                 pos,
                 Mat3::from_quat(rot),
                 rgb,
+                body_scale,
                 &wheels,
             ));
         }
@@ -1290,7 +1300,7 @@ mod tests {
             return;
         };
         let spu = std::sync::Arc::new(std::sync::Mutex::new(crate::spu::Spu::default()));
-        let mut race = Race::load(&cue, "desert1", Some(spu.clone())).expect("the race loads");
+        let mut race = Race::load(&cue, "desert1", 0, Some(spu.clone())).expect("the race loads");
         let mut out = Vec::new();
         let mut loudness = [0u64; 2];
         let mut pitches = Vec::new();

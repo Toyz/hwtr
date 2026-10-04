@@ -17,6 +17,19 @@ pub struct Lamps {
     pub headlights: Vec<(Vec3, Vec3)>,
 }
 
+impl Lamps {
+    /// fxp_parse (0x80022cd0) under cheat 2 or 4: each glow's place at the
+    /// model's scale.
+    pub fn scale(&mut self, options: u32) {
+        if crate::car::draw::body_scaled(options) {
+            let scale = crate::car::draw::model_scale(options);
+            for (pos, _) in &mut self.glows {
+                *pos = pos.map(|c| fx(c, scale));
+            }
+        }
+    }
+}
+
 /// A car's lights (its view state, cvs): the body's colour it fades to
 /// (+0x1e9), the headlights' level it fades to and has (+0x1ea, +0x1eb),
 /// whether that fade runs (+0x1f1), the brake lights (+0x1f2), whether the
@@ -209,11 +222,12 @@ const BEAM_FACES: [[usize; 4]; 3] = [[0, 2, 6, 4], [4, 6, 7, 5], [5, 7, 3, 1]];
 /// glow strength is above none. Each flickers by a random draw (unless
 /// the game is paused or the results frozen, `still`), stretching the
 /// back of its prism by its FXP vector; car 36 has a hexagon eight times
-/// the size.
+/// the size. Each is sized by the model's `scale` (cvs +0x14).
 pub fn glows(
     lights: &Lights,
     lamps: &Lamps,
     car_id: u8,
+    scale: i32,
     rand: &mut Rand,
     pose: &CarPose,
     still: bool,
@@ -225,7 +239,7 @@ pub fn glows(
             continue;
         }
         let flicker = if still { 4096 } else { ((rand.below(1375) as i32) << 12) / 1000 + 512 };
-        s = fx(fx(s, flicker), 4096);
+        s = fx(fx(s, flicker), scale);
         let hex = car_id == 36;
         let (scale, offset): (i32, Vec3) = if hex {
             (0x8000, [fx(0x80e8, 0x8000), fx(-61487, 0x8000), fx(-82550, 0x8000)])
@@ -255,12 +269,13 @@ pub fn glows(
 
 /// 0x8002a81c: a car's headlight beams, drawn when shown, not wrecked,
 /// and the headlights are, at their level: each beam's far end pushed out
-/// along the lamp's direction (170 times it), then widened.
-pub fn beams(lights: &Lights, lamps: &Lamps, pose: &CarPose) -> Vec<LampDraw> {
+/// along the lamp's direction (170 times it, times the model's `scale`,
+/// cvs +0x14), then widened.
+pub fn beams(lights: &Lights, lamps: &Lamps, scale: i32, pose: &CarPose) -> Vec<LampDraw> {
     if !lights.headlights {
         return Vec::new();
     }
-    let s = fx(4096, fx(0xa_a000, 4096));
+    let s = fx(scale, fx(0xa_a000, 4096));
     lamps
         .headlights
         .iter()
