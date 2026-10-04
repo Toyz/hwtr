@@ -69,6 +69,7 @@ impl Car {
             .map(|i| {
                 let mut mount = handling.mounts[i];
                 let mut diameter = handling.diameters[i];
+                let width = handling.widths[i];
                 if options & THIRD_SIZE != 0 {
                     mount = mount.map(|c| fx(c, third));
                     diameter = fx(diameter, third);
@@ -84,7 +85,7 @@ impl Car {
                     self.front_wheels += 1;
                     (handling.front_driven, handling.front_steers)
                 };
-                let wheel = Wheel { mount, diameter, rear, steers, driven, ..Wheel::default() };
+                let wheel = Wheel { mount, width, diameter, rear, steers, driven, ..Wheel::default() };
                 let ride = handling.axle(wheel.rear).ride_height;
                 mount[2] = mount[2].wrapping_sub(ride);
                 Wheel { mount, ..wheel }

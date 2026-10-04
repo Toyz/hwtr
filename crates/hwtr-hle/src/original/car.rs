@@ -140,6 +140,7 @@ pub const TUNING: u32 = 0x8013_6a18;
 /// Offsets within a wheel.
 pub mod wheel {
     pub const MOUNT: u32 = 0x00;
+    pub const WIDTH: u32 = 0x10;
     pub const DIAMETER: u32 = 0x14;
     pub const FLAGS: u32 = 0x18;
     pub const HEADING: u32 = 0x1c;
@@ -182,6 +183,7 @@ impl InMemory for Wheel {
         use wheel::*;
         Wheel {
             mount: ram.vec3(w + MOUNT),
+            width: ram.i32(w + wheel::WIDTH),
             diameter: ram.i32(w + DIAMETER),
             rear: ram.u8(w + FLAGS) & 1 != 0,
             steers: ram.u8(w + FLAGS) & 2 != 0,
@@ -204,6 +206,7 @@ impl InMemory for Wheel {
     fn write(&self, ram: &mut Ram, w: u32) {
         use wheel::*;
         ram.set_vec3(w + MOUNT, self.mount);
+        ram.set_i32(w + wheel::WIDTH, self.width);
         ram.set_i32(w + DIAMETER, self.diameter);
         // Bits the port does not model are left as they are.
         let others = ram.u8(w + FLAGS) & !7;
@@ -513,6 +516,9 @@ fn write_handling(ram: &mut Ram, at: u32, h: &Handling) {
     ram.set_vec3(at + SIZE, h.size);
     for (k, m) in h.mounts.iter().enumerate() {
         ram.set_vec3(at + MOUNTS + 16 * k as u32, *m);
+    }
+    for (k, w) in h.widths.iter().enumerate() {
+        ram.set_i32(at + DIAMETERS - 24 + 4 * k as u32, *w);
     }
     for (k, d) in h.diameters.iter().enumerate() {
         ram.set_i32(at + DIAMETERS + 4 * k as u32, *d);

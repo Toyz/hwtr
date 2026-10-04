@@ -65,6 +65,8 @@ impl Armed {
 pub struct Wheel {
     /// Mount point, body space (from the handling).
     pub mount: Vec3,
+    /// The tyre's half width (+0x10).
+    pub width: i32,
     pub diameter: i32,
     /// On the rear axle; steering; driven.
     pub rear: bool,

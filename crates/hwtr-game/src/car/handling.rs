@@ -72,8 +72,10 @@ pub struct Handling {
     pub origin: Vec3,
     /// Width, length, height.
     pub size: Vec3,
-    /// Each wheel's mount point, and its diameter.
+    /// Each wheel's mount point, its tyre's half width (where its skid
+    /// marks' edges are) and its diameter.
     pub mounts: [Vec3; 6],
+    pub widths: [i32; 6],
     pub diameters: [i32; 6],
 }
 
@@ -159,10 +161,8 @@ impl Handling {
                     m
                 })
             },
-            diameters: {
-                r.skip(24);
-                std::array::from_fn(|_| r.i32())
-            },
+            widths: std::array::from_fn(|_| r.i32()),
+            diameters: std::array::from_fn(|_| r.i32()),
         };
         h.all_terrain = h.flags & 1 != 0;
         h
