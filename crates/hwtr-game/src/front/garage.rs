@@ -363,7 +363,7 @@ impl Front {
                 if self.people == 2 {
                     self.preview_aim(k, if k == 0 { 375 } else { 625 }, 610, 0);
                 }
-                self.repeat[k].0 = 0;
+                self.car_arrived(k);
             }
             // The picture only where neither the mystery nor the model was
             // drawn.

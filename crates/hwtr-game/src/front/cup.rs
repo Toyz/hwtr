@@ -401,7 +401,7 @@ impl Front {
             } else {
                 self.preview_aim(0, 435, 450, 0);
             }
-            self.repeat[0].0 = 0;
+            self.car_arrived(0);
         }
         self.draw_decal(0, 191, 61);
         self.draw_track_map();

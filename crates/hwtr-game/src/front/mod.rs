@@ -1127,7 +1127,7 @@ impl Front {
                     _ if self.choice == 1 => self.preview_aim(1, 685, 480, 0),
                     _ => self.preview_aim(1, 775, 450, 0),
                 }
-                self.repeat[k].0 = 0;
+                self.car_arrived(k);
             }
             self.draw_decal(k, [191, 403][k], 61);
         }
@@ -1208,6 +1208,19 @@ impl Front {
         }
         let events = if pad == 0 { (46, 47) } else { (48, 49) };
         self.held_repeat(pad, (16, events.0), (17, events.1), p);
+    }
+
+    /// 0x8008b9d0 as a car's model arrives: pad `k`'s held step starts
+    /// again from no delay. The original reads a car from the CD a second
+    /// and a half after the last step, so the button is always up by then;
+    /// here the model is in memory and arrives within a frame or two, while
+    /// a tap is still held, and clearing the delay then would step the car
+    /// a second time. So it is cleared only with the button up (where
+    /// letting go has cleared it already).
+    fn car_arrived(&mut self, k: usize) {
+        if !self.stepping[k] {
+            self.repeat[k].0 = 0;
+        }
     }
 
     /// 0x8008ba30 and its helpers: action `a` (or else `b`) held steps
