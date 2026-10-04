@@ -3,7 +3,7 @@ title: Flying wheels (a player's wreck throws its wheels)
 status: solid
 discs: US
 covers: US CCCPSX.EXE:0x8007c9b0 wheels_throw, 0x801323f4 flying_wheels, 0x8007c894 flying_step, 0x8004d798 object_add, 0x8004da1c object_remove, 0x8007da78 flying_remove, 0x8006dc08 contact_impulse
-worklog: 65
+worklog: 65, 71
 ---
 
 # Flying wheels
@@ -81,6 +81,12 @@ The port gives the car's pose for that wheel as the body's rotation and
 place taken into the car's frame (`Rᵀ·R_wheel`, `Rᵀ·(p - P)·2` less the
 root).
 
+## In the results' snapshots
+
+Each snapshot keeps the wheels flying: car, wheel, rotation and place
+(0x8007e6e0). Putting one back fills the table from its first slot
+(0x8007ec08). See [the results](results.md).
+
 ## Taken away (0x8007da78)
 
 When the car is put back on the road, each of its flying wheels' objects
@@ -102,6 +108,4 @@ them into the world. Tests in `crates/hwtr-hle`:
 
 ## Unknown
 
-- The replay and snapshot copies of the table (0x8007e6e0, 0x8007ec08)
-  are not ported.
 - The rest of the 680-byte record.

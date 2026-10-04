@@ -772,7 +772,7 @@ impl Race {
                     self.effects.prop_debris(&self.tables, &d, v.flags, v.pos, v.height, quads);
                 }
                 if self.collision.players_touched {
-                    self.snapshots.take(self.time, &self.cars, &self.cameras, None);
+                    self.snapshots.take(self.time, &self.cars, &self.collision.flying, &self.cameras, None);
                 }
                 // The pad jolts the collision asked for (0x8005fd4c,
                 // 0x8005fed0, through iface_controls+0x28).
@@ -1090,7 +1090,7 @@ impl Race {
     /// The start (0x80033a78 with 0x80061264): the race clock goes back to
     /// 0 and every car's laps start.
     fn go(&mut self) {
-        self.snapshots.take(self.time, &self.cars, &self.cameras, None);
+        self.snapshots.take(self.time, &self.cars, &self.collision.flying, &self.cameras, None);
         self.events.push(RaceEvent::Go);
         self.hud.countdown.call(0);
         self.before_start = self.time;
@@ -1127,7 +1127,7 @@ impl Race {
     /// The race ends: the standings (0x80033aa0) and every racing car
     /// coasting.
     fn finish(&mut self) {
-        self.snapshots.take(self.time, &self.cars, &self.cameras, None);
+        self.snapshots.take(self.time, &self.cars, &self.collision.flying, &self.cameras, None);
         self.results_from = self.clock;
         self.accept_released = false;
         self.standings = self.standings();
@@ -1165,7 +1165,7 @@ impl Race {
         let shots = self.snapshots.len();
         if shots != 0 {
             let k = ((since - RESULTS_MS) / SNAPSHOT_MS) as usize % shots;
-            self.snapshots.put_back(k, &mut self.cars, &mut self.cameras);
+            self.snapshots.put_back(k, &mut self.cars, &mut self.collision.flying, &mut self.cameras);
             // 0x8004aef8's effects: each car's boost flame out (0x8002aff4),
             // a wrecked car's model blackened (0x80029e10 mode 2), any
             // other's effects cleared (0x80029f04).
@@ -1481,7 +1481,7 @@ impl Race {
             let before = self.cars[slot].turbos;
             let stepped = self.cars[slot].update(&mut drive, zone);
             if let Some(rot) = stepped.snapshot {
-                self.snapshots.take(self.time, &self.cars, &self.cameras, Some((slot, rot)));
+                self.snapshots.take(self.time, &self.cars, &self.collision.flying, &self.cameras, Some((slot, rot)));
             }
             if let Some(award) = stepped.stunt {
                 if let Some(player) = self.cameras.iter().position(|c| c.car as usize == slot) {

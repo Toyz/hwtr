@@ -3,7 +3,7 @@ title: The race's results: snapshots and the table
 status: partial
 discs: US
 covers: US CCCPSX.EXE:0x8007fe48 snapshot_init, 0x8007fe7c snapshot_reset, 0x8007feb0 snapshot_take, 0x80080014 snapshot_count, 0x80080020 snapshot_put_back, 0x8004a8fc, 0x8004aef8, 0x8003b610, 0x8003bafc, 0x8007e6e0, 0x8007ec08, 0x8006ba48, 0x8007f6f8, 0x80064b8c hud_draw, 0x80064b64 hud_mode, 0x8006452c, 0x80064040, 0x80064294, 0x800644c0, 0x80063ab4, 0x80063bc4, 0x8009b5b8, 0x80135a18 snapshot buffer, 0x800d2718 snapshot count, 0x800d271c bytes used, 0x800d2720 last taken, 0x800d2688 standings order, 0x801399b0 player names, 0x80033aa0 standings, 0x80061824 car_result, 0x800d0e48 lap_length, 0x800d25f8 points, 0x800d0e69 fastest_car, 0x800d0e54 time_left_from
-worklog: 43, 67, 70
+worklog: 43, 67, 70, 71
 ---
 
 # The race's results
@@ -95,8 +95,13 @@ cars, 24 bytes each (0x8004a8fc), count at 0x800d263c
   s16   pos[3]       car +0x10c >> 12
 moving volumes (0x8006ba48)   4 bytes, nothing written
 track objects (0x8007f6f8)    4 bytes, nothing written
-loose bodies (0x8007e6e0)     16 bytes for each of the 8 slots at 0x801323f4
-                              (stride 680) in use, or 4 bytes if none
+flying wheels (0x8007e6e0), 16 bytes for each of the 8 slots at 0x801323f4
+  (stride 680) in use, in slot order, or 4 bytes (nothing written) if none
+  u16   kind         the slot's in-use byte (+0); 1 for a wheel
+  u8    car          +1 (only for kind 1)
+  u8    wheel        +2 (only for kind 1)
+  s8    rot[2][3]    body rotation (+152 +0x110), as for cars
+  s16   pos[3]       body place (+152 +0xdc) >> 12
 cameras, 16 bytes each (0x8003b610), count at 0x800d2633
   u16   mode         camera +0x48
   u16   car          camera +0x4a
@@ -120,6 +125,12 @@ cleared (0x80029f04); the floor flag is written, and if set the normal
 `(a * b) >> 12`); `pos << 12`; steer 0, the body awake, each wheel's
 compression and spin 0, the reset grace 0; then the car's boost flame is
 put out (0x8002aff4). The wrecked byte itself is not written.
+
+Flying wheels (0x8007ec08): with nothing kept, every slot is freed.
+Otherwise record `i` goes into slot `i` from the first, so the wheels
+close up: the in-use byte, the rotation as for cars, `pos << 12`, and for
+kind 1 the car and wheel. Nothing else in the slot is written. The slots
+past the last record are freed.
 
 Cameras (0x8003bafc): rotation as for cars, `pos << 12`, the mode and car
 bytes, shake 0.
@@ -169,7 +180,7 @@ profiles (+8) by 0x8009b5b8 as each race the players start is set up.
 
 - What the draw mode byte (0x800d246c) changes beyond the car effects
   that test it (0x8001cd54, 0x800225c8, 0x80029fe4 and others).
-- The loose bodies' 16-byte snapshot record (0x8007e6e0 / 0x8007ec08):
-  kind, two bytes for kind 1, six rotation bytes, a position.
+- Any in-use value but 1 in the flying wheels' table; 0x8007c9b0 only
+  writes 1.
 - Who reads the fastest lap's car (0x800d0e69); no code reads it
   through gp.

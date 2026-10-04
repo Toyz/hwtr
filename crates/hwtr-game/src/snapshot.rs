@@ -12,6 +12,7 @@
 
 use crate::camera::{Camera, ViewMode};
 use crate::car::Car;
+use crate::flying::{FlyingWheel, SLOTS};
 use crate::math::{Matrix, Vec3};
 
 /// The original's room for snapshots, and what each part of one takes.
@@ -19,9 +20,10 @@ const BYTES: u32 = 4096;
 const HEADER: u32 = 24;
 const CAR: u32 = 24;
 const CAMERA: u32 = 16;
+const WHEEL: u32 = 16;
 /// The parts that save nothing still take a word each: the moving
-/// volumes' (0x8006ba48), the track objects' (0x8007f6f8), and the loose
-/// bodies' when none is flying (0x8007e6e0).
+/// volumes' (0x8006ba48), the track objects' (0x8007f6f8), and the flying
+/// wheels' when none is flying (0x8007e6e0).
 const EMPTY: u32 = 4;
 /// The least time between two snapshots, ms.
 const APART_MS: u32 = 1000;
@@ -48,9 +50,21 @@ pub struct CameraShot {
     pub pos: [i16; 3],
 }
 
+/// A flying wheel as 0x8007e6e0 keeps it (16 bytes: its table's in-use
+/// byte as a half word, its car and wheel, six rotation bytes, its place).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WheelShot {
+    pub car: u8,
+    pub wheel: u8,
+    pub rot: [[i8; 3]; 2],
+    pub pos: [i16; 3],
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Snapshot {
     pub cars: Vec<CarShot>,
+    /// The flying wheels, in their table's order, the free slots skipped.
+    pub wheels: Vec<WheelShot>,
     pub cameras: Vec<CameraShot>,
 }
 
@@ -184,13 +198,26 @@ impl Snapshots {
     /// 0x8007feb0 at race clock `time`: a snapshot, unless the last was
     /// under a second ago or there is no room for every part of it.
     /// `mid_step` is a car caught mid-step, and its rotation then.
-    pub fn take(&mut self, time: u32, cars: &[Car], cameras: &[Camera], mid_step: Option<(usize, Matrix)>) {
+    pub fn take(
+        &mut self,
+        time: u32,
+        cars: &[Car],
+        flying: &[Option<FlyingWheel>; SLOTS],
+        cameras: &[Camera],
+        mid_step: Option<(usize, Matrix)>,
+    ) {
         if !self.shots.is_empty() && time.wrapping_sub(self.last) < APART_MS {
             return;
         }
         let Some(mut room) = (BYTES - self.used).checked_sub(HEADER) else { return };
         let mut size = 0;
-        for need in [CAR * cars.len() as u32, EMPTY, EMPTY, EMPTY, CAMERA * cameras.len() as u32] {
+        let wheels: Vec<WheelShot> = flying
+            .iter()
+            .flatten()
+            .map(|f| WheelShot { car: f.car, wheel: f.wheel, rot: pack_rot(&f.body.rot), pos: pack_pos(f.body.pos) })
+            .collect();
+        let wheel_bytes = if wheels.is_empty() { EMPTY } else { WHEEL * wheels.len() as u32 };
+        for need in [CAR * cars.len() as u32, EMPTY, EMPTY, wheel_bytes, CAMERA * cameras.len() as u32] {
             if need == 0 || room < need {
                 return;
             }
@@ -209,18 +236,45 @@ impl Snapshots {
                     shot
                 })
                 .collect(),
+            wheels,
             cameras: cameras.iter().map(CameraShot::take).collect(),
         });
         self.used += HEADER + size;
         self.last = time;
     }
 
-    /// 0x80080020: snapshot `k`'s cars and cameras back (the loose bodies,
-    /// none kept, are not touched).
-    pub fn put_back(&self, k: usize, cars: &mut [Car], cameras: &mut [Camera]) {
+    /// 0x80080020: snapshot `k`'s cars, flying wheels and cameras back.
+    /// The wheels kept fill the table from its first slot (0x8007ec08),
+    /// each slot keeping what else its record held, and the rest are
+    /// freed.
+    pub fn put_back(
+        &self,
+        k: usize,
+        cars: &mut [Car],
+        flying: &mut [Option<FlyingWheel>; SLOTS],
+        cameras: &mut [Camera],
+    ) {
         let Some(shot) = self.shots.get(k) else { return };
         for (s, car) in shot.cars.iter().zip(cars.iter_mut()) {
             s.put_back(car);
+        }
+        for (k, slot) in flying.iter_mut().enumerate() {
+            let Some(s) = shot.wheels.get(k) else {
+                *slot = None;
+                continue;
+            };
+            let f = slot.get_or_insert_with(|| FlyingWheel {
+                car: s.car,
+                wheel: s.wheel,
+                body: crate::body::Body::default(),
+                half: [0; 3],
+                radius: 0,
+                object: None,
+            });
+            f.car = s.car;
+            f.wheel = s.wheel;
+            f.body.rot = unpack_rot(&s.rot);
+            f.body.pos = unpack_pos(s.pos);
         }
         for (s, c) in shot.cameras.iter().zip(cameras.iter_mut()) {
             s.put_back(c);
