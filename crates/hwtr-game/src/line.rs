@@ -22,8 +22,11 @@ pub struct BestLine {
     /// The lap's length, in the units of a car's lap distance
     /// (`bestline_load` keeps it at 0x801323d8 for the laps and results).
     pub lap_length: i32,
-    /// The first stream, not yet understood.
+    /// The computer cars' route: a program of keypoints, jumps and branches
+    /// (read by [`crate::ai::Op::decode`]).
     pub stream: Vec<u8>,
+    /// Where each grid place's car starts in the route.
+    pub starts: [u16; 6],
     pub points: Vec<LinePoint>,
 }
 
@@ -31,8 +34,8 @@ impl BestLine {
     const MAGIC: u16 = 0xdf00;
 
     /// Parses a BLD file: a 22-byte header (magic, lap length, the two
-    /// streams' lengths, six counts), a stream not yet understood, then the
-    /// points, 16 bytes each.
+    /// streams' lengths, the six grid places' starts in the route), the
+    /// route, then the points, 16 bytes each.
     pub fn parse(b: &[u8]) -> Option<BestLine> {
         let u16_at = |at: usize| Some(u16::from_le_bytes([*b.get(at)?, *b.get(at + 1)?]));
         let i16_at = |at: usize| u16_at(at).map(|v| v as i16 as i32);
@@ -53,7 +56,8 @@ impl BestLine {
                 })
             })
             .collect::<Option<Vec<_>>>()?;
-        Some(BestLine { lap_length, stream, points })
+        let starts = std::array::from_fn(|k| u16_at(10 + 2 * k).unwrap_or(0));
+        Some(BestLine { lap_length, stream, starts, points })
     }
 
     /// 0x8007c418: the first point at or past `lap_distance` (wrapping to

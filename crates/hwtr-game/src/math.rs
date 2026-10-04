@@ -37,9 +37,15 @@ pub struct Tables {
     pub checkpoints: [[u8; 3]; 4],
     /// The HUD's turbo meter.
     pub meter: crate::hud::MeterTables,
+    /// acos for cosines 0 to 1 (0x800bb04c), and libgte's sine and cosine
+    /// of 4096ths of a turn (rcossin_tbl, 0x800c90f4).
+    pub acos: Vec<u16>,
+    pub rcossin: Vec<(i16, i16)>,
 }
 
 const CHECKPOINT_TABLE: u32 = 0x800c_5c64;
+const ACOS_TABLE: u32 = 0x800b_b04c;
+const RCOSSIN_TABLE: u32 = 0x800c_90f4;
 
 impl Tables {
     pub fn from_exe(exe: &Exe) -> Tables {
@@ -57,7 +63,9 @@ impl Tables {
         let views = crate::camera::Views::read(&byte);
         let checkpoints = std::array::from_fn(|w| std::array::from_fn(|n| byte(CHECKPOINT_TABLE + 3 * w as u32 + n as u32)));
         let meter = crate::hud::MeterTables::read(&byte);
-        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints, meter }
+        let acos = (0..4097).map(|i| u16_at(ACOS_TABLE + 2 * i)).collect();
+        let rcossin = (0..4096).map(|i| (u16_at(RCOSSIN_TABLE + 4 * i) as i16, u16_at(RCOSSIN_TABLE + 4 * i + 2) as i16)).collect();
+        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints, meter, acos, rcossin }
     }
 
     /// The checkpoints a lap of `world` (a name from [`crate::race::WORLDS`])
@@ -65,6 +73,24 @@ impl Tables {
     pub fn checkpoints(&self, world: &str, number: u8) -> u8 {
         let w = crate::race::WORLDS.iter().position(|&n| n.eq_ignore_ascii_case(world));
         w.zip((number as usize).checked_sub(1)).and_then(|(w, n)| self.checkpoints[w].get(n).copied()).unwrap_or(0)
+    }
+
+    /// 0x80010bb4: acos of a cosine (4.12, -1 to 1), radians.
+    pub fn acos(&self, c: i32) -> i32 {
+        let v = self.acos.get(c.unsigned_abs() as usize).copied().unwrap_or(0) as i32;
+        if c < 0 { 0x3244 - v } else { v }
+    }
+
+    /// libgte's RotMatrixZ-like turn (0x800a8308): the first two rows of
+    /// `m` turned by `angle` 4096ths of a turn, as rcossin_tbl gives them.
+    pub fn turn_rows(&self, angle: i32, m: &mut Matrix) {
+        let (s, c) = self.rcossin[(angle.unsigned_abs() & 0xfff) as usize];
+        let (s, c) = (if angle < 0 { -(s as i32) } else { s as i32 }, c as i32);
+        let (r0, r1) = (m[0].map(|v| v as i32), m[1].map(|v| v as i32));
+        for j in 0..3 {
+            m[0][j] = (c.wrapping_mul(r0[j]).wrapping_sub(s.wrapping_mul(r1[j])) >> 12) as i16;
+            m[1][j] = (s.wrapping_mul(r0[j]).wrapping_add(c.wrapping_mul(r1[j])) >> 12) as i16;
+        }
     }
 
     /// cos(x), 0x80010afc.

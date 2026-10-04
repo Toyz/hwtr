@@ -446,6 +446,8 @@ mod block_a {
     pub const DOWNFORCE: u32 = 0x20;
     pub const AXLES: u32 = 0x30;
     pub const AIR_POWER: u32 = 0x60;
+    pub const AI_PACE: u32 = 0x6c;
+    pub const AI_RUBBER: u32 = 0x70;
     pub const SKILL: u32 = 0x74;
     pub const FLAGS: u32 = 0x78;
     pub const WHEEL_COUNT: u32 = 0x7c;
@@ -478,9 +480,10 @@ fn write_handling(ram: &mut Ram, at: u32, h: &Handling) {
     for (k, v) in [h.air_power.pitch, h.air_power.roll, h.air_power.yaw].into_iter().enumerate() {
         ram.set_i32(at + AIR_POWER + 4 * k as u32, v);
     }
+    ram.set_i32(at + AI_PACE, h.ai_pace);
+    ram.set_i32(at + AI_RUBBER, h.ai_rubber);
     ram.set_i32(at + SKILL, h.skill);
-    let flags = ram.i32(at + FLAGS);
-    ram.set_i32(at + FLAGS, (flags & !1) | h.all_terrain as i32);
+    ram.set_i32(at + FLAGS, ((h.flags & !1) | h.all_terrain as u32) as i32);
     ram.set_u8(at + WHEEL_COUNT, h.wheel_count);
     ram.set_vec3(at + ORIGIN, h.origin);
     ram.set_vec3(at + SIZE, h.size);

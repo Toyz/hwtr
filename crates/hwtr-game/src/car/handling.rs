@@ -54,11 +54,19 @@ pub struct Handling {
     pub front: Axle,
     pub rear: Axle,
     pub air_power: AirPower,
+    /// As a computer car: its pace (1 is the field's), and how much of the
+    /// difficulty's slowing it takes when racing a player (0x8007a92c,
+    /// 0x80079cc4).
+    pub ai_pace: i32,
+    pub ai_rubber: i32,
     /// Scaled by the race's difficulty for the cars it drives (between two
     /// tuning bytes, held to 4).
     pub skill: i32,
     /// The dragging surface does not drag it.
     pub all_terrain: bool,
+    /// The flags word: bit 0 all-terrain; the low 16 bits are the routes a
+    /// computer car may take at the route's branches.
+    pub flags: u32,
     pub wheel_count: u8,
     /// The point wheel mounts are measured from.
     pub origin: Vec3,
@@ -114,7 +122,7 @@ impl Handling {
             downforce_scale: downforce_scale[k],
         };
         let (front, rear) = (axle(0), axle(1));
-        Handling {
+        let mut h = Handling {
             front_driven: front_driven != 0,
             front_steers: front_steers != 0,
             rear_driven: rear_driven != 0,
@@ -129,11 +137,11 @@ impl Handling {
             front,
             rear,
             air_power: AirPower { pitch: r.i32(), roll: r.i32(), yaw: r.i32() },
-            skill: {
-                r.skip(8);
-                r.i32()
-            },
-            all_terrain: r.i32() & 1 != 0,
+            ai_pace: r.i32(),
+            ai_rubber: r.i32(),
+            skill: r.i32(),
+            flags: r.i32() as u32,
+            all_terrain: false,
             wheel_count: r.u8(),
             origin: {
                 r.skip(3);
@@ -155,7 +163,9 @@ impl Handling {
                 r.skip(24);
                 std::array::from_fn(|_| r.i32())
             },
-        }
+        };
+        h.all_terrain = h.flags & 1 != 0;
+        h
     }
 
 

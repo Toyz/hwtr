@@ -221,6 +221,8 @@ pub struct Tuning {
     /// Below this speed (mph) the chase camera follows the car's heading,
     /// above it its travel.
     pub camera_travel_mph: u8,
+    /// The computer cars' driving.
+    pub ai: crate::ai::AiTuning,
 }
 
 /// Where TUNING.PRM keeps each setting.
@@ -263,6 +265,7 @@ impl Tuning {
             right_roof_ms: at(RIGHT_ROOF_MS),
             wreck_roof_tens: at(WRECK_ROOF_TENS),
             camera_travel_mph: at(CAMERA_TRAVEL_MPH),
+            ai: crate::ai::AiTuning::from_prm(&at),
         }
     }
 

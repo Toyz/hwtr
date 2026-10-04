@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod ai;
 pub mod body;
 pub mod camera;
 pub mod car;

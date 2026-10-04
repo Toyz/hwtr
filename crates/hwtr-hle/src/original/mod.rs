@@ -3,6 +3,7 @@
 //! checks hold the port to the original. The port itself has no memory
 //! model; only this side knows where the original keeps anything.
 
+pub mod ai;
 pub mod body;
 pub mod camera;
 pub mod car;
