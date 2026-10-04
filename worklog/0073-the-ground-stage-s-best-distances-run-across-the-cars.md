@@ -27,7 +27,7 @@ It fails on the old code and passes on the new.
 
 **Harness gaps in racecheck:**
 
-1. **Grace over.** When a reset's grace runs out, `cars_update` puts the car back in the collision (object flag 1 cleared). racecheck now does this when `run_timers` says so.
+1. **Grace over.** When a reset's grace runs out, `cars_update` puts the car back in the collision (object flag 1 cleared). The world taken at collision entry (item 3) already has it.
 2. **Power-ups.** A power-up taken in the pair search is applied by the race. A step where the original's car changed `power_up` is now counted, not checked, like a reset.
 3. **The world at collision entry.** A computer car's update can take its object out of the collision or reset it to another zone before the collision runs. The port's collision step now starts from the original's whole collision world as 0x8004de6c begins, not the world at the start of the step.
 4. **Flying wheels.** As in `Collision::update`, racecheck now runs `add_flying` first.
