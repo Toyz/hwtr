@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-50 entries: audio 5, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 3, format 7, input 8, physics 10, race 9, render 12, test 14, tooling 13, ui 10, video 1.
+51 entries: audio 6, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 3, format 7, input 8, physics 10, race 9, render 12, test 14, tooling 13, ui 10, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -62,3 +62,4 @@ The [reference](docs/README.md) says what is true now.
 | 48 | [Hits and tyres heard: impacts, scrapes, crashes, rolling and skidding](worklog/0048-hits-and-tyres-heard-impacts-scrapes-crashes-rolling-and.md) | 2026-10-04 | audio |
 | 49 | [Unsticking: a stuck car turns where it stands](worklog/0049-unsticking-a-stuck-car-turns-where-it-stands.md) | 2026-10-04 | physics |
 | 50 | [Stunt announcements: name and reward slide in on the HUD](worklog/0050-stunt-announcements-name-and-reward-slide-in-on-the-hud.md) | 2026-10-04 | ui |
+| 51 | [The commentator: wreck, stunt and ten-turbo lines, with their random draws](worklog/0051-the-commentator-wreck-stunt-and-ten-turbo-lines-with-their.md) | 2026-10-04 | audio |

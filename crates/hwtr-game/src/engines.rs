@@ -275,12 +275,14 @@ pub struct CarSound {
 }
 
 /// The bank a voice is keyed from: a car's engine (by slot), the effects
-/// (libsnd's VAB 0) or the crashes (VAB 1).
+/// (libsnd's VAB 0), the crashes (VAB 1) or the commentator's dialog (VAB
+/// 3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Bank {
     Car(usize),
     Effects,
     Crashes,
+    Dialog,
 }
 
 /// What the engines ask of the sound chip.
@@ -468,6 +470,28 @@ impl Engines {
                 self.cars[slot].crash_voice = Some(voice);
             }
         }
+        out
+    }
+
+    /// 0x80019754: the commentator's tone `tone` at `volume` (0-127) on an
+    /// effect voice of importance 0, if one is free.
+    pub fn dialog(&self, tone: u8, volume: u8, alive: &dyn Fn(usize) -> bool) -> Vec<Change> {
+        let Some((voice, stolen)) = self.voice(0, alive) else { return Vec::new() };
+        let mut out = Vec::new();
+        if stolen {
+            out.push(Change::KeyOff { voice });
+        }
+        let note = tone.wrapping_add(60);
+        out.push(Change::KeyOn {
+            voice,
+            bank: Bank::Dialog,
+            program: 0,
+            tone,
+            note,
+            fine: 0,
+            left: volume,
+            right: volume,
+        });
         out
     }
 

@@ -41,7 +41,7 @@ impl Car {
         if self.wrecked {
             self.wreck_ms = self.wreck_ms.wrapping_add(dt_ms);
             if self.wreck_ms >= 500 && self.wreck_line {
-                tracing::trace!("car {}: the wreck's line, not yet ported", self.slot);
+                self.say(0);
                 self.wreck_line = false;
             }
             if self.wreck_ms >= 3000 {

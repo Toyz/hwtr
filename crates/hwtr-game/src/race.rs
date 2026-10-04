@@ -156,6 +156,77 @@ pub enum RaceEvent {
     },
     /// A car's hit, for its sound.
     Hit(crate::collision::world::Hit),
+    /// The commentator speaks: the dialog bank's tone `tone`
+    /// (0x80019754).
+    Dialog {
+        tone: u8,
+    },
+}
+
+/// The commentator (0x800d2628): the line asked for, whether it waits to
+/// be spoken, and the time since it was asked for or last spoken.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Commentary {
+    pub line: u8,
+    pub waiting: bool,
+    pub ms: u32,
+}
+
+impl Default for Commentary {
+    /// 0x80034fd0: nothing waiting.
+    fn default() -> Commentary {
+        Commentary { line: 0, waiting: false, ms: 0 }
+    }
+}
+
+/// What the commentator says: effect 57 (line 3, the ten turbos), or a
+/// tone of the dialog bank.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Said {
+    Effect,
+    Tone(u8),
+}
+
+impl Commentary {
+    /// 0x80036484: line `line` asked for. Line 3 always takes the place;
+    /// another only when nothing waits and a second has passed since the
+    /// last.
+    pub fn ask(&mut self, line: u8) {
+        if line != 3 && (self.waiting || self.ms < 1001) {
+            return;
+        }
+        self.line = line;
+        self.ms = 0;
+        self.waiting = true;
+    }
+
+    /// 0x800354ac's part: `ms` more; a line waiting 301 ms is spoken.
+    /// Lines 0 to 2 are each two tones of the dialog bank (0 and 1, 2 and
+    /// 3, 4 and 5) drawn at random, any other one of six (0x80019754).
+    pub fn frame(&mut self, ms: u32, rand: &mut Rand) -> Option<Said> {
+        self.ms = self.ms.wrapping_add(ms);
+        if !self.waiting || self.ms < 301 {
+            return None;
+        }
+        self.waiting = false;
+        self.ms = 0;
+        if self.line == 3 {
+            return Some(Said::Effect);
+        }
+        Some(Said::Tone(dialog_tone(self.line, rand)))
+    }
+}
+
+/// 0x80019754's tone for line `line`: lines 0 to 2 two tones each (0 and
+/// 1, 2 and 3, 4 and 5), any other one of six, a second number drawn.
+pub fn dialog_tone(line: u8, rand: &mut Rand) -> u8 {
+    let r = rand.below(2) as u8;
+    match line {
+        0 => r,
+        1 => r + 2,
+        2 => r + 4,
+        _ => rand.below(6) as u8,
+    }
 }
 
 /// A world volume as the race keeps it: the object drawn for it, whether
@@ -223,6 +294,8 @@ pub struct Race {
     /// the race's sounds load (0x8001924c).
     pub crash_bank: u8,
     pub dialog_bank: u8,
+    /// The commentator.
+    pub commentary: Commentary,
     /// The computer cars' drivers.
     pub ai: Ai,
     /// The race clock (0x800d0e34), 25 ms a step.
@@ -389,6 +462,7 @@ impl Race {
             rand,
             crash_bank,
             dialog_bank,
+            commentary: Commentary::default(),
             ai,
             time: 0,
             clock: 0,
@@ -710,6 +784,9 @@ impl Race {
                 for (id, importance) in self.cars[slot].sounds.0.take().unwrap_or_default() {
                     self.events.push(RaceEvent::Effect { id, importance });
                 }
+                for line in self.cars[slot].lines.0.take().unwrap_or_default() {
+                    self.commentary.ask(line);
+                }
                 if self.cars[slot].turbo_fired.0.take().is_some() {
                     let human = self.cars[slot].flags & 3 != 0;
                     let shown = self.car_shown(slot);
@@ -727,6 +804,19 @@ impl Race {
 
     /// The rest of race_frame (0x80033ed8), once a display frame after its
     /// steps, with the front end's buttons: the race's phase moves on.
+    /// 0x800354ac's game part, once a frame of `ms` after the steps: the
+    /// commentator, unless the race's sounds are shut.
+    pub fn sound_frame(&mut self, ms: u32) {
+        if self.paused.is_some() || self.collision.hushed {
+            return;
+        }
+        match self.commentary.frame(ms, &mut self.rand) {
+            Some(Said::Effect) => self.events.push(RaceEvent::Effect { id: 57, importance: 1 }),
+            Some(Said::Tone(tone)) => self.events.push(RaceEvent::Dialog { tone }),
+            None => {}
+        }
+    }
+
     pub fn frame(&mut self, buttons: Buttons) {
         if self.paused.is_some() {
             return;

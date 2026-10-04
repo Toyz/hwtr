@@ -162,6 +162,7 @@ fn keyed_of(changes: &[Change]) -> Vec<Keyed> {
                 vab: match bank {
                     Bank::Effects => 0,
                     Bank::Crashes => 1,
+                    Bank::Dialog => 3,
                     Bank::Car(_) => -1,
                 },
                 program: program as i32,
@@ -468,4 +469,60 @@ fn the_mixer_sets_the_hits_volumes_as_the_original() {
         }
     }
     assert!(checked > 1000, "{checked} checked");
+}
+
+/// The commentator's state (0x800d2628): the line, 0 while one waits,
+/// the time.
+const LINE: u32 = 0x800d_2628;
+const SPOKEN: u32 = 0x800d_2629;
+const SINCE: u32 = 0x800d_262c;
+
+#[test]
+fn the_commentator_asks_and_speaks_as_in_the_original() {
+    use hwtr_game::race::{Commentary, dialog_tone};
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-race") else { return };
+    let view = exe.view();
+    let byte = |a: u32| view.u8(a).unwrap_or(0);
+    let rig = rig(&mut m);
+    let mut rng = common::Rng(0xd1a_106);
+    let mut spoken = 0;
+    for round in 0..3000 {
+        scramble(&mut m, &mut rng, &rig);
+        // Asked for: any state, any line.
+        let c = Commentary {
+            line: rng.below(4) as u8,
+            waiting: rng.below(2) == 0,
+            ms: [0, 300, 1000, 1001, 5000][rng.below(5) as usize],
+        };
+        {
+            let mut ram = Ram(&mut m.bus.ram);
+            ram.set_u8(LINE, c.line);
+            ram.set_u8(SPOKEN, (!c.waiting) as u8);
+            ram.set_i32(SINCE, c.ms as i32);
+        }
+        let line = rng.below(4) as u8;
+        m.call(0x8003_6484, &[line as u32]).unwrap();
+        let mut ours = c;
+        ours.ask(line);
+        let ram = Ram(&mut m.bus.ram);
+        let theirs = Commentary { line: ram.u8(LINE), waiting: ram.u8(SPOKEN) == 0, ms: ram.i32(SINCE) as u32 };
+        assert_eq!(theirs, ours, "round {round}: {c:?} asked for {line}");
+        // Spoken: the tone drawn, keyed from the dialog bank.
+        let line = rng.below(6) as u8;
+        let seed = rng.word();
+        Ram(&mut m.bus.ram).set_i32(SEED, seed as i32);
+        let e = engines_from(&mut m, &byte);
+        m.call(0x8001_9754, &[line as u32]).unwrap();
+        let mut rand = Rand { seed };
+        let tone = dialog_tone(line, &mut rand);
+        assert_eq!(m.bus.read_u32(SEED), rand.seed, "round {round}: line {line}'s seed");
+        let alive = *rig.alive.borrow();
+        let volume = (Ram(&mut m.bus.ram).i16(VOLUME) as i32 * 3 / 8) as u8;
+        let changes = e.dialog(tone, volume, &|v| alive[v]);
+        assert_eq!(*rig.keyed.borrow(), keyed_of(&changes), "round {round}: line {line} keyed");
+        assert_eq!(*rig.off.borrow(), offs_of(&changes), "round {round}: line {line} let go");
+        spoken += rig.keyed.borrow().len();
+    }
+    assert!(spoken > 1000, "{spoken} spoken");
 }

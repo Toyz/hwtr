@@ -336,6 +336,7 @@ impl InMemory for Car {
             wreck_draws: Default::default(),
             turbo_fired: Default::default(),
             sounds: Default::default(),
+            lines: Default::default(),
             laps: laps(ram, at),
             lap_distance: ram.i32(at + LAP_DISTANCE),
             ground: Ground {

@@ -312,7 +312,7 @@ impl Car {
             {
                 if self.flags & 1 != 0 && (a.points as u32 >= 1001 || rand.below(8) == 0) {
                     let line = if rand.below(2) == 0 { 2 } else { 1 };
-                    tracing::trace!("stunt commentary {line}: not yet ported");
+                    self.say(line);
                 }
                 if !scoring {
                     a.points = 0;
@@ -343,7 +343,7 @@ impl Car {
             added = turbos.wrapping_add(10).wrapping_sub(total);
         }
         if self.turbos == 10 && !self.turbo_hint {
-            tracing::trace!("the ten-turbos line: not yet ported");
+            self.say(3);
             self.turbo_hint = true;
         }
         added

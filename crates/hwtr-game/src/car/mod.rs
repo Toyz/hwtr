@@ -409,6 +409,8 @@ pub struct Car {
     /// importance).
     pub turbo_fired: crate::effects::Pending<()>,
     pub sounds: crate::effects::Pending<Vec<(u8, u8)>>,
+    /// The commentator's lines the car asked for (0x80036484).
+    pub lines: crate::effects::Pending<Vec<u8>>,
     /// Its checkpoints and laps; once they are run it drives itself, the
     /// controls ignored.
     pub laps: crate::laps::Laps,
@@ -867,6 +869,11 @@ impl Car {
     /// 0x800157f8 as the car's code calls it: effect `id` at full volume.
     pub fn sound(&mut self, id: u8, importance: u8) {
         self.sounds.0.get_or_insert_with(Vec::new).push((id, importance));
+    }
+
+    /// 0x80036484: asks the commentator for line `line`.
+    pub fn say(&mut self, line: u8) {
+        self.lines.0.get_or_insert_with(Vec::new).push(line);
     }
 
     /// Where the car's model is placed (0x80049ecc): its centre less its

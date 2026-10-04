@@ -2,8 +2,8 @@
 title: The race's sound: engines, hits and tyres
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8001924c sound_race_init, 0x80019870 iface_sound_fill, 0x80019abc voice_alloc, 0x800354ac sound_frame, 0x80045a84 car_sound_input, 0x80017928 mixer_one, 0x80035a88 contact_sound, 0x80035c7c pair_sound, 0x80016280 impact_on, 0x80016820 scrape_on, 0x800169a8 scrape_off, 0x80016a18 crash_on, 0x80016490 tyres_on, 0x800167b0 tyres_off, 0x80015b88 tyres_volume, 0x80015bcc scrape_volume, 0x800364cc race_sound_off, 0x8011a840 car_sound, 0x80128e94 car_sound_state, 0x800be888 tyre_effects, 0x800be8a4 contact_effects, 0x800bea6c ground_priority, 0x800d0c28 tyre_voices, 0x800d0c2c scrape_voices
-worklog: 48
+covers: US CCCPSX.EXE:0x8001924c sound_race_init, 0x80019870 iface_sound_fill, 0x80019abc voice_alloc, 0x800354ac sound_frame, 0x80045a84 car_sound_input, 0x80017928 mixer_one, 0x80035a88 contact_sound, 0x80035c7c pair_sound, 0x80016280 impact_on, 0x80016820 scrape_on, 0x800169a8 scrape_off, 0x80016a18 crash_on, 0x80016490 tyres_on, 0x800167b0 tyres_off, 0x80015b88 tyres_volume, 0x80015bcc scrape_volume, 0x800364cc race_sound_off, 0x80036484 commentary_ask, 0x80019754 dialog_play, 0x800d2628 commentary, 0x8011a840 car_sound, 0x80128e94 car_sound_state, 0x800be888 tyre_effects, 0x800be8a4 contact_effects, 0x800bea6c ground_priority, 0x800d0c28 tyre_voices, 0x800d0c2c scrape_voices
+worklog: 48, 51
 ---
 
 # The race's sound
@@ -123,6 +123,42 @@ mixer runs (0x80017928 with one player, 0x80017268 with two).
   - The crashes bank is keyed with effect `kind`'s program, the drawn
     tone, and note and fine tune both `tone + 60`. The volume is a third
     of the level.
+
+## The commentator
+
+The commentator's state is at 0x800d2628: the line, a byte that is 0
+while a line waits, and the time since the line was asked for or spoken.
+`race_load` sets it to nothing waiting.
+
+`commentary_ask` (0x80036484) is called with one of these lines:
+
+| line | asked for by |
+| --- | --- |
+| 0 | a player's wreck, half a second in (`cars_update`) |
+| 1 or 2 | a scored stunt, after drawing two random numbers (0x8003d4e8) |
+| 3 | the tenth turbo before any turbo was used (0x8003c850) |
+
+- Line 3 always takes the place.
+- Any other line is ignored while a line waits, or within 1000 ms of
+  the last.
+
+The race's sound frame (0x800354ac) runs after each frame's steps. It
+skips everything once the race's sound is shut. Otherwise:
+
+1. It adds the frame's milliseconds to the timer.
+2. A line that has waited 301 ms is spoken, and the timer is reset.
+3. Line 3 plays effect 57 at importance 1.
+4. Any other line goes to `dialog_play` (0x80019754):
+   - It takes an effect voice at importance 0.
+   - It draws `rand()%2`: lines 0, 1 and 2 use tones r, r + 2 and r + 4.
+     Any other line draws `rand()%6` for its tone.
+   - It keys the dialog bank (VAB 3) at program 0 with that tone, note
+     tone + 60, fine tune 0, at three eighths of the effects volume.
+   - It draws the numbers even when no voice is free.
+
+These random numbers come from the game's generator, so the port draws
+them in `Race::sound_frame`, which the app calls between the steps and
+the rest of the frame.
 
 ## Levels
 

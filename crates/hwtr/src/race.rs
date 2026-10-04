@@ -113,8 +113,10 @@ struct RaceSound {
     engines: hwtr_game::engines::Engines,
     /// Each car's engine bank and its samples.
     banks: Vec<Option<(hwtr_game::snd::Bank, std::sync::Arc<[u8]>)>>,
-    /// The crashes bank (libsnd's VAB 1) and its samples.
+    /// The crashes bank (libsnd's VAB 1) and the dialog bank (VAB 3), with
+    /// their samples.
     crashes: Option<(hwtr_game::snd::Bank, std::sync::Arc<[u8]>)>,
+    dialog: Option<(hwtr_game::snd::Bank, std::sync::Arc<[u8]>)>,
     /// What each voice was keyed with by the engines (libsnd's record of
     /// it, which a bend checks): the car, program, tone and note.
     owners: [Option<(usize, u8, u8, u8)>; 24],
@@ -160,6 +162,10 @@ impl RaceSound {
                         },
                         Bank::Effects => (&self.effects.bank, &self.effects.samples),
                         Bank::Crashes => match &self.crashes {
+                            Some((b, s)) => (b, s),
+                            None => continue,
+                        },
+                        Bank::Dialog => match &self.dialog {
                             Some((b, s)) => (b, s),
                             None => continue,
                         },
@@ -550,6 +556,7 @@ impl Race {
                 engines: Default::default(),
                 banks: Vec::new(),
                 crashes: None,
+                dialog: None,
                 owners: [None; 24],
             }),
             _ => None,
@@ -564,6 +571,12 @@ impl Race {
             if let (Ok(vh), Ok(vb)) = (get(&format!("CRASHES{n}VH")), get(&format!("CRASHES{n}VB"))) {
                 s.crashes = hwtr_game::snd::Bank::from_vh(vh, 0).map(|b| (b, std::sync::Arc::from(vb)));
                 tracing::info!("crashes bank {n}");
+            }
+            // ... and the dialog bank, as VAB 3.
+            let n = race.dialog_bank;
+            if let (Ok(vh), Ok(vb)) = (get(&format!("DIALOG{n}VH")), get(&format!("DIALOG{n}VB"))) {
+                s.dialog = hwtr_game::snd::Bank::from_vh(vh, 0).map(|b| (b, std::sync::Arc::from(vb)));
+                tracing::info!("dialog bank {n}");
             }
         }
         tracing::info!(
@@ -635,6 +648,8 @@ impl Race {
         }
         self.between = (1.0 - self.ahead as f32 / STEP_MS as f32).clamp(0.0, 1.0);
         let buttons = Buttons { accept: state.holds(&self.mapping, ACCEPT), start: state.holds(&self.mapping, START) };
+        // 0x800354ac, after the steps: the commentator.
+        self.race.sound_frame(ms);
         self.race.frame(buttons);
         self.effects = self.race.effects_frame(ms);
         self.count_ms += ms;
@@ -649,6 +664,15 @@ impl Race {
                 if let Some(s) = &mut self.sound {
                     let alive = s.alive();
                     let changes = s.engines.hit(&self.race.tables, &hit, &|v| alive.get(v).copied().unwrap_or(false));
+                    s.apply(&changes);
+                }
+                continue;
+            }
+            if let RaceEvent::Dialog { tone } = event {
+                tracing::info!("the commentator's tone {tone} at {} ms", self.race.time);
+                if let Some(s) = &mut self.sound {
+                    let alive = s.alive();
+                    let changes = s.engines.dialog(tone, s.volume as u8, &|v| alive.get(v).copied().unwrap_or(false));
                     s.apply(&changes);
                 }
                 continue;
