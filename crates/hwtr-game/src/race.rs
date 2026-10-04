@@ -1095,6 +1095,27 @@ impl Race {
         let mut quads = self.effects.draw(&self.tables, &cam, fps, paused);
         let poses: Vec<_> = self.cars.iter().map(|c| c.pose()).collect();
         quads.extend(self.effects.draw_columns(&self.tables, &mut self.rand, &cam, fps, paused, &poses));
+        // The cars' shadows (0x80029478, from the car draw) on the ground
+        // each is near, subtracted.
+        for (slot, car) in self.cars.iter().enumerate() {
+            let ground = car.ground.nearest;
+            if !shown[slot] || !ground.found {
+                continue;
+            }
+            let id = self.setup.cars.get(slot).map_or(0, |e| e.car_id) as usize;
+            let reach = self.tables.shadows.get(id).copied().unwrap_or_default();
+            let pose = &poses[slot];
+            let Some(shadow) =
+                crate::car::draw::shadow_quads(&car.handling, reach, pose.at, &pose.rot, ground.normal, ground.d)
+            else {
+                continue;
+            };
+            let (clut, tpage) = crate::car::draw::shadow_texture(&self.tables, slot);
+            let column = self.tables.shadow_columns.get(slot).copied().unwrap_or(0);
+            for (corners, uv) in shadow.into_iter().zip(crate::car::draw::shadow_uv(column)) {
+                quads.push(crate::effects::EffectQuad { corners, uv, clut, tpage, colour: [96; 3], semi: true });
+            }
+        }
         // car_draw's boost flames (0x8002b05c).
         for slot in 0..self.cars.len() {
             let id = self.setup.cars.get(slot).map_or(0, |e| e.car_id);

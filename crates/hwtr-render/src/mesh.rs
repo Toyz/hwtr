@@ -229,6 +229,19 @@ pub fn centre(w: &World) -> glam::Vec3 {
     (lo + hi) / 2.0
 }
 
+/// Where a race puts car `slot`'s shadow image (0x800bdd48).
+pub const SHADOW_TEXTURE: [(u16, u16); 6] = [(384, 256), (400, 256), (416, 256), (432, 256), (448, 256), (464, 256)];
+
+/// Car `slot`'s shadow uploaded: the image at its place, the CLUT at (384,
+/// 482 + slot).
+pub fn place_shadow_texture(vram: &mut Vram, tim: &hwtr_data::Tim, slot: usize) {
+    let (x, y) = SHADOW_TEXTURE[slot];
+    vram.load(x, y, tim.rect.w, tim.rect.h, &tim.data);
+    if let Some((r, colours)) = &tim.clut {
+        vram.load(384, 482 + slot as u16, r.w, 1, &colours[..r.w as usize]);
+    }
+}
+
 /// Where a race puts car `slot`'s skin and palette in VRAM: the image table
 /// at 0x800bdd30, the CLUT at (384, 464 + slot).
 pub const CAR_TEXTURE: [(u16, u16); 6] = [(960, 256), (704, 0), (768, 0), (832, 0), (896, 0), (640, 256)];

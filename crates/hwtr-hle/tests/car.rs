@@ -721,3 +721,75 @@ fn wheel_poses_match_the_original() {
     }
     assert!(posed > 2000, "{posed} posed");
 }
+
+/// A car's shadow (0x80029478) against the port's: the car's model root
+/// placed and turned any way, the ground under it any plane, the four
+/// quads' corners compared (none on steep ground).
+#[test]
+fn shadows_match_the_original() {
+    use hwtr_game::car::draw::{shadow_quads, shadow_table};
+    let Some(exe) = common::exe() else { return };
+    let t = Tables::from_exe(&exe);
+    let view = exe.view();
+    let table = shadow_table(&|a| view.u8(a).unwrap_or(0));
+    let mut rng = common::Rng(0x05ad_0e5);
+    let (mut cast, mut none) = (0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let start = m.bus.ram.clone();
+        let cars = m.bus.read_u32(car::CAR_COUNT);
+        for round in 0..600 {
+            m.bus.ram.copy_from_slice(&start);
+            let slot = rng.below(cars);
+            let mut ram = Ram(&mut m.bus.ram);
+            let model = hwtr_hle::original::effects::model(&ram, slot);
+            let cvs = ram.i32(model + 16) as u32;
+            let root = ram.i32(model + 4) as u32;
+            let car = Car::read(&ram, CARS + CAR_SIZE * slot);
+            // Placed anywhere, turned about any axis.
+            let pos: [i32; 3] = std::array::from_fn(|_| (rng.word() as i32) >> (8 + rng.below(4)));
+            let a = rng.below(4096) as i32;
+            let rot = t.rot_axis(rng.below(3) as usize, a);
+            for i in 0..3 {
+                for j in 0..3 {
+                    ram.set_i16(root + 6 * i + 2 * j, rot[i as usize][j as usize]);
+                }
+            }
+            ram.set_vec3(root + 20, pos.map(|c| c << 1));
+            let n = t.normalize([0; 3].map(|_| rng.below(8192) as i32 - 4096 + if rng.below(2) == 0 { 0 } else { 0 }));
+            let n = if rng.below(4) == 0 { n } else { t.normalize([n[0] / 4, n[1] / 4, 4096]) };
+            let d = (rng.word() as i32) >> (6 + rng.below(8));
+            ram.set_u8(0x800d_25a0 + slot, 1);
+            ram.set_vec3(0x8011_dbe4 + 20 * slot, n);
+            ram.set_i32(0x8011_dbe4 + 20 * slot + 16, d);
+            ram.set_u8(cvs + 0x1ef, 1);
+            ram.set_u8(0x800d_2468, 0);
+            let id = ram.u8(cvs + 0x10) as usize;
+            let prims = 0x8011_e124 + 304 * slot;
+            for k in 0..4 * 76 {
+                ram.set_u8(prims + k, 0xee);
+            }
+            m.call(0x8002_9478, &[slot, model]).unwrap();
+            let ram = Ram(&mut m.bus.ram);
+            let ours = shadow_quads(&car.handling, table[id], pos, &rot, n, d);
+            let what = format!("{name} round {round}: car {slot} (id {id}) at {pos:?} on {n:?} {d}");
+            match ours {
+                Some(quads) => {
+                    for (q, quad) in quads.iter().enumerate() {
+                        for (v, p) in quad.iter().enumerate() {
+                            let at = prims + 76 * q as u32 + 8 * v as u32;
+                            let theirs = [ram.i16(at), ram.i16(at + 2), ram.i16(at + 4)];
+                            assert_eq!(theirs, p.map(|c| (c >> 12) as i16), "{what}: quad {q} corner {v}");
+                        }
+                    }
+                    cast += 1;
+                }
+                None => {
+                    assert_eq!(ram.u8(prims), 0xee, "{what}: no shadow");
+                    none += 1;
+                }
+            }
+        }
+    }
+    assert!(cast > 1000 && none > 100, "{cast} cast, {none} none");
+}

@@ -52,6 +52,12 @@ pub struct Tables {
     /// How far the attract race's trackside cameras see, a twelfth of it
     /// in world units, by world and number (0x800be934).
     pub camera_ranges: [[u16; 3]; 4],
+    /// The shadows: each car's reach by car number (0x800be00c), and each
+    /// race slot's shadow image place in VRAM (0x800bdd48) and its first
+    /// column in its page (the low byte of 0x800bdde8).
+    pub shadows: Vec<[i8; 3]>,
+    pub shadow_places: [(u16, u16); 6],
+    pub shadow_columns: [u8; 6],
 }
 
 const CHECKPOINT_TABLE: u32 = 0x800c_5c64;
@@ -88,6 +94,10 @@ impl Tables {
             std::array::from_fn(|w| std::array::from_fn(|n| u16_at(0x800b_e934 + 2 * (3 * w + n) as u32)));
         let exhausts =
             (0..42u32).map(|id| std::array::from_fn(|k| byte(0x800b_e088 + 41 * id + k as u32) as i8)).collect();
+        let shadows = crate::car::draw::shadow_table(&byte);
+        let shadow_places =
+            std::array::from_fn(|k| (u16_at(0x800b_dd48 + 4 * k as u32), u16_at(0x800b_dd4a + 4 * k as u32)));
+        let shadow_columns = std::array::from_fn(|k| byte(0x800b_dde8 + 2 * k as u32));
         Tables {
             cos,
             sqrt,
@@ -102,6 +112,9 @@ impl Tables {
             surface_rumble,
             camera_ranges,
             exhausts,
+            shadows,
+            shadow_places,
+            shadow_columns,
         }
     }
 

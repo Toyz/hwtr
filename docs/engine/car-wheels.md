@@ -1,9 +1,9 @@
 ---
-title: The car's wheels as drawn
+title: The car's wheels and shadow as drawn
 status: complete
 discs: US
-covers: US CCCPSX.EXE:0x80049ecc car_pose, 0x80020a14 wheel_pose, 0x80020888 car_set_pose
-worklog: 54
+covers: US CCCPSX.EXE:0x80049ecc car_pose, 0x80020a14 wheel_pose, 0x80020888 car_set_pose, 0x80021830 shadow_plane, 0x80029478 shadow_draw, 0x80028b34 shadow_prims, 0x800be00c shadow_reach, 0x800bdd48 shadow_places, 0x800bdde8 shadow_columns
+worklog: 54, 55
 ---
 
 # The car's wheels as drawn
@@ -55,3 +55,37 @@ last pose and no trail point is pushed. Otherwise:
 
 The renderer draws each wheel's vertices through its node's rotation and
 place instead of the model's fixed child offset.
+
+## The shadow (0x80029478)
+
+Each frame the car pose also hands every car's nearest surface (car
++0x8f0: found, normal, d) to `shadow_plane` (0x80021830). It is kept by
+slot at 0x800d25a0 and 0x8011dbe4. The car draw then calls
+`shadow_draw` (0x80029478) for a shown car whose surface was found and
+faces up by more than 60 degrees (normal z > 2047).
+
+1. **The box.** Its corners are `(±x, ±y, z)` in the car's axes:
+   - x: the rear right wheel's mount x, plus an eighth of its tyre width,
+     plus the car's reach[0] (the table 0x800be00c by car id, three
+     signed bytes a car)
+   - y: half the car's length less reach[1]
+   - z: minus half its height
+2. **Placing it.** The handling's origin is added, with reach[2] on y.
+   The box is turned by the model root's rotation and placed at the
+   root's position (half its translation).
+3. **Onto the ground.** Each corner drops straight down onto the plane:
+   z grows by `(dot(p, normal) + d) / -normal.z`.
+4. **Four quads.** The corners and their midpoints (the centre taken
+   from the diagonal p1, p3) make four quads, kept as cyclic corner lists.
+5. **Drawing.**
+   - The quads are drawn with the slot's shadow texture: `<car>.shd`, a
+     64x64 4-bit TIM put at 0x800bdd48's place for the slot, with its CLUT
+     at (384, 482 + slot).
+   - Each quad takes a quarter of the image; the top two quarters run
+     right to left. u starts at the low byte of 0x800bdde8 for the slot.
+   - Colour is 96, and the page's blend is set to 2 (subtract). The
+     texels are greys with STP set, so the ground darkens by about 36.
+
+Under the cheat options 2 and 4 (0x800d2468) the box is first scaled by
+the model's scale (cvs +0x14). The port does not scale cars and leaves
+this out.

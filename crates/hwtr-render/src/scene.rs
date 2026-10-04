@@ -146,6 +146,11 @@ impl Scene {
                 .and_then(|b| Model::parse(b.models[0]))
                 .map_err(|e| e.to_string())?;
             let (clut, tpage) = mesh::place_car_texture(&mut vram, &tim, slot);
+            // Its shadow (`<car>.shd`, 0x80021b88): the 4-bit image at the
+            // slot's place, its CLUT on row 482 on.
+            if let Some(shd) = get(&format!("{n}SHD")).ok().and_then(|b| hwtr_data::Tim::parse(b).ok()) {
+                mesh::place_shadow_texture(&mut vram, &shd, slot);
+            }
             scene_cars.push(SceneCar { model, clut, tpage, pos, rot });
         }
         let background = world.background;
