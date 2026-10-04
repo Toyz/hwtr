@@ -217,3 +217,116 @@ fn attract_camera_matches_the_original() {
     assert_eq!(same, tried, "{same} of {tried} the same; first miss: {}", first_miss.unwrap_or_default());
     assert!(cut_to_spot > 0, "the director chose a trackside camera at least once");
 }
+
+/// The way round a loop and its up (0x8005e984) against the original's,
+/// with player one's car's lead point put about each of the track's loop
+/// zones; then the whole chase step with the car flagged on a loop.
+#[test]
+fn the_loop_camera_matches_the_original() {
+    use hwtr_hle::original::object::{CAR_OBJECT, POINT_ZONES, POINTS};
+    let Some(exe) = common::exe() else { return };
+    let t = Tables::from_exe(&exe);
+    let mut rng = common::Rng(0x100b_ca3e);
+    let (mut axes, mut steps) = (0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        // The desert has no loops: zones with two side portals and one
+        // up or down are made loops (all 0x8005e984 reads of them).
+        let (world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+        let loops: Vec<u16> = (0..world.scp.zones.len() as u16)
+            .filter(|&z| {
+                let portals: Vec<_> = world
+                    .scp
+                    .planes_of(&world.scp.zones[z as usize])
+                    .iter()
+                    .filter(|p| p.is_portal())
+                    .copied()
+                    .collect();
+                let side = portals.iter().filter(|p| p.normal[2].unsigned_abs() < 2048).count();
+                side >= 2 && portals.len() > side
+            })
+            .collect();
+        assert!(!loops.is_empty(), "{name}: zones to make loops of");
+        {
+            let mut ram = Ram(&mut m.bus.ram);
+            let zones = ram.i32(ram.i32(hwtr_hle::original::world::SCP) as u32 + 216) as u32;
+            for &z in &loops {
+                let at = zones + 20 * z as u32;
+                ram.set_i16(at, (ram.i16(at) as u16 | 0x9000) as i16);
+            }
+        }
+        let start = m.bus.ram.clone();
+        let count = m.bus.ram[(VIEWS & 0x1f_ffff) as usize];
+        for round in 0..400 {
+            m.bus.ram.copy_from_slice(&start);
+            let zone = loops[rng.below(loops.len() as u32) as usize];
+            let origin = world.scp.zones[zone as usize].origin();
+            let lead: [i32; 3] = std::array::from_fn(|k| origin[k] + rng.below(1 << 21) as i32 - (1 << 20));
+            {
+                let mut ram = Ram(&mut m.bus.ram);
+                let obj = ram.i32(CARS + CAR_OBJECT) as u32;
+                let points = ram.i32(obj + POINTS) as u32;
+                let zones = ram.i32(obj + POINT_ZONES) as u32;
+                ram.set_vec3(points, lead);
+                ram.set_i16(zones, zone as i16);
+            }
+            let (world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+            let out = common::OUT;
+            let found = m.call(0x8005_e984, &[0, out, out + 16]).unwrap() & 0xff;
+            let ours = world.loop_axes(&t, 0);
+            assert_eq!(found != 0, ours.is_some(), "{name} round {round}: zone {zone}");
+            if let Some((way, up)) = ours {
+                let ram = Ram(&mut m.bus.ram);
+                assert_eq!(
+                    (ram.vec3(out), ram.vec3(out + 16)),
+                    (way, up),
+                    "{name} round {round}: zone {zone} at {lead:?}"
+                );
+                axes += 1;
+            }
+            // The chase on the loop.
+            let (tuning, mut cam, mut car) = {
+                let ram = Ram(&mut m.bus.ram);
+                (hwtr_hle::original::car::tuning(&ram), Camera::read(&ram, at(0)), Car::read(&ram, CARS))
+            };
+            cam.view = 0;
+            cam.snap = rng.below(4) == 0;
+            car.flags |= 16;
+            car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (8 + rng.below(10)));
+            car.ground.nearest.found = rng.below(2) == 0;
+            let seed = rng.word();
+            {
+                let mut ram = Ram(&mut m.bus.ram);
+                cam.write(&mut ram, at(0));
+                car.write(&mut ram, CARS);
+                ram.set_i32(SEED, seed as i32);
+            }
+            let (mut cam, mut car) = {
+                let ram = Ram(&mut m.bus.ram);
+                (Camera::read(&ram, at(0)), Car::read(&ram, CARS))
+            };
+            let mut rand = Rand { seed };
+            let racing = m.bus.ram[(0x800d_0de9u32 & 0x1f_ffff) as usize] != 0;
+            let time = m.bus.read_u32(0x800d_0e34);
+            let around = hwtr_game::camera::Surroundings {
+                tables: &t,
+                tuning: &tuning,
+                views: &t.views.one,
+                count,
+                racing,
+                time,
+                flyby: &world.scp.flyby,
+                collision: &world,
+                spots: &[],
+                demo: false,
+            };
+            cam.step(&around, &mut car, 25, &mut rand);
+            m.call(0x8003_69e4, &[25]).unwrap();
+            let original = Camera::read(&Ram(&mut m.bus.ram), at(0));
+            assert_eq!(original, cam, "{name} round {round}: the chase in zone {zone}");
+            steps += 1;
+        }
+    }
+    eprintln!("{axes} loop axes, {steps} chase steps");
+    assert!(axes > 300, "{axes} loop axes");
+}

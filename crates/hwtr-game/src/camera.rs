@@ -256,9 +256,9 @@ impl Camera {
         let rot = body.rot;
         let (car_forward, car_up) = (column(&rot, 1), column(&rot, 2));
         let banked = car.flags & 4 != 0;
-        if car.flags & 16 != 0 {
-            tracing::trace!("the camera on loops (0x8005e984): not yet ported");
-        }
+        // On a loop, its way round and up (0x8005e984); a car flagged on a
+        // loop whose lead point is not in one is taken as off it.
+        let looping = if car.flags & 16 != 0 { collision.loop_axes(t, car.slot) } else { None };
         let mut centre = add(body.pos, body.centre);
         // Which way the car goes: its travel when fast, its heading (or the
         // way from the camera) when slow; level unless the track banks.
@@ -276,16 +276,24 @@ impl Camera {
         } else {
             travel
         };
-        let forward = t.normalize(along);
-        let (right, up) = if banked {
-            let mut right = cross(forward, car_up);
-            if right.iter().fold(0i32, |s, c| s.wrapping_add(c.wrapping_abs())) <= 0 {
-                right = [0x1000, 0, 0];
+        let (forward, right, up) = if let Some((way, loop_up)) = looping {
+            // The car's travel along the way round, or the way itself when
+            // that is short; up the loop's when the car is near a surface.
+            let along = dot(body.vel, way);
+            let mut ahead = way.map(|c| fx(c, along));
+            if ahead.iter().fold(0i32, |s, c| s.wrapping_add(c.wrapping_abs())) < 0x1000 {
+                ahead = way;
             }
-            let right = t.normalize(right);
-            (right, cross(right, forward))
+            // It takes the travel's place: a snapped camera moves with it.
+            travel = ahead;
+            let forward = t.normalize(ahead);
+            let above = if car.ground.nearest.found { loop_up } else { [0, 0, 0x1000] };
+            let right = t.normalize(cross(forward, above));
+            (forward, right, cross(right, forward))
         } else {
-            ([forward[1], forward[0].wrapping_neg(), 0], [0, 0, 0x1000])
+            let forward = t.normalize(along);
+            let (right, up) = Self::chase_axes(t, forward, banked, car_up);
+            (forward, right, up)
         };
         centre = add(centre, up.map(|c| fx(c, view.lift)));
         // A boost pulls the view back as the car nears the boost's speed.
@@ -312,7 +320,7 @@ impl Camera {
             target = self.spring(t, target, rate, world.demo);
         }
         let mut look = t.normalize(sub(centre, target));
-        let up = if car.flags & 16 != 0 { [0, 0, 0x1000] } else { up };
+        let up = if looping.is_some() { [0, 0, 0x1000] } else { up };
         let mut right = cross(look, up);
         if right == [0; 3] {
             look = [0, 0, -0x1000];
@@ -334,6 +342,21 @@ impl Camera {
             *row = [right[i] as i16, look[i] as i16, up[i] as i16];
         }
         self.fov = fx(0x3244, 0x800);
+    }
+
+    /// The chase view's right and up from its `forward`: off a loop, along
+    /// the car's up where the track banks, else level.
+    fn chase_axes(t: &Tables, forward: Vec3, banked: bool, car_up: Vec3) -> (Vec3, Vec3) {
+        if banked {
+            let mut right = cross(forward, car_up);
+            if right.iter().fold(0i32, |s, c| s.wrapping_add(c.wrapping_abs())) <= 0 {
+                right = [0x1000, 0, 0];
+            }
+            let right = t.normalize(right);
+            (right, cross(right, forward))
+        } else {
+            ([forward[1], forward[0].wrapping_neg(), 0], [0, 0, 0x1000])
+        }
     }
 
     /// The sweep that opens a race: over [`INTRO_MS`] the eye eases (a
