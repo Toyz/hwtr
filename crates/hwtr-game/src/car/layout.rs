@@ -88,13 +88,16 @@ pub const UNKNOWN_618: u32 = 0x618;
 pub const UNKNOWN_624: u32 = 0x624;
 pub const UNKNOWN_628: u32 = 0x628;
 pub const UNKNOWN_7CC: u32 = 0x7cc;
-pub const UNKNOWN_874: u32 = 0x874;
+pub const TURBOS: u32 = 0x874;
 pub const AIR_CONTROL: u32 = 0x86a;
 pub const AIR_ARMED: u32 = 0x86b;
 /// The axis lock: active (byte), axis (word), direction (VECTOR).
 pub const AIR_LOCK: u32 = 0x876;
 pub const AIR_LOCK_AXIS: u32 = 0x878;
 pub const AIR_LOCK_DIR: u32 = 0x87c;
+pub const RIGHTING: u32 = 0x90c;
+pub const RIGHTS_ITSELF: u32 = 0x918;
+pub const ROLL_WAY: u32 = 0x919;
 
 /// The shared tuning bytes.
 pub const TUNING: u32 = 0x8013_6a18;
@@ -150,6 +153,11 @@ pub mod tuning {
     pub const STEER_MPH: u32 = 8;
     pub const STEER_PERCENT: [u32; 2] = [0x3a, 9];
     pub const PLAYER_SKILL: u32 = 16;
+    pub const RIGHT_SIDE_MS: u32 = 0x35;
+    pub const RIGHT_END_MS: u32 = 0x36;
+    pub const RIGHT_ROOF_MS: u32 = 0x37;
+    pub const STAY_ROOF_PERCENT: u32 = 0x38;
+    pub const WRECK_ROOF_TENS: u32 = 0x39;
 }
 
 impl Wheel {
@@ -259,6 +267,11 @@ impl Tuning {
             player_skill: [at(PLAYER_SKILL), at(PLAYER_SKILL + 1)],
             steer_mph: at(STEER_MPH),
             steer_percent: STEER_PERCENT.map(at),
+            right_side_ms: at(RIGHT_SIDE_MS),
+            right_end_ms: at(RIGHT_END_MS),
+            stay_roof_percent: at(STAY_ROOF_PERCENT),
+            right_roof_ms: at(RIGHT_ROOF_MS),
+            wreck_roof_tens: at(WRECK_ROOF_TENS),
         }
     }
 
@@ -324,7 +337,7 @@ impl Car {
             unknown_624: ram.i32(at + UNKNOWN_624),
             unknown_628: ram.u8(at + UNKNOWN_628),
             unknown_7cc: ram.i32(at + UNKNOWN_7CC),
-            unknown_874: ram.u8(at + UNKNOWN_874),
+            turbos: ram.u8(at + TURBOS),
             air_control: ram.u8(at + AIR_CONTROL),
             air_armed: ram.u8(at + AIR_ARMED),
             air_lock: AxisLock {
@@ -332,6 +345,9 @@ impl Car {
                 axis: ram.i32(at + AIR_LOCK_AXIS),
                 dir: ram.vec3(at + AIR_LOCK_DIR),
             },
+            righting: [0, 1, 2].map(|k| ram.i32(at + RIGHTING + 4 * k) as u32),
+            rights_itself: ram.u8(at + RIGHTS_ITSELF),
+            roll_way: ram.u8(at + ROLL_WAY),
         }
     }
 
@@ -389,11 +405,16 @@ impl Car {
         ram.set_i32(at + UNKNOWN_624, self.unknown_624);
         ram.set_u8(at + UNKNOWN_628, self.unknown_628);
         ram.set_i32(at + UNKNOWN_7CC, self.unknown_7cc);
-        ram.set_u8(at + UNKNOWN_874, self.unknown_874);
+        ram.set_u8(at + TURBOS, self.turbos);
         ram.set_u8(at + AIR_CONTROL, self.air_control);
         ram.set_u8(at + AIR_ARMED, self.air_armed);
         ram.set_u8(at + AIR_LOCK, self.air_lock.active);
         ram.set_i32(at + AIR_LOCK_AXIS, self.air_lock.axis);
         ram.set_vec3(at + AIR_LOCK_DIR, self.air_lock.dir);
+        for (k, t) in self.righting.iter().enumerate() {
+            ram.set_i32(at + RIGHTING + 4 * k as u32, *t as i32);
+        }
+        ram.set_u8(at + RIGHTS_ITSELF, self.rights_itself);
+        ram.set_u8(at + ROLL_WAY, self.roll_way);
     }
 }

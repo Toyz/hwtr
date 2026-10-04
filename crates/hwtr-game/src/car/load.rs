@@ -127,7 +127,7 @@ impl Car {
         let local = [car.origin[0], car.origin[1], car.origin[2].wrapping_add(ride)];
         let turned = car.body.rot.map(|row| (0..3).fold(0i32, |s, k| s.wrapping_add(fx(row[k] as i32, local[k]))));
         car.body.pos = sub(add(grid.0, turned), car.body.centre);
-        car.unknown_874 = 3;
+        car.turbos = 3;
         car.flags |= match entrant.driver.byte() {
             1 => 1,
             2 => 2,

@@ -9,6 +9,7 @@
 
 mod controls;
 pub mod handling;
+pub mod righting;
 pub mod layout;
 mod load;
 
@@ -212,6 +213,16 @@ pub struct Tuning {
     /// percentage at that speed toward the second at top speed.
     pub steer_mph: u8,
     pub steer_percent: [u8; 2],
+    /// Milliseconds a car lies on its side, or on its nose or tail, before
+    /// it is turned back (0x80046ac0).
+    pub right_side_ms: u8,
+    pub right_end_ms: u8,
+    /// On its roof: the percentage of times it stays there (and is wrecked
+    /// after `wreck_roof_ms` tens of milliseconds), else it is turned back
+    /// after `right_roof_ms`.
+    pub stay_roof_percent: u8,
+    pub right_roof_ms: u8,
+    pub wreck_roof_tens: u8,
 }
 
 impl Tuning {
@@ -313,13 +324,21 @@ pub struct Car {
     pub unknown_624: i32,
     pub unknown_628: u8,
     pub unknown_7cc: i32,
-    pub unknown_874: u8,
+    /// Turbos in hand, at most 10 (0x8003c850 adds, a boost spends one).
+    pub turbos: u8,
     /// Non-zero while the stick is turning the car in the air.
     pub air_control: u8,
     /// Which stick axes may turn the car in the air: [`Car::ARMED_ALONG`],
     /// [`Car::ARMED_ACROSS`]. An axis is armed once centred above 15 mph.
     pub air_armed: u8,
     pub air_lock: AxisLock,
+    /// Milliseconds the car has lain on its side, on its nose or tail, and
+    /// on its roof (0x80046ac0).
+    pub righting: [u32; 3],
+    /// On its roof: whether it will be turned back (else it is wrecked), and
+    /// which way (decided once, as it lands there).
+    pub rights_itself: u8,
+    pub roll_way: u8,
 }
 
 impl Car {

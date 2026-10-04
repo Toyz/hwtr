@@ -377,3 +377,70 @@ fn air_control_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn righting_matches_the_original() {
+    use hwtr_game::car::righting::Righting;
+    use hwtr_game::rand::{Rand, layout::SEED};
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0x2167_0000_0000_0010);
+    let mut seen = std::collections::BTreeMap::new();
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let start = m.bus.ram.clone();
+        for round in 0..400 {
+            m.bus.ram.copy_from_slice(&start);
+            let at = CARS;
+            // The car turned to one of the 24 ways a box can lie (its own
+            // way now and then), its timers somewhere along, the floor under
+            // it straight up or as saved.
+            let seed = rng.word();
+            let mut roof = (0, 0);
+            on_car(&mut m.bus.ram, at, |car, tuning| {
+                car.air_armed = rng.below(4) as u8;
+                car.air_lock.active = rng.below(2) as u8;
+                if round % 25 != 0 {
+                    let perm = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]][rng.below(6) as usize];
+                    let signs = [0, 1, 2].map(|_| if rng.below(2) == 0 { 1i16 } else { -1 });
+                    let mut rot = [[0i16; 3]; 3];
+                    for (j, &i) in perm.iter().enumerate() {
+                        rot[i][j] = 0x1000 * signs[j];
+                    }
+                    car.body.rot = rot;
+                }
+                if rng.below(2) == 0 {
+                    car.ground.floor.normal = [0, 0, 0x1000];
+                }
+                // Including the step that crosses each threshold exactly.
+                let limits = [tuning.right_side_ms, tuning.right_end_ms, tuning.right_roof_ms].map(|t| t as u32);
+                let wreck = tuning.wreck_roof_tens as u32 * 10;
+                car.righting = [0, 1, 2].map(|k| {
+                    let edge = if k == 2 && rng.below(2) == 0 { wreck } else { limits[k] };
+                    [0, 25, 400, 1000, rng.below(3000), edge.saturating_sub(25), edge.saturating_sub(24)]
+                        [rng.below(7) as usize]
+                });
+                car.rights_itself = rng.below(2) as u8;
+                car.roll_way = rng.below(2) as u8;
+                car.body.force = [0; 3];
+                car.body.torque = [0; 3];
+                roof = (car.righting[2], car.rights_itself);
+            });
+            m.bus.write_u32(SEED, seed);
+            let mut port = m.bus.ram.clone();
+            let mut rand = Rand { seed };
+            let outcome = on_car(&mut port, at, |car, tuning| car.right_itself(tuning, &mut rand));
+            Ram(&mut port).set_i32(SEED, rand.seed as i32);
+            m.call(0x8004_6ac0, &[at, 0]).unwrap();
+            let original = Car::read(&Ram(&mut m.bus.ram), at);
+            *seen.entry(format!("{outcome:?}")).or_insert(0) += 1;
+            if outcome == Righting::Wreck {
+                assert_eq!(original.unknown_62c, 1, "{name} round {round}: the original wrecked the car too");
+                continue;
+            }
+            let ported = Car::read(&Ram(&mut port), at);
+            assert_eq!(original, ported, "{name} round {round} (roof {roof:?})");
+            assert_eq!(m.bus.read_u32(SEED), rand.seed, "{name} round {round}: the seed");
+        }
+    }
+    assert!(seen.len() == 2, "outcomes {seen:?}");
+}
