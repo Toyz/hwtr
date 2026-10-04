@@ -5,6 +5,7 @@ use hwtr_game::collision::world::{Collision, ObjectId};
 use super::object::read_list;
 use hwtr_game::collision::object::{CollisionObject, RefSet};
 use hwtr_game::collision::scp::Scp;
+use hwtr_game::collision::pairs::Pair;
 use hwtr_game::collision::walls::Contact;
 use super::{InMemory, Ram};
 use hwtr_game::laps::Course;
@@ -20,6 +21,10 @@ pub const STEP: u32 = 0x800d_2654;
 pub const CONTACTS: u32 = 0x8012_c6ec;
 pub const CONTACT_COUNT: u32 = 0x800d_2674;
 pub const CONTACT_SIZE: u32 = 40;
+pub const PAIRS: u32 = 0x8012_c96c;
+pub const PAIR_COUNT: u32 = 0x800d_2676;
+pub const SEPARATIONS: u32 = 0x8012_cc2c;
+pub const DEPTHS: u32 = 0x8012_cbec;
 /// gameflow_load's lap rules: the laps, the checkpoints, flags 2, 4, 8.
 pub const LAPS: u32 = 0x800d_0e40;
 pub const CHECKPOINTS: u32 = 0x800d_0e44;
@@ -90,6 +95,25 @@ pub fn collision(ram: &Ram) -> (Collision, Vec<u32>) {
                 .collect(),
             course: course(ram),
             lap_events: Vec::new(),
+            pairs: (0..ram.i16(PAIR_COUNT) as u16 as u32)
+                .map(|k| {
+                    let at = PAIRS + k * CONTACT_SIZE;
+                    Pair {
+                        a: id(ram.i32(at) as u32),
+                        b: id(ram.i32(at + 4) as u32),
+                        point: ram.vec3(at + 8),
+                        normal: ram.vec3(at + 0x18),
+                    }
+                })
+                .collect(),
+            separations: (0..32u32)
+                .flat_map(|a| (0..128u32).map(move |b| (a, b)))
+                .filter_map(|(a, b)| {
+                    let v = ram.u8(SEPARATIONS + a * 128 + b);
+                    (v != 0).then_some(((a as u16, b as u16), v))
+                })
+                .collect(),
+            depths: std::array::from_fn(|k| ram.i32(DEPTHS + 4 * k as u32)),
         };
         (world, addresses)
     }
@@ -103,4 +127,13 @@ pub fn write_collision(world: &Collision, ram: &mut Ram, addresses: &[u32]) {
         obj.write(ram, at);
     }
     ram.set_i32(STEP, world.step as i32);
+    for a in 0..32u32 {
+        for b in 0..128u32 {
+            let v = world.separations.get(&(a as u16, b as u16)).copied().unwrap_or(0);
+            ram.set_u8(SEPARATIONS + a * 128 + b, v);
+        }
+    }
+    for (k, d) in world.depths.iter().enumerate() {
+        ram.set_i32(DEPTHS + 4 * k as u32, *d);
+    }
 }

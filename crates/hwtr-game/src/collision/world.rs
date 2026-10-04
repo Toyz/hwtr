@@ -32,6 +32,14 @@ pub struct Collision {
     pub course: crate::laps::Course,
     /// What the cars' checkpoints did this step, by car slot.
     pub lap_events: Vec<(u8, crate::laps::LapEvent)>,
+    /// This step's contacts between objects (0x8012c96c, count 0x800d2676).
+    pub pairs: Vec<super::pairs::Pair>,
+    /// The axis each pair of objects was last found apart along, by their
+    /// ids (0x8012cc2c).
+    pub separations: std::collections::BTreeMap<(u16, u16), u8>,
+    /// The overlap tests' last overlaps by axis, shared by the objects' and
+    /// the fences' tests (0x8012cbec).
+    pub depths: [i32; 16],
 }
 
 /// What a race step's collision needs besides the world and the cars.
@@ -178,11 +186,14 @@ impl Collision {
     /// (Contacts between cars, 0x8004e938, are not yet ported.)
     pub fn update(&mut self, t: &crate::math::Tables, cars: &mut [Car], step: &mut Step) {
         self.contacts.clear();
+        self.pairs.clear();
         self.lap_events.clear();
         self.step = self.step.wrapping_add(1);
         self.update_points(cars);
+        self.find_pairs(t, cars);
         self.stages(t, cars, step);
         self.contact_impulses(t, cars, step);
+        self.pair_impulses(t, step.tuning, cars, step.rand);
     }
 
     /// The part of 0x8005148c ported so far: the zones, the players'

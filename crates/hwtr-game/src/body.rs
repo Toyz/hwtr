@@ -162,18 +162,7 @@ impl Body {
         if inward > 0 {
             return 0;
         }
-        // How the point gives along n per unit impulse: 1/m + n·((I⁻¹(r×n))×r).
-        let a = cross(r, n);
-        let w = self.inv_inertia_world.map(|row| {
-            (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(a[k] as i64) >> 12))
-        });
-        let by = |x: i64, y: i32| x.wrapping_mul(y as i64) >> 12;
-        let turn = [
-            (by(w[1], r[2]).wrapping_sub(by(w[2], r[1])) >> 8) as i32,
-            (by(w[2], r[0]).wrapping_sub(by(w[0], r[2])) >> 8) as i32,
-            (by(w[0], r[1]).wrapping_sub(by(w[1], r[0])) >> 8) as i32,
-        ];
-        let give = self.inv_mass.wrapping_add(dot(n, turn));
+        let give = self.give(r, n);
         let size = div_fx(fx(bounce.wrapping_neg(), inward), give);
         let normal = n.map(|c| fx(c, size));
         let sliding = sub(vel, n.map(|c| fx(c, inward)));
@@ -184,14 +173,50 @@ impl Body {
             t.normalize(sliding).map(|c| fx(c, k))
         };
         let p = add(normal, along);
+        self.push(r, p);
+        self.settle();
+        size
+    }
+
+    /// How a point `r` from the centre gives along `n` per unit impulse:
+    /// `1/m + n·((I⁻¹(r×n))×r)`, in the game's mixed 64-bit steps.
+    pub fn give(&self, r: Vec3, n: Vec3) -> i32 {
+        let a = cross(r, n);
+        let w = self.inv_inertia_world.map(|row| {
+            (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(a[k] as i64) >> 12))
+        });
+        let by = |x: i64, y: i32| x.wrapping_mul(y as i64) >> 12;
+        let turn = [
+            (by(w[1], r[2]).wrapping_sub(by(w[2], r[1])) >> 8) as i32,
+            (by(w[2], r[0]).wrapping_sub(by(w[0], r[2])) >> 8) as i32,
+            (by(w[0], r[1]).wrapping_sub(by(w[1], r[0])) >> 8) as i32,
+        ];
+        self.inv_mass.wrapping_add(dot(n, turn))
+    }
+
+    /// The impulse `p` at `r` from the centre into the momenta.
+    pub fn push(&mut self, r: Vec3, p: Vec3) {
         self.momentum = add(p, self.momentum);
         let torque = cross(r, p);
         for (l, c) in self.ang_momentum.iter_mut().zip(torque) {
             *l = l.wrapping_add((c as i64) << 8);
         }
+    }
+
+    /// The impulse `p` at `r` taken out of the momenta (the torque taken
+    /// out whole, not added negated: the rounding differs).
+    pub fn pull(&mut self, r: Vec3, p: Vec3) {
+        self.momentum = sub(self.momentum, p);
+        let torque = cross(r, p);
+        for (l, c) in self.ang_momentum.iter_mut().zip(torque) {
+            *l = l.wrapping_sub((c as i64) << 8);
+        }
+    }
+
+    /// The velocity and spin from the momenta.
+    pub fn settle(&mut self) {
         self.vel = self.momentum.map(|c| fx(c, self.inv_mass));
         self.spin = self.spin_of_momentum();
-        size
     }
 
     /// 0x8006c504: one step of `dt` seconds. Gravity joins the force sum;

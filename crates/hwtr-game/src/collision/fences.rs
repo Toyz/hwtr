@@ -26,7 +26,9 @@ fn out_of(m: &Matrix, v: Vec3) -> Vec3 {
 /// 0x8005bcec: whether a box (`centre`, axes `rot`, half sizes `half`) and
 /// a fence are apart along one of seven axes: the box's three, the fence's,
 /// and the three across both (a margin of 4 on the fence's components).
-fn apart(centre: Vec3, rot: &Matrix, half: Vec3, f: &Fence) -> bool {
+/// Each axis passed leaves its overlap in `depths` (the objects' test's
+/// scratch, at the slots 0x8005bcec writes).
+fn apart(centre: Vec3, rot: &Matrix, half: Vec3, f: &Fence, depths: &mut [i32; 16]) -> bool {
     let along = into(rot, f.along);
     let gap = into(rot, sub(f.centre, centre));
     let [ax, ay, az] = along;
@@ -46,7 +48,15 @@ fn apart(centre: Vec3, rot: &Matrix, half: Vec3, f: &Fence) -> bool {
         (fx(gx, az).wrapping_sub(fx(gz, ax)), fx(hx, wz).wrapping_add(fx(hz, wx))),
         (fx(gy, ax).wrapping_sub(fx(gx, ay)), fx(hx, wy).wrapping_add(fx(hy, wx))),
     ];
-    tests.iter().any(|&(d, r)| d.wrapping_abs().wrapping_sub(r) > 0)
+    const SLOTS: [usize; 7] = [1, 2, 3, 5, 7, 10, 13];
+    for (&(d, r), slot) in tests.iter().zip(SLOTS) {
+        let gap = d.wrapping_abs().wrapping_sub(r);
+        if gap > 0 {
+            return true;
+        }
+        depths[slot] = gap;
+    }
+    false
 }
 
 impl Collision {
@@ -76,7 +86,10 @@ impl Collision {
             let z = self.scp.zones[zone as usize];
             for k in 0..z.fence_count as usize {
                 let Some(&f) = self.scp.fences.get(z.first_fence as usize + k) else { continue };
-                if apart(centre, &rot, half, &f) {
+                let mut depths = self.depths;
+                let separate = apart(centre, &rot, half, &f, &mut depths);
+                self.depths = depths;
+                if separate {
                     continue;
                 }
                 let p = into(&rot, sub(f.centre, centre));

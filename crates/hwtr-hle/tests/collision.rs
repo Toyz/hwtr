@@ -402,3 +402,112 @@ fn fences_match_the_original() {
     eprintln!("across zones {tried}, pushed {pushed}, contacts {contacts}");
     assert!(pushed > 10 && contacts > 10, "across zones {tried}, pushed {pushed}, contacts {contacts}");
 }
+
+#[test]
+fn pairs_match_the_original() {
+    use hwtr_hle::original::world::{PAIRS, PAIR_COUNT, CONTACT_SIZE};
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0x9a12_0000_0000_0001);
+    let (mut pairs, mut wrecks, mut cached, mut debris) = (0, 0, 0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { continue };
+        let start = m.bus.ram.clone();
+        let t = hwtr_hle::original::tables(&m.bus.ram);
+        let tuning = hwtr_hle::original::car::tuning(&Ram(&mut m.bus.ram));
+        for round in 0..120 {
+            m.bus.ram.copy_from_slice(&start);
+            // A car driven at another from a little way off, a step at a
+            // time, either fast or slow.
+            let mut cars = cars_from(&mut m.bus.ram);
+            let (a, b) = (rng.below(cars.len() as u32) as usize, 1 + rng.below(cars.len() as u32 - 1) as usize);
+            let b = if a == b { (b + 1) % cars.len() } else { b };
+            let target = cars[a].body.pos;
+            let off = [0; 3].map(|_| (rng.word() as i32) >> (12 + rng.below(3)));
+            let off = [off[0], off[1], off[2] >> 4];
+            cars[b].body.pos = hwtr_game::math::add(target, off);
+            let speed = [1, 2, 4, 8][rng.below(4) as usize];
+            let toward = off.map(|c| c.wrapping_neg() / (8 * speed));
+            for (k, car) in cars.iter_mut().enumerate() {
+                car.body.asleep = false;
+                let fast = if round % 2 == 0 { 400 } else { 40 };
+                car.body.vel = if k == b { toward.map(|c| c.wrapping_mul(fast)) } else { [0; 3] };
+                car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
+            }
+            let objects = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram)).0.objects.len();
+            for step in 0..10 * speed {
+                {
+                    let mut ram = Ram(&mut m.bus.ram);
+                    let mut car = Car::read(&ram, CARS + b as u32 * CAR_SIZE);
+                    car.body.pos = hwtr_game::math::add(car.body.pos, toward);
+                    car.write(&mut ram, CARS + b as u32 * CAR_SIZE);
+                    ram.set_i16(PAIR_COUNT, 0);
+                }
+                m.call(0x8004_e47c, &[]).unwrap();
+                let (mut world, addrs) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+                // A wreck's wheels fly off as objects with bodies of their own
+                // (0x8007c9b0, not yet ported): the round ends there.
+                if world.objects.len() != objects {
+                    debris += 1;
+                    break;
+                }
+                let mut cars = cars_from(&mut m.bus.ram);
+                world.pairs.clear();
+                world.find_pairs(&t, &mut cars);
+                m.call(0x8004_e938, &[]).unwrap();
+                let (original, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+                let original_cars = cars_from(&mut m.bus.ram);
+                let at = format!("{name} round {round} step {step}");
+                assert_eq!(original.pairs, world.pairs, "{at}: pairs");
+                assert_eq!(original.separations, world.separations, "{at}: separations");
+                assert_eq!(original.depths, world.depths, "{at}: depths");
+                assert_eq!(original.objects, world.objects, "{at}: objects");
+                assert_eq!(original_cars, cars, "{at}: cars after the push");
+                cached += world.pairs.iter().filter(|p| world.separations.contains_key(&(world.objects[p.b].id, world.objects[p.a].id)) || world.separations.contains_key(&(world.objects[p.a].id, world.objects[p.b].id))).count();
+                // Each pair's crash checks and impulse, by both.
+                let mut rand = hwtr_game::rand::Rand { seed: m.bus.read_u32(hwtr_hle::original::rand::SEED) };
+                let mut world = original;
+                let mut cars = original_cars;
+                for k in 0..world.pairs.len() {
+                    let p = world.pairs[k];
+                    let before: Vec<bool> = cars.iter().map(|c| c.wrecked).collect();
+                    world.pair_crashes(&t, &mut cars, &mut rand, k);
+                    let pa = PAIRS + k as u32 * CONTACT_SIZE;
+                    for (side, obj) in [(0u32, p.a), (1, p.b)] {
+                        if world.objects[obj].car.is_some() {
+                            m.call(0x8007_e000, &[pa, side]).unwrap();
+                        }
+                    }
+                    let crashed = cars_from(&mut m.bus.ram);
+                    // A player's wreck draws random numbers the port does not
+                    // (its wheels flying off): past one, the wrecks differ.
+                    // A wreck crumples the car's model and a player's throws
+                    // its wheels, drawing random numbers the port does not: only
+                    // the pair's first wreck, a computer car's, can match.
+                    let new = |slot: Option<u8>| slot.filter(|&s| cars[s as usize].wrecked && !before[s as usize]);
+                    let first = new(world.objects[p.a].car).or(new(world.objects[p.b].car));
+                    for (c, o) in cars.iter().zip(&crashed) {
+                        assert_eq!(o.wrecked, c.wrecked, "{at}: pair {k} crash");
+                        let comparable = !c.wrecked || before[c.slot as usize] || (first == Some(c.slot) && c.flags & 1 == 0);
+                        if comparable {
+                            assert_eq!(o, c, "{at}: pair {k} crash");
+                        }
+                    }
+                    // A wreck's random draws differ (the model's crumple is not
+                    // yet ported): go on from the original's cars.
+                    cars = crashed;
+                    world.pair_impulse_only(&t, &tuning, &mut cars, k);
+                    m.call(0x8006_f20c, &[pa]).unwrap();
+                    let original_cars = cars_from(&mut m.bus.ram);
+                    for (c, o) in cars.iter().zip(&original_cars) {
+                        assert_eq!(o, c, "{at}: pair {k} impulse");
+                    }
+                    wrecks += cars.iter().zip(&before).filter(|(c, w)| c.wrecked && !**w).count();
+                    pairs += 1;
+                    let _ = &addrs;
+                }
+            }
+        }
+    }
+    eprintln!("pairs {pairs}, cached axes {cached}, wrecks {wrecks}, rounds ended by debris {debris}");
+    assert!(pairs > 50, "pairs {pairs}");
+}

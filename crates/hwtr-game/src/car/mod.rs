@@ -223,6 +223,10 @@ pub struct Tuning {
     pub camera_travel_mph: u8,
     /// The computer cars' driving.
     pub ai: crate::ai::AiTuning,
+    /// How hard objects bounce off each other (tenths of one and the
+    /// restitution): players, computer cars, a player and a computer car,
+    /// anything else (TUNING +42 to +45, 0x8006f20c).
+    pub pair_bounce: [u8; 4],
 }
 
 /// Where TUNING.PRM keeps each setting.
@@ -266,6 +270,7 @@ impl Tuning {
             wreck_roof_tens: at(WRECK_ROOF_TENS),
             camera_travel_mph: at(CAMERA_TRAVEL_MPH),
             ai: crate::ai::AiTuning::from_prm(&at),
+            pair_bounce: [at(42), at(43), at(44), at(45)],
         }
     }
 

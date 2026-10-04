@@ -72,6 +72,8 @@ impl Kind {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CollisionObject {
+    /// Its number, in the order objects were made.
+    pub id: u16,
     pub kind: Kind,
     /// Bit 4: its lead point changed zone this step.
     pub flags: u32,
@@ -96,4 +98,8 @@ pub struct CollisionObject {
     pub contact_point: Vec3,
     /// The car it belongs to, by slot.
     pub car: Option<u8>,
+    /// The collision step it last looked for objects to meet.
+    pub paired: u32,
+    /// A prop's weight, for the knocks it takes and gives.
+    pub heft: u32,
 }

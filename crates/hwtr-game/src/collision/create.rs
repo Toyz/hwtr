@@ -4,7 +4,7 @@ use super::object::{CollisionObject, Kind, RefSet};
 use super::scp::Scp;
 use super::world::{Collision, ObjectId};
 use crate::car::Car;
-use crate::math::{Tables, add, apply_matrix_lv, div, fx, sub};
+use crate::math::{Tables, Vec3, add, apply_matrix_lv, div, fx, sub};
 
 impl Collision {
     /// An empty world on the track `scp`.
@@ -13,24 +13,32 @@ impl Collision {
         Collision { scp, members, ..Collision::default() }
     }
 
-    /// 0x8004c478 with 0x8004c714 and 0x8004d798: a car's collision object.
-    /// Its points are its wheels' mounts and the eight corners of its box,
+    /// 0x8004c478 with 0x8004c714 (0x8004ccc4 for a computer car) and
+    /// 0x8004d798: a car's collision object. A player's points are its
+    /// wheels' mounts and the eight corners of its box (a computer car's,
+    /// its centre alone),
     /// each in the zone it starts in; the object goes into those zones'
     /// member sets and the lists for its kind, and the zones' effects apply
     /// to the car.
     pub fn add_car(&mut self, t: &Tables, car: &mut Car) -> ObjectId {
         let kind = if car.state == 2 { Kind::PlayerCar } else { Kind::ComputerCar };
         let half = [car.width, car.length, car.height].map(|c| fx(c, 0x800));
-        let wheels = car.wheels.iter().map(|w| sub(w.mount, car.origin));
-        let corners =
-            [(1, 1, 1), (1, 1, -1), (1, -1, 1), (1, -1, -1), (-1, 1, 1), (-1, 1, -1), (-1, -1, 1), (-1, -1, -1)]
-                .map(|(x, y, z): (i32, i32, i32)| [half[0] * x, half[1] * y, half[2] * z]);
-        let local: Vec<_> = wheels.chain(corners).collect();
         let centre = add(car.body.pos, car.body.centre);
+        let (local, margin): (Vec<Vec3>, Vec3) = if kind == Kind::ComputerCar {
+            // 0x8004ccc4: a computer car is one point at its centre, its box
+            // its own size.
+            (vec![[0; 3]], half)
+        } else {
+            let wheels = car.wheels.iter().map(|w| sub(w.mount, car.origin));
+            let corners =
+                [(1, 1, 1), (1, 1, -1), (1, -1, 1), (1, -1, -1), (-1, 1, 1), (-1, 1, -1), (-1, -1, 1), (-1, -1, -1)]
+                    .map(|(x, y, z): (i32, i32, i32)| [half[0] * x, half[1] * y, half[2] * z]);
+            (wheels.chain(corners).collect(), half.map(|c| c.wrapping_add(0x1000)))
+        };
         let point_zones =
             local.iter().map(|&p| self.scp.zone_at(add(apply_matrix_lv(&car.body.rot, p), centre))).collect();
-        let margin = half.map(|c| c.wrapping_add(0x1000));
         let obj = CollisionObject {
+            id: self.objects.len() as u16,
             kind,
             flags: 0,
             centre: [0; 3],
@@ -44,6 +52,8 @@ impl Collision {
             stamp: 0,
             contact_point: [0; 3],
             car: Some(car.slot),
+            paired: 0,
+            heft: 0,
         };
         let id = self.objects.len();
         self.objects.push(obj);

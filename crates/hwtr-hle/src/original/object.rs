@@ -5,7 +5,10 @@ use hwtr_game::collision::object::{CollisionObject, Kind, RefSet};
 use super::car::{CAR_SIZE, CARS};
 use super::{InMemory, Ram};
 
+pub const ID: u32 = 0x00;
 pub const FLAGS: u32 = 0x04;
+pub const PAIRED: u32 = 0x70;
+pub const HEFT: u32 = 0x8c;
 pub const CENTRE: u32 = 0x0c;
 pub const HALF: u32 = 0x1c;
 pub const ROT: u32 = 0x2c;
@@ -44,6 +47,7 @@ impl InMemory for CollisionObject {
         let car = (CARS..CARS + 8 * CAR_SIZE).contains(&car_at).then(|| ((car_at - CARS) / CAR_SIZE) as u8);
         let list = read_list(ram, o + ZONES);
         CollisionObject {
+            id: ram.i32(o + ID) as u16,
             kind: Kind::from_byte(ram.u8(o + KIND)),
             flags: ram.i32(o + FLAGS) as u32,
             centre: ram.vec3(o + CENTRE),
@@ -57,6 +61,8 @@ impl InMemory for CollisionObject {
             stamp: ram.i32(o + STAMP) as u32,
             contact_point: ram.vec3(o + CONTACT_POINT),
             car,
+            paired: ram.i32(o + PAIRED) as u32,
+            heft: ram.i32(o + HEFT) as u32,
         }
     }
 
@@ -83,5 +89,6 @@ impl InMemory for CollisionObject {
         ram.set_u8(o + KIND, self.kind.byte());
         ram.set_i32(o + STAMP, self.stamp as i32);
         ram.set_vec3(o + CONTACT_POINT, self.contact_point);
+        ram.set_i32(o + PAIRED, self.paired as i32);
     }
 }
