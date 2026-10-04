@@ -8,7 +8,7 @@ use crate::race::{Entrant, RaceSetup};
 
 /// Race option bits.
 const THIRD_SIZE: u32 = 4;
-const HALF_WHEELS: u32 = 32;
+const BIG_WHEELS: u32 = 32;
 
 /// The gravity the springs hold the car up against, in/s².
 const G: i32 = 0x18_2000;
@@ -47,7 +47,7 @@ impl Car {
     /// stiffness. The wheels take their mounts, diameters and drive layout
     /// from the handling, lowered by their axle's ride height; the car is as
     /// wide as its widest wheel track. Race options can shrink the car to a
-    /// third, and its wheels by half.
+    /// third (cheat 4), or double its wheels (cheat 32).
     fn fit_handling(&mut self, options: u32) {
         let h = &self.handling;
         let count = h.wheel_count;
@@ -74,7 +74,7 @@ impl Car {
                     mount = mount.map(|c| fx(c, third));
                     diameter = fx(diameter, third);
                 }
-                if options & HALF_WHEELS != 0 {
+                if options & BIG_WHEELS != 0 {
                     diameter = fx(diameter, 0x2000);
                 }
                 let rear = i >= 2;

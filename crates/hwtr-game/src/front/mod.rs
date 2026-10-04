@@ -174,10 +174,14 @@ pub struct Tables {
     pub sign_in: [u16; 3],
     /// Each track's own song (0x800be8c0).
     pub track_songs: Vec<u8>,
+    /// The cheat codes, by bit (0x800bee6c), and the one car code
+    /// (0x800d1004) with its car's file name (0x800d1008).
+    pub cheat_codes: Vec<String>,
+    pub car_code: (String, String),
 }
 
 impl Tables {
-    fn read(byte: &dyn Fn(u32) -> u8) -> Tables {
+    pub fn read(byte: &dyn Fn(u32) -> u8) -> Tables {
         let word = |a: u32| u32::from_le_bytes([byte(a), byte(a + 1), byte(a + 2), byte(a + 3)]);
         let cstr = |a: u32| -> Option<String> {
             if a == 0 {
@@ -206,7 +210,38 @@ impl Tables {
                 u16::from_le_bytes([byte(0x800d_116c + 2 * k as u32), byte(0x800d_116d + 2 * k as u32)])
             }),
             track_songs: (0..12).map(|k| byte(0x800b_e8c0 + k)).collect(),
+            cheat_codes: strs(0x800b_ee6c, 10).into_iter().map(Option::unwrap_or_default).collect(),
+            car_code: (cstr(word(0x800d_1004)).unwrap_or_default(), cstr(word(0x800d_1008)).unwrap_or_default()),
         }
+    }
+
+    /// 0x8007f87c: a pad's last eight code buttons (`code`, '1' to '6')
+    /// against the cheat codes, then the car code. True if one matched.
+    ///
+    /// - 0x8007f710: the first cheat code that matches makes `p`'s cheats
+    ///   its bit alone. Several slots hold the same unused code, so only
+    ///   the first of them can be had.
+    /// - 0x8007f79c: the car code gives `p` its car (by its file name,
+    ///   0x80088370).
+    pub fn apply_code(&self, code: &[u8], p: &mut Profile) -> bool {
+        if let Some(bit) = self.cheat_codes.iter().position(|c| c.as_bytes() == code) {
+            p.cheats = 1 << bit;
+            return true;
+        }
+        if self.car_code.0.as_bytes() != code {
+            return false;
+        }
+        // 0x80088370: the first 41 file names; -1 if none (a shift by 31).
+        let id = self.car_files[..41]
+            .iter()
+            .position(|f| f.as_deref() == Some(self.car_code.1.as_str()))
+            .map_or(-1, |k| k as i32);
+        if id < 32 {
+            p.cars[0] |= 1u32.wrapping_shl(id as u32);
+        } else {
+            p.cars[1] |= 1 << (id - 32);
+        }
+        true
     }
 }
 
@@ -1198,10 +1233,26 @@ impl Front {
         }
     }
 
-    /// 0x8008cff4, 0x8008d12c: the presses, then left and right held,
-    /// stepping after half a second and faster down to a quarter.
+    /// 0x8008cff4, 0x8008d12c: the presses (and the codes they make), then
+    /// left and right held, stepping after half a second and faster down to
+    /// a quarter.
     fn menu_pad(&mut self, pad: usize, mask: u16, p: &mut Poster) {
-        self.pad_events(pad, mask, p);
+        if self.pad_events(pad, mask, p) {
+            // 0x8008d010: the pad's last eight code buttons against the
+            // codes, for its player; a match chimes and starts them again
+            // (0x80086a70, 0x80086aa0: eight spaces).
+            let code: Vec<u8> = self.codes[pad].iter().copied().take_while(|&c| c != 0).collect();
+            if self.tables.apply_code(&code, &mut self.players[pad]) {
+                tracing::info!(
+                    "player {}: code {} taken, cheats {:#x}",
+                    pad + 1,
+                    String::from_utf8_lossy(&code),
+                    self.players[pad].cheats
+                );
+                self.play(52);
+                self.codes[pad][..8].fill(b' ');
+            }
+        }
         let lets = if pad == 0 { matches!(self.choice, 1..=3 | 5) } else { self.people == 2 && self.choice == 1 };
         if !lets {
             return;

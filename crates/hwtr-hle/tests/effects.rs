@@ -529,3 +529,53 @@ fn the_effects_on_match_the_original() {
         }
     }
 }
+
+#[test]
+fn the_small_cars_shrink_the_puffs_as_in_the_original() {
+    const CHEATS: u32 = 0x800d_2468;
+    const TEMPLATE: u32 = 0x8012_6c3c;
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-drive") else { return };
+    let t = hwtr_hle::original::tables(&m.bus.ram);
+    let fps = codec_fps(&m);
+    // 0x8002bdb4 under each cheat byte: the shrink it leaves.
+    for options in [0u32, 2, 4, 6, 0x20, 0x24, 0xff] {
+        Ram(&mut m.bus.ram).set_i32(CHEATS, options as i32);
+        m.call(0x8002_bdb4, &[]).unwrap();
+        let mut ours = Effects::default();
+        ours.set_small(options);
+        assert_eq!(codec::read(&Ram(&mut m.bus.ram)).puff_shrink, ours.puff_shrink, "options {options:#x}");
+    }
+    // One puff drawn with no shrink and with 28: the original's quad
+    // template and the port's corners move by the same amount.
+    let mut ours = codec::read(&Ram(&mut m.bus.ram));
+    let mut rand = Rand { seed: 0x1234 };
+    ours.dust(&mut rand, fps, [0x10_0000, 0x20_0000, 0x30_0000], 12, 4, None);
+    let start = m.bus.ram.clone();
+    let cam = [[4096, 0, 0], [0, 4096, 0], [0, 0, 4096]];
+    let mut theirs = Vec::new();
+    let mut port = Vec::new();
+    for shrink in [0u8, 28] {
+        m.bus.ram.copy_from_slice(&start);
+        let mut e = ours.clone();
+        e.puff_shrink = shrink;
+        codec::write(&e, &mut Ram(&mut m.bus.ram));
+        let mut ram = Ram(&mut m.bus.ram);
+        for k in 0..8 {
+            ram.set_i32(ARGS + 4 * k, 0);
+        }
+        ram.set_i16(ARGS, 4096);
+        ram.set_i16(ARGS + 8, 4096);
+        ram.set_i16(ARGS + 16, 4096);
+        m.call(0x8002_f618, &[codec::HEADERS[0], ARGS]).unwrap();
+        let ram = Ram(&mut m.bus.ram);
+        theirs.push([0, 18, 24, 26].map(|o| ram.i16(TEMPLATE + o)));
+        let quads = e.draw(&t, &cam, fps, true);
+        assert_eq!(quads.len(), 1);
+        port.push(quads[0].corners);
+    }
+    assert_eq!(theirs[1].map(i32::from), theirs[0].map(|v| v as i32 - 28), "the original's template");
+    let d = |c: usize, i: usize| port[1][c][i] - port[0][c][i];
+    // Right is x and down is -z with this camera.
+    assert_eq!([d(0, 0), d(2, 2), d(3, 0), d(3, 2)], [-28 << 12, 28 << 12, -28 << 12, 28 << 12]);
+}

@@ -2,8 +2,8 @@
 title: The race's effects: puffs, skid marks, sparks
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8002bdb4 effects_init, 0x8002c0dc pool_init, 0x8002c2b8 pool_alloc, 0x8002f354 particles_update, 0x8002f618 pool_draw, 0x8002b888 trails_emit, 0x80029230 trail_push, 0x800303cc skid_segment_spawn, 0x80030fc8 dust_puff_spawn, 0x8003119c spark_puff_spawn, 0x8002e9f8 collision_sparks, 0x8002c32c spark_spawn, 0x80049ecc car_pose, 0x80068540 view_setup, 0x800d25c0 0x800d25c8 0x800d25d0 0x800d25d8 pools, 0x8011ec2c trails, 0x800d0d98 fx_enable, 0x80028b34 effects_on, 0x800d2578 fps, 0x800d0b68 frame_count, 0x8002e128 flash_draw
-worklog: 45, 46, 47, 56, 61, 80, 81
+covers: US CCCPSX.EXE:0x8002bdb4 effects_init, 0x8002c0dc pool_init, 0x8002c2b8 pool_alloc, 0x8002f354 particles_update, 0x8002f618 pool_draw, 0x8002b888 trails_emit, 0x80029230 trail_push, 0x800303cc skid_segment_spawn, 0x80030fc8 dust_puff_spawn, 0x8003119c spark_puff_spawn, 0x8002e9f8 collision_sparks, 0x8002c32c spark_spawn, 0x80049ecc car_pose, 0x80068540 view_setup, 0x800d25c0 0x800d25c8 0x800d25d0 0x800d25d8 pools, 0x8011ec2c trails, 0x800d0d98 fx_enable, 0x80028b34 effects_on, 0x800d2578 fps, 0x800d0b68 frame_count, 0x8002e128 flash_draw, 0x800d0db6 puff_shrink
+worklog: 45, 46, 47, 56, 61, 80, 81, 85
 ---
 
 # The race's effects
@@ -138,6 +138,15 @@ beams and the flame. `Effects::set_enabled` is this.
 `the_effects_on_match_the_original` (hle tests/effects.rs) runs
 0x80028b34 with views 0 to 3 under ten cheat bytes and compares the
 value.
+
+**The small cars' puffs (0x800d0db6).** `effects_init` (0x8002bdb4) ends
+by setting 0x800d0db6 to 28 under cheat option 4, else 0. The draw
+(0x8002f618) takes it off each puff's growth, so the puffs are 28 smaller
+around the small cars. `Effects::set_small` and `puff_shrink`;
+`the_small_cars_shrink_the_puffs_as_in_the_original` (hle
+tests/effects.rs) checks the value under seven cheat bytes and one puff
+drawn both ways on each side.
+
 It always draws two `rand()` values before allocating. The new puff has:
 
 - velocity `(r1&3, r2&3, r1&1) << 12` (or the vector it is given)

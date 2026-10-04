@@ -531,6 +531,7 @@ impl Race {
         let countdown_from = (collision.scp.flyby.len() as u32).saturating_sub(1) * 200;
         // 0x80028b34: the effects on, by the views and the cheats.
         let mut effects = crate::effects::Effects::default();
+        effects.set_small(setup.options);
         effects.set_enabled(cameras.len() as u8, setup.options);
         let stunts = vec![None; cars.len()];
         let hud = Hud::new(&setup, tables.meter.clone());

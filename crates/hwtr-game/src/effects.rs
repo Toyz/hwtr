@@ -327,6 +327,9 @@ pub struct Effects {
     pub columns: [Column; 5],
     /// The effects that are on (0x800d0d98; see [`ENABLED`]).
     pub enabled: u32,
+    /// Taken off every puff's growth as it is drawn (0x800d0db6): 28 under
+    /// cheat option 4, the small cars.
+    pub puff_shrink: u8,
     /// Each player's screen flash after a wreck (0x800d0db8), and the grey
     /// it is drawn at this frame (0 for none).
     pub flash: [i16; 2],
@@ -421,6 +424,7 @@ impl Effects {
             embers: [Ember::default(); 20],
             columns: [Column { frame: -1, ticks: 0xffff, ..Column::default() }; 5],
             enabled: ENABLED,
+            puff_shrink: 0,
             flash: [0; 2],
             flash_drawn: Drawn([0; 2]),
             chunk_colour: [176; 3],
@@ -567,6 +571,12 @@ impl Effects {
             out.push(EffectQuad { corners, uv, clut, tpage, colour: [col; 3], semi: true });
         }
         out
+    }
+
+    /// 0x8002bdb4's end: under cheat option 4 (the small cars) the puffs
+    /// are drawn 28 smaller.
+    pub fn set_small(&mut self, options: u32) {
+        self.puff_shrink = if options & 4 != 0 { 28 } else { 0 };
     }
 
     /// 0x80028b34's last part, at the race's load: puffs only with one
@@ -1215,7 +1225,7 @@ impl Effects {
                             continue;
                         }
                     }
-                    let grow = r.frame as i16;
+                    let grow = (r.frame as i16).wrapping_sub(self.puff_shrink as i16);
                     let accel = p.accel.as_ref().map_or([0; 3], |a| a[buf]);
                     let mut offs = tmpl.map(|(o, _)| o);
                     offs[0][0] = offs[0][0].wrapping_add(grow);

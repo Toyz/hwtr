@@ -1,6 +1,6 @@
 //! The players' passwords against the original: made from random records
 //! (0x80069ae4), and read back, and read from random and cheat words
-//! (0x80069d78).
+//! (0x80069d78). And the menus' button codes (0x8007f87c).
 
 mod common;
 
@@ -104,4 +104,77 @@ fn passwords_are_read_as_the_original_reads_them() {
         good += ok as u32;
     }
     assert!(good > 250, "{good} read");
+}
+
+#[test]
+fn codes_are_taken_as_the_original_takes_them() {
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "menu-main") else { return };
+    let view = exe.view();
+    let tables = hwtr_game::front::Tables::read(&|a| view.u8(a).unwrap_or(0));
+    let mut known: Vec<String> = tables.cheat_codes.clone();
+    known.push(tables.car_code.0.clone());
+    let mut rng = common::Rng(0xc0de_0016);
+    let mut taken = 0;
+    for round in 0..400 {
+        let mut start = profile(&mut rng);
+        start.cheats = rng.below(512);
+        let code: String = match round % 3 {
+            0 => known[rng.below(known.len() as u32) as usize].clone(),
+            1 => (0..8).map(|_| char::from(b'1' + rng.below(6) as u8)).collect(),
+            _ => (0..rng.below(9)).map(|_| char::from(b'1' + rng.below(6) as u8)).collect(),
+        };
+        let mut ours = start.clone();
+        let ok = tables.apply_code(code.as_bytes(), &mut ours);
+        let mut ram = Ram(&mut m.bus.ram);
+        put(&mut ram, &start);
+        ram.set_i32(RECORD + 0x3c, start.cheats as i32);
+        for k in 0..9 {
+            ram.set_u8(TEXT + k, code.as_bytes().get(k as usize).copied().unwrap_or(0));
+        }
+        let r = m.call(0x8007_f87c, &[TEXT, RECORD]).unwrap();
+        let ram = Ram(&mut m.bus.ram);
+        assert_eq!(ok, r & 0xff != 0, "round {round}: {code}");
+        let theirs = ([ram.i32(RECORD + 0x14) as u32, ram.i32(RECORD + 0x18) as u32], ram.i32(RECORD + 0x3c) as u32);
+        assert_eq!((ours.cars, ours.cheats), theirs, "round {round}: {code}");
+        taken += ok as u32;
+    }
+    assert!(taken > 100, "{taken} taken");
+}
+
+/// The small-cars code pressed on the original's main menu (frame by
+/// frame, from `menu-main`): the buttons gather as digits and the match
+/// gives player one cheat 4, as `apply_code` does, and spaces the buffer.
+#[test]
+fn a_code_pressed_on_the_main_menu_is_taken() {
+    let Some(exe) = common::exe() else { return };
+    let Some(cue) = rrt::disc::Image::find(std::path::Path::new("../../work/disc")).ok() else {
+        eprintln!("skipped: no disc");
+        return;
+    };
+    let disc = std::rc::Rc::new(rrt::disc::Image::open(&cue).unwrap());
+    let mut hle = hwtr_hle::Hle::new(disc).unwrap();
+    let Ok(state) = std::fs::read("../../work/states/menu-main.bin") else {
+        eprintln!("skipped: no menu-main state");
+        return;
+    };
+    hle.load(&state).unwrap();
+    hle.m.step_limit = 100_000_000;
+    // Code digits 1 to 6: Square, Triangle, L1, R1, L2, R2 (actions 20-25).
+    let button = |d: u8| [1u16 << 15, 1 << 12, 1 << 10, 1 << 11, 1 << 8, 1 << 9][(d - b'1') as usize];
+    let view = exe.view();
+    let tables = hwtr_game::front::Tables::read(&|a| view.u8(a).unwrap_or(0));
+    let code = tables.cheat_codes[2].clone();
+    let mut ours = Profile::new(&Default::default(), 0);
+    assert!(tables.apply_code(code.as_bytes(), &mut ours));
+    let read = |hle: &mut hwtr_hle::Hle, a: u32| hle.m.bus.read(a, 4).unwrap();
+    for f in 0..300u32 {
+        let k = (f as i32 - 130) / 15;
+        hle.pad = if f >= 130 && k < 8 && (f - 130) % 15 < 3 { button(code.as_bytes()[k as usize]) } else { 0 };
+        hle.frame().unwrap();
+    }
+    let profile = read(&mut hle, 0x800d_2764);
+    assert_eq!(read(&mut hle, profile + 0x3c), ours.cheats);
+    let codes: Vec<u8> = (0..8).map(|k| hle.m.bus.read(0x8013_6c70 + k, 1).unwrap() as u8).collect();
+    assert_eq!(codes, [b' '; 8]);
 }

@@ -21,6 +21,8 @@ const CHUNK_TURNS: u32 = 0x8012_3d8c;
 const EMBERS: u32 = 0x8011_f59c;
 const COLUMNS: u32 = 0x8012_510c;
 const FLASH: u32 = 0x800d_0db8;
+/// Taken off the puffs' growth (28 under the small cars).
+const PUFF_SHRINK: u32 = 0x800d_0db6;
 const CHUNK_COLOUR: u32 = 0x8012_6c8c + 64;
 /// The cars' models (car_get_model 0x80021b58: three a slot); a model's
 /// root node is at +4, its colour at +0x44.
@@ -158,6 +160,7 @@ pub fn read(ram: &Ram) -> Effects {
         };
     }
     e.flash = [ram.i16(FLASH), ram.i16(FLASH + 2)];
+    e.puff_shrink = ram.u8(PUFF_SHRINK);
     e.chunk_colour = [ram.u8(CHUNK_COLOUR), ram.u8(CHUNK_COLOUR + 1), ram.u8(CHUNK_COLOUR + 2)];
     for slot in 0..6 {
         let m = model(ram, slot as u32);
@@ -320,6 +323,7 @@ pub fn write(e: &Effects, ram: &mut Ram) {
         ram.set_u8(a + 62, col.slot);
     }
     ram.set_i16(FLASH, e.flash[0]);
+    ram.set_u8(PUFF_SHRINK, e.puff_shrink);
     ram.set_i16(FLASH + 2, e.flash[1]);
     for c in 0..3 {
         ram.set_u8(CHUNK_COLOUR + c as u32, e.chunk_colour[c]);
