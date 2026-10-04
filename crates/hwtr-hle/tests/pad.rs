@@ -80,3 +80,56 @@ fn front_end_actions_match_the_original() {
     }
     assert!(held > 100, "{held} held");
 }
+
+/// The motors (0x8001b7b4 the road's feel, 0x8001b934 a jolt, 0x8001ccc4 the
+/// wind-down at each read) against the original, on random runs; libpad is
+/// told a DualShock is there.
+#[test]
+fn motors_match_the_original() {
+    use hwtr_game::pad::Motors;
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-speed") else { return };
+    m.stub(0x800a_7e44, 6); // PadGetState: stable, with actuators
+    m.stub(0x800a_7f10, 1); // PadInfoAct
+    m.stub(0x800a_8114, 1); // PadSetAct
+    m.stub(0x800a_80dc, 1); // PadSetActAlign
+    const ACT: u32 = 0x8011_b2b8;
+    const CLOCK: u32 = 0x800d_240c;
+    const STATE: u32 = 0x800d_246c;
+    let mut rng = common::Rng(0x0b00_b1e5);
+    let mut port_motors = [Motors::default(); 2];
+    let mut clock = 1000u32;
+    let mut ran = 0;
+    for round in 0..6000 {
+        let port = rng.below(2) as usize;
+        let on = rng.below(8) != 0;
+        m.bus.write_u32(MAPPING + 0x74 * port as u32 + 0x70, on as u32);
+        clock = clock.wrapping_add(rng.below(60));
+        m.bus.write_u32(CLOCK, clock);
+        let state = [0u8, 1, 1, 1, 2, 3][rng.below(6) as usize];
+        m.bus.write(STATE, 1, state as u32).unwrap();
+        let motors = &mut port_motors[port];
+        match rng.below(3) {
+            0 => {
+                let (r, s) = (if rng.below(4) == 0 { 0 } else { rng.below(256) }, rng.below(256));
+                m.call(0x8001_b7b4, &[port as u32, r, s]).unwrap();
+                motors.rumble(on, r as u8, s as u8);
+            }
+            1 => {
+                let level = rng.below(256);
+                m.call(0x8001_b934, &[port as u32, level]).unwrap();
+                motors.jolt(on, level as u8, clock);
+            }
+            _ => {
+                let elapsed = rng.below(200);
+                m.call(0x8001_ccc4, &[port as u32, elapsed]).unwrap();
+                motors.fade(on, elapsed, !matches!(state, 0 | 2 | 3), clock);
+            }
+        }
+        let rec = ACT + 98 * port as u32;
+        let (small, large) = (m.bus.read(rec + 0x18, 1).unwrap() as u8, m.bus.read(rec + 0x19, 1).unwrap() as u8);
+        assert_eq!((small != 0, large), (motors.small, motors.large), "round {round}, port {port}");
+        ran += (large != 0) as u32;
+    }
+    assert!(ran > 500, "{ran} rounds with the motor running");
+}

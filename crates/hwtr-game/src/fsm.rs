@@ -7,6 +7,9 @@
 //! The timing is the original's, one phase per tick, including the shortcut
 //! a state with no exit actions takes inside its update.
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
+
 use hwtr_psx::Memory;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,6 +57,11 @@ pub struct Poster<'a> {
 impl Poster<'_> {
     pub fn post(&mut self, event: i16) {
         post(self.transitions, self.event, event);
+    }
+
+    /// Whether the running state has a transition on `event` (0x8009e270).
+    pub fn takes(&self, event: i16) -> bool {
+        self.transitions.iter().any(|t| t.0 == event)
     }
 }
 
@@ -143,27 +151,121 @@ impl Fsm {
 /// addresses. The state count is not stored; the state table runs up to the
 /// machine record, which is how both machines in `CCCPSX.EXE` are laid out.
 pub fn read_def(mem: &Memory, addr: u32) -> Option<Def<u32>> {
-    let table = mem.u32(addr)?;
+    read_def_bytes(&|a| mem.u8(a).unwrap_or(0), addr)
+}
+
+/// [`read_def`] from `byte`, which reads the executable at an address.
+pub fn read_def_bytes(byte: &dyn Fn(u32) -> u8, addr: u32) -> Option<Def<u32>> {
+    let u16_at = |a: u32| u16::from_le_bytes([byte(a), byte(a + 1)]);
+    let u32_at = |a: u32| u32::from_le_bytes([byte(a), byte(a + 1), byte(a + 2), byte(a + 3)]);
+    let table = u32_at(addr);
     if table >= addr || !(addr - table).is_multiple_of(4) {
         return None;
     }
     let count = (addr - table) / 4;
-    let list = |at: u32, n: i8| -> Option<Vec<u32>> { (0..n.max(0) as u32).map(|i| mem.u32(at + 4 * i)).collect() };
+    let list = |at: u32, n: i8| -> Vec<u32> { (0..n.max(0) as u32).map(|i| u32_at(at + 4 * i)).collect() };
     let mut states = Vec::with_capacity(count as usize);
     for i in 0..count {
-        let s = mem.u32(table + 4 * i)?;
-        let n = |k: u32| mem.u8(s + 16 + k).map(|b| b as i8);
-        let (ne, nu, nx, nt) = (n(0)?, n(1)?, n(2)?, n(3)?);
-        let trans_at = mem.u32(s + 12)?;
-        let transitions = (0..nt.max(0) as u32)
-            .map(|k| Some((mem.u16(trans_at + 4 * k)? as i16, mem.u16(trans_at + 4 * k + 2)? as i16)))
-            .collect::<Option<Vec<_>>>()?;
-        states.push(State {
-            enter: list(mem.u32(s)?, ne)?,
-            update: list(mem.u32(s + 4)?, nu)?,
-            exit: list(mem.u32(s + 8)?, nx)?,
-            transitions,
-        });
+        let s = u32_at(table + 4 * i);
+        let n = |k: u32| byte(s + 16 + k) as i8;
+        let (ne, nu, nx, nt) = (n(0), n(1), n(2), n(3));
+        let trans_at = u32_at(s + 12);
+        let transitions =
+            (0..nt.max(0) as u32).map(|k| (u16_at(trans_at + 4 * k) as i16, u16_at(trans_at + 4 * k + 2) as i16)).collect();
+        states.push(State { enter: list(u32_at(s), ne), update: list(u32_at(s + 4), nu), exit: list(u32_at(s + 8), nx), transitions });
     }
-    Some(Def { states, initial: mem.u16(addr + 4)? as i16, last: mem.u16(addr + 6)? as i16 })
+    Some(Def { states, initial: u16_at(addr + 4) as i16, last: u16_at(addr + 6) as i16 })
+}
+
+/// A handler for one of the original's actions.
+pub type Action<K> = fn(&mut K, &mut Poster);
+
+/// A kit's actions by the original's function addresses, each registered by
+/// the part of the program it belongs to.
+pub struct Registry<K> {
+    actions: BTreeMap<u32, Action<K>>,
+}
+
+impl<K> Default for Registry<K> {
+    fn default() -> Self {
+        Registry { actions: BTreeMap::new() }
+    }
+}
+
+impl<K> Registry<K> {
+    /// Registers `action` for `addr`. An address registered twice is a
+    /// mistake in the port.
+    pub fn add(&mut self, addr: u32, action: Action<K>) -> &mut Self {
+        let old = self.actions.insert(addr, action);
+        assert!(old.is_none(), "action {addr:#010x} registered twice");
+        self
+    }
+
+    pub fn get(&self, addr: u32) -> Option<Action<K>> {
+        self.actions.get(&addr).copied()
+    }
+
+    /// The actions `def` names that nothing has registered: what of the
+    /// machine is not ported.
+    pub fn missing(&self, def: &Def<u32>) -> BTreeSet<u32> {
+        def.states
+            .iter()
+            .flat_map(|s| s.enter.iter().chain(&s.update).chain(&s.exit))
+            .filter(|a| !self.actions.contains_key(a))
+            .copied()
+            .collect()
+    }
+
+    pub fn len(&self) -> usize {
+        self.actions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.actions.is_empty()
+    }
+}
+
+/// A program one of the game's state machines runs: the front end
+/// (`fsm_main`) or the pause menu (`fsm_second`). Each has its own actions,
+/// named by the original's function addresses; the stepping is shared. The
+/// original's main loop (0x80010a5c) steps as fast as it can and waits for
+/// the vertical blank only when a frame is finished, so a blank is every
+/// step until then.
+pub trait Kit: Sized {
+    /// The machine's definition, and where it is.
+    fn def(&self) -> Rc<Def<u32>>;
+    fn machine(&mut self) -> &mut Fsm;
+    /// The ported actions.
+    fn actions(&self) -> Rc<Registry<Self>>;
+    /// An action the machine named that is not ported.
+    fn unported(&mut self, addr: u32);
+
+    /// Runs the action at `addr`.
+    fn act(&mut self, addr: u32, p: &mut Poster) {
+        match self.actions().get(addr) {
+            Some(action) => action(self, p),
+            None => self.unported(addr),
+        }
+    }
+    /// Whether this blank is over: a frame was finished, or the program
+    /// has something to hand over.
+    fn blank_over(&self) -> bool;
+
+    /// One blank: steps until it is over, at most `cap` of them (for states
+    /// that never draw). True once the machine has finished.
+    fn run_blank(&mut self, cap: usize) -> bool {
+        let def = self.def();
+        for _ in 0..cap {
+            let mut fsm = self.machine().clone();
+            let done = fsm.tick(&def, |&a, p| self.act(a, p));
+            *self.machine() = fsm;
+            if done {
+                return true;
+            }
+            if self.blank_over() {
+                break;
+            }
+        }
+        false
+    }
 }

@@ -32,6 +32,13 @@ pub struct Collision {
     pub course: crate::laps::Course,
     /// What the cars' checkpoints did this step, by car slot.
     pub lap_events: Vec<(u8, crate::laps::LapEvent)>,
+    /// The pickups cars drove through this step: (car slot, pickup).
+    pub pickups_touched: Vec<(u8, u16)>,
+    /// The world volumes knocked over this step, with the knocking car's
+    /// velocity.
+    pub knocked: Vec<(u16, Vec3)>,
+    /// Two players' cars touched this step (a snapshot for the results).
+    pub players_touched: bool,
     /// This step's contacts between objects (0x8012c96c, count 0x800d2676).
     pub pairs: Vec<super::pairs::Pair>,
     /// The axis each pair of objects was last found apart along, by their
@@ -188,6 +195,7 @@ impl Collision {
         self.contacts.clear();
         self.pairs.clear();
         self.lap_events.clear();
+        self.players_touched = false;
         self.step = self.step.wrapping_add(1);
         self.update_points(cars);
         self.find_pairs(t, cars);

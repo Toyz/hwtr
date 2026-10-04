@@ -242,3 +242,72 @@ impl PadReader {
         }
     }
 }
+
+impl Mapping {
+    /// The controls screen's first line, "Vibration" (the mapping's last
+    /// word, 0x8001d578): the motors run only while it is on.
+    pub fn vibration(&self) -> bool {
+        self.0[28] != 0
+    }
+}
+
+/// A DualShock's motors as the game drives them (each port's actuator
+/// bytes, 0x8011b2b8 +0x18 and +0x19): the small one on or off, the large
+/// one's power.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Motors {
+    pub small: bool,
+    pub large: u8,
+    /// When the small one was turned on, ms on the system clock.
+    small_from: u32,
+}
+
+impl Motors {
+    /// 0x8001b7b4: the road's feel: `roughness` (0 is smooth) and `speed`,
+    /// 0 to 255. Rough ground at more than a crawl runs the large motor at
+    /// the roughness (at least 96) times the speed (at least 64), over 256.
+    pub fn rumble(&mut self, on: bool, roughness: u8, speed: u8) {
+        if !on || roughness == 0 || speed < 11 {
+            return;
+        }
+        let r = roughness.max(96) as u32;
+        let power = if speed < 64 { r << 6 } else { r * speed as u32 };
+        self.large = ((power & 0xffff) >> 8).min(255) as u8;
+    }
+
+    /// 0x8001b934: a jolt of `level`: the large motor at two and a half
+    /// times it (below 3 nothing, below 40 as 40), and from 110 the small
+    /// one too, for half a second from `now`.
+    pub fn jolt(&mut self, on: bool, level: u8, now: u32) {
+        if !on {
+            return;
+        }
+        let s = match level {
+            0..3 => 0,
+            3..40 => 40,
+            l => l,
+        } as u32;
+        self.large = (s * 2 + s / 2).min(255) as u8;
+        if level >= 110 {
+            self.small = true;
+            self.small_from = now;
+        }
+    }
+
+    /// 0x8001ccc4, at each read of the pad `elapsed_ms` after the last: the
+    /// large motor winds down a step each 8 ms (at most 125 a read);
+    /// the small one stops after half a second. Both stop at once when the
+    /// race is not `running` (the game's state 0, 2 or 3).
+    pub fn fade(&mut self, on: bool, elapsed_ms: u32, running: bool, now: u32) {
+        if !on {
+            return;
+        }
+        let step = (elapsed_ms >> 3).min(125) as i32;
+        if self.large != 0 {
+            self.large = if running { (self.large as i32 - step).max(0) as u8 } else { 0 };
+        }
+        if self.small && (!running || now.wrapping_sub(self.small_from) >= 500) {
+            self.small = false;
+        }
+    }
+}

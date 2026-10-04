@@ -161,8 +161,9 @@ impl Collision {
                         self.depths = depths;
                         if axis != 0 {
                             self.separations.insert((self.objects[a].id, self.objects[b].id), axis);
-                        } else {
-                            tracing::trace!("a power-up collected (0x80067f98): not yet ported");
+                        } else if let (Some(car), Some(pickup)) = (self.objects[a].car, self.objects[b].pickup) {
+                            // 0x80067f98, taken after the step.
+                            self.pickups_touched.push((car, pickup));
                         }
                         continue;
                     }
@@ -302,7 +303,8 @@ impl Collision {
     }
 
     /// collision_update's pair loop: each pair's hit checked for a wreck on
-    /// either side (0x8007e000), then the impulse between them (0x8006f20c).
+    /// either side (0x8007e000), then the impulse between them (0x8006f20c),
+    /// steel and rubber cars marked on their objects for it.
     pub fn pair_impulses(&mut self, t: &Tables, tuning: &crate::car::Tuning, cars: &mut [Car], rand: &mut Rand) {
         for k in 0..self.pairs.len() {
             self.pair_impulses_one(t, tuning, cars, rand, k);
@@ -313,7 +315,30 @@ impl Collision {
     pub fn pair_impulses_one(&mut self, t: &Tables, tuning: &crate::car::Tuning, cars: &mut [Car], rand: &mut Rand, k: usize) {
         tracing::trace!("the pair's sounds and sparks (0x80035c7c), a player's rumble (0x8005fed0): not yet ported");
         self.pair_crashes(t, cars, rand, k);
+        // A steel car's object hits without moving (32), a rubber car's
+        // throws the other off (64); both of a kind cancel out.
+        let p = self.pairs[k];
+        let mark = |s: Option<u8>| s.and_then(|s| cars.get(s as usize)).map_or(0, |c| (c.steel as u32) << 5 | (c.rubber as u32) << 6);
+        let (ma, mb) = (mark(self.objects[p.a].car), mark(self.objects[p.b].car));
+        self.objects[p.a].flags |= ma;
+        self.objects[p.b].flags |= mb;
+        for bit in [32, 64] {
+            if self.objects[p.a].flags & bit != 0 && self.objects[p.b].flags & bit != 0 {
+                self.objects[p.a].flags &= !bit;
+                self.objects[p.b].flags &= !bit;
+            }
+        }
         self.pair_impulse_only(t, tuning, cars, k);
+        for side in [p.a, p.b] {
+            if self.objects[side].car.is_some() {
+                self.objects[side].flags &= !96;
+            }
+        }
+        // 0x8004e428: two players' cars touching make a snapshot.
+        let player = |o: usize| self.objects[o].car.and_then(|s| cars.get(s as usize)).is_some_and(|c| c.flags & 1 != 0);
+        if player(p.a) && player(p.b) {
+            self.players_touched = true;
+        }
     }
 
     /// Pair `k`'s crash checks, either side.
@@ -333,12 +358,21 @@ impl Collision {
     }
 
     /// 0x8007e000: the car of object `side`, hit by `other` faster (relative
-    /// to it) than its skill allows, is wrecked. (The props' and power-ups'
-    /// cases, 0x8006b958 and the cars' +0x864, are not yet ported.)
+    /// to it) than its skill allows, is wrecked. A steel car wrecks any car
+    /// it hits, a rubber one any computer car; a steel or rubber car is not
+    /// wrecked by speed. (The props' cases, 0x8006b958, are not yet ported.)
     fn crash(&mut self, t: &Tables, side: ObjectId, other: ObjectId, cars: &mut [Car], rand: &mut Rand) {
         let Some(slot) = self.objects[side].car else { return };
         let o = &self.objects[other];
         if o.kind.byte() == 6 {
+            return;
+        }
+        if let Some(oc) = o.car.and_then(|s| cars.get(s as usize))
+            && (oc.steel || (oc.rubber && self.objects[side].kind == Kind::ComputerCar))
+        {
+            if let Some(c) = cars.get_mut(slot as usize) {
+                c.wreck(false, rand);
+            }
             return;
         }
         if o.flags & 8 != 0 {
@@ -348,15 +382,33 @@ impl Collision {
             return;
         }
         let clear = cars.get(slot as usize).is_some_and(|c| c.all_terrain || c.handling.all_terrain);
-        if o.flags & 2 != 0 && (o.heft < 10_000 || clear) {
-            tracing::trace!("a prop knocked (0x8006b958): not yet ported");
-            return;
+        let (o_flags, o_heft) = (o.flags, o.heft);
+        let car_vel = cars.get(slot as usize).map_or([0; 3], |c| c.body.vel);
+        if o_flags & 2 != 0 {
+            // Knocked over, unless heavy (10000 on) and the car not
+            // all-terrain: then it stands like a wall.
+            if o_heft < 10_000 || clear {
+                self.knock(other, car_vel);
+                return;
+            }
+        } else if o_flags & 4 != 0 {
+            // A bump: a car not steel and of little skill is lifted by its
+            // weight; knocked either way, then the speed counts as for any.
+            if let Some(c) = cars.get_mut(slot as usize) {
+                let skill = c.handling.skill.clamp(1024, 0x4000);
+                if !c.steel && skill < div_fx(0x2_7000, 0xa000) {
+                    let lift = div_fx(fx((o_heft as i32) << 12, 0x10_8000), 0x6_4000);
+                    c.body.momentum[2] = c.body.momentum[2].wrapping_add(((lift as i64 * c.body.mass as i64) >> 12) as i32);
+                }
+            }
+            self.knock(other, car_vel);
         }
-        if o.flags & 6 != 0 {
-            tracing::trace!("a prop knocked (0x8006b958), and the car lifted: not yet ported");
-        }
+        let o = &self.objects[other];
         let other_vel = o.car.and_then(|s| cars.get(s as usize)).map_or([0; 3], |c| c.body.vel);
         let Some(c) = cars.get_mut(slot as usize) else { return };
+        if c.steel || c.rubber {
+            return;
+        }
         let skill = c.handling.skill.clamp(1024, 0x4000);
         let rel = sub(c.body.vel, other_vel);
         let speed = t.length(rel);
@@ -370,6 +422,17 @@ impl Collision {
         let k = div_fx(span, over);
         if base.wrapping_add(low.wrapping_add(fx(from, k))) < speed {
             c.wreck(false, rand);
+        }
+    }
+
+    /// 0x8006b958: world object `id` knocked by a car going `vel`: it is out
+    /// of the collision (flag 1), and its volume knocked (its object goes
+    /// flying, with its sound) for the race to show.
+    fn knock(&mut self, id: ObjectId, vel: Vec3) {
+        let o = &mut self.objects[id];
+        o.flags |= 1;
+        if let Some(v) = o.volume {
+            self.knocked.push((v, vel));
         }
     }
 

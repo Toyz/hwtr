@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-27 entries: audio 1, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 3, format 7, input 7, physics 9, race 5, render 9, test 14, tooling 13, ui 1.
+44 entries: audio 4, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 3, format 7, input 8, physics 9, race 9, render 9, test 14, tooling 13, ui 9, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -39,3 +39,20 @@ The [reference](docs/README.md) says what is true now.
 | 25 | [A port, not an emulator; the camera; the race step's missing pieces](worklog/0025-a-port-not-an-emulator-the-camera-and-the-race-step-s-missing-pieces.md) | 2026-10-04 | architecture, physics, camera, input, tooling |
 | 26 | [A race from flyby to results; the HUD; fences](worklog/0026-a-race-from-flyby-to-results-the-hud-fences.md) | 2026-10-03 | race, ui, physics, render, input |
 | 27 | [Computer cars drive their route; cars meet](worklog/0027-computer-cars-drive-their-route-cars-meet.md) | 2026-10-03 | race, physics, decomp, test |
+| 28 | [The front end runs: card dialog, title, main menu, race and back](worklog/0028-the-front-end-runs-card-dialog-title-main-menu-race-and-back.md) | 2026-10-03 | ui |
+| 29 | [Vibration: the road's feel and wrecks through the pad](worklog/0029-vibration-the-road-s-feel-and-wrecks-through-the-pad.md) | 2026-10-03 | input |
+| 30 | [The front end's 3D pieces, the track map, and steps a blank](worklog/0030-the-front-end-s-3d-pieces-the-track-map-and-steps-a-blank.md) | 2026-10-03 | ui |
+| 31 | [The pause menu, and kits, registries and styles](worklog/0031-the-pause-menu-and-kits-registries-and-styles.md) | 2026-10-03 | ui |
+| 32 | [Sound: libsnd's key-on, a sound chip, the menus' effects and music](worklog/0032-sound-libsnd-s-key-on-a-sound-chip-the-menus-effects-and.md) | 2026-10-03 | audio |
+| 33 | [Engine sounds, and the sound chip on rrt's ADPCM](worklog/0033-engine-sounds-and-the-sound-chip-on-rrt-s-adpcm.md) | 2026-10-03 | audio |
+| 34 | [The main menu's car preview](worklog/0034-the-main-menu-s-car-preview.md) | 2026-10-03 | ui |
+| 35 | [The intro movies (WVE) and the boot sequence](worklog/0035-the-intro-movies-wve-and-the-boot-sequence.md) | 2026-10-03 | video |
+| 36 | [The CD's music: race songs and the Boom Box](worklog/0036-the-cd-s-music-race-songs-and-the-boom-box.md) | 2026-10-04 | audio |
+| 37 | [Options, credits, hi-scores and the garage](worklog/0037-options-credits-hi-scores-and-the-garage.md) | 2026-10-04 | ui |
+| 38 | [Race results, unlocks and the cups](worklog/0038-race-results-unlocks-and-the-cups.md) | 2026-10-04 | ui |
+| 39 | [Practice, the airtime challenge, signing in and passwords](worklog/0039-practice-the-airtime-challenge-signing-in-and-passwords.md) | 2026-10-04 | ui |
+| 40 | [Load/Save, the controls screen, the boot card checks and the pause volumes](worklog/0040-load-save-the-controls-screen-the-boot-card-checks-and-the.md) | 2026-10-04 | ui |
+| 41 | [Power-ups, pickups and the track's moving objects](worklog/0041-power-ups-pickups-and-the-track-s-moving-objects.md) | 2026-10-04 | race |
+| 42 | [The track's collision volumes: obstacles, bumps and knocked fences](worklog/0042-the-track-s-collision-volumes-obstacles-bumps-and-knocked.md) | 2026-10-04 | race |
+| 43 | [The results: the snapshot slideshow and the standings table](worklog/0043-the-results-the-snapshot-slideshow-and-the-standings-table.md) | 2026-10-04 | race |
+| 44 | [The attract race: computer cars, the trackside cameras and the director](worklog/0044-the-attract-race-computer-cars-the-trackside-cameras-and.md) | 2026-10-04 | race |

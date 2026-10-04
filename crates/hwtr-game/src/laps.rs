@@ -155,3 +155,45 @@ impl Laps {
         Some(LapEvent::Lap { time: lap, best })
     }
 }
+
+/// 0x8005c9b4, after the places each step, for a player's car `car` in
+/// `zone` (the first of its object's zones), a step of `dt_ms`: with every
+/// wheel down, moving forward at over 10 mph in a zone without flag 0x400,
+/// the portal its velocity points most squarely out of leads to the zone
+/// beyond; heading into a zone with a greater distance starts the timer
+/// (`dt_ms`), which runs on while the zone beyond is not nearer, and stops
+/// otherwise or on any of the other conditions failing. Over half a second
+/// and the car is going the wrong way.
+pub fn watch_way(scp: &crate::collision::scp::Scp, car: &mut crate::car::Car, zone: Option<u16>, dt_ms: u32) {
+    use crate::math::{column, div_fx, dot, fx};
+    if car.grounded as usize == car.wheels.len() {
+        let forward = dot(column(&car.body.rot, 1), car.body.vel);
+        let mph = div_fx(0xb_0000, 0xa000);
+        let beyond = zone.and_then(|z| scp.zones.get(z as usize)).filter(|z| z.flags & 0x400 == 0).and_then(|z| {
+            if fx(0xa000, mph) >= forward {
+                return None;
+            }
+            let mut best: Option<(u16, i32)> = None;
+            for k in 0..z.plane_count as usize {
+                let Some(p) = scp.planes.get(z.first_plane as usize + k) else { continue };
+                if p.kind != 0 {
+                    continue;
+                }
+                let d = dot(car.body.vel, p.normal());
+                if best.is_none_or(|(_, b)| d < b) {
+                    best = Some((p.target, d));
+                }
+            }
+            let (target, _) = best?;
+            Some((z.distance, scp.zones.get(target as usize)?.distance))
+        });
+        car.wrong_way_ms = match beyond {
+            Some((here, there)) if car.wrong_way_ms != 0 => {
+                if there < here { 0 } else { car.wrong_way_ms.wrapping_add(dt_ms) }
+            }
+            Some((here, there)) => if here < there { dt_ms } else { 0 },
+            None => 0,
+        };
+    }
+    car.wrong_way = car.wrong_way_ms > 500;
+}

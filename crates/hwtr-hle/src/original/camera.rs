@@ -24,6 +24,7 @@ const SNAP: u32 = 0x4d;
 const SHAKE: u32 = 0x54;
 const ZOOM: u32 = 0x58;
 const INTRO: u32 = 0x60;
+const DIRECTOR: u32 = 0x50;
 const FLYBY: u32 = 0x5c;
 
 /// Player `k`'s camera.
@@ -52,6 +53,7 @@ impl InMemory for Camera {
             shake: ram.i32(at + SHAKE) as u32,
             intro_ms: ram.i32(at + INTRO),
             flyby: ram.flag(at + FLYBY),
+            director_ms: ram.i32(at + DIRECTOR) as u32,
         }
     }
 
@@ -80,5 +82,6 @@ impl InMemory for Camera {
         ram.set_i32(at + SHAKE, self.shake as i32);
         ram.set_i32(at + INTRO, self.intro_ms);
         ram.set_flag(at + FLYBY, self.flyby);
+        ram.set_i32(at + DIRECTOR, self.director_ms as i32);
     }
 }

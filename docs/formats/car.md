@@ -111,7 +111,18 @@ The part is exactly `4 + 40a + 92b` bytes on every car.
 ## DECALS.BMF
 
 41 parts in car-id order, each a 192 x 64 15-bit image packed as halfwords:
-0xffff then a count of zero pixels, anything else a pixel.
+0xffff then a count of zero pixels, anything else a pixel. Part k is the car
+named k in the table at 0x800c5ce8 (0x80023540 finds it by name with
+`car_name_to_id`); unlike CWHS.BMF there is no KYLE/JETHREAT swap (part 10
+is Kyle Petty's stock car, part 11 the Jet Threat, seen rendered).
+
+The front end unpacks a car's picture into one of two VRAM slots (0x800d0d24:
+(640, 256) and (640, 320)) when the car is chosen, and 0x80023660 draws it as
+a modulated textured quad, colour 255, its top left at the given screen
+pixel. The menus draw it while the car's model is not in (flag 0x800d2798):
+the main menu at (191, 61) and (403, 61), the cup screen at (191, 61) on
+every line but CAR (where the model is loaded), the garage at (95, 85) or
+(95, 120) and (350, 120), the unlock announcer at (215, 77).
 
 ## Measured
 
@@ -135,4 +146,3 @@ exactly 12288 pixels; CWHS.BMF's 41 parts are all CWH blocks.
 
 - The meaning of CWH's fields, FXP's records, face flags.
 - How the half-scale car state relates to model scale.
-- Whether DECALS.BMF has the same KYLE/JETHREAT swap.

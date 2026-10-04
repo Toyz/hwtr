@@ -93,6 +93,13 @@ fn pos(v: Vertex) -> [f32; 3] {
 /// (corner 0 to 1 to 3) toward the viewer. Double-sided faces are emitted
 /// again reversed, since the viewer culls back faces as the game does.
 pub fn world_triangles(w: &World) -> Vec<Vtx> {
+    world_triangles_apart(w, &[]).0
+}
+
+/// The same, with the objects `skip` (and their children) left out, and
+/// where each of those hangs (its parent's pose), in that order: the
+/// pickups and the moving objects, drawn as they go.
+pub fn world_triangles_apart(w: &World, skip: &[usize]) -> (Vec<Vtx>, Vec<Pose>) {
     let mut out = Vec::new();
     for cell in &w.cells {
         for p in &cell.polys {
@@ -122,24 +129,66 @@ pub fn world_triangles(w: &World) -> Vec<Vtx> {
         }
     }
     let identity = (glam::Mat3::IDENTITY, glam::Vec3::ZERO);
+    let mut skipped = Vec::new();
     for root in (0..w.objects.len()).filter(|&i| !linked[i]) {
-        object(w, root, identity, &mut out, 0);
+        object(w, root, identity, &mut out, 0, skip, &mut skipped);
+    }
+    let parents = skip
+        .iter()
+        .map(|&i| skipped.iter().find(|(k, _)| *k == i).map_or((glam::Mat3::IDENTITY, glam::Vec3::ZERO), |&(_, p)| p))
+        .collect();
+    (out, parents)
+}
+
+/// A pose: rotation and position.
+pub type Pose = (glam::Mat3, glam::Vec3);
+
+/// Object `i` and its children, without its siblings, under `parent`, the
+/// object at rotation `rot` (4.12) and position `pos` (world units).
+pub fn object_posed(w: &World, i: usize, parent: Pose, rot: [[i16; 3]; 3], pos: glam::Vec3) -> Vec<Vtx> {
+    let mut out = Vec::new();
+    let mine = object_mesh_at(w, i, parent, rot, pos, &mut out);
+    if let Some(c) = w.objects[i].child {
+        object(w, c, mine, &mut out, 1, &[], &mut Vec::new());
     }
     out
 }
 
-fn object(w: &World, i: usize, parent: (glam::Mat3, glam::Vec3), out: &mut Vec<Vtx>, depth: u32) {
+fn object(w: &World, i: usize, parent: Pose, out: &mut Vec<Vtx>, depth: u32, skip: &[usize], skipped: &mut Vec<(usize, Pose)>) {
     if depth > 64 {
         return;
     }
+    if skip.contains(&i) {
+        skipped.push((i, parent));
+    } else {
+        let mine = object_mesh(w, i, parent, out);
+        if let Some(c) = w.objects[i].child {
+            object(w, c, mine, out, depth + 1, skip, skipped);
+        }
+    }
+    if let Some(s) = w.objects[i].sibling {
+        object(w, s, parent, out, depth + 1, skip, skipped);
+    }
+}
+
+
+/// Object `i`'s own quads under `parent`, at its own rotation and place;
+/// its pose.
+fn object_mesh(w: &World, i: usize, parent: Pose, out: &mut Vec<Vtx>) -> Pose {
     let o = &w.objects[i];
-    let r = o.rot;
+    object_mesh_at(w, i, parent, o.rot, glam::Vec3::new(o.pos[0] as f32, o.pos[1] as f32, o.pos[2] as f32), out)
+}
+
+/// Object `i`'s own quads under `parent`, at rotation `r` (4.12) and place
+/// `pos` (world units); its pose.
+fn object_mesh_at(w: &World, i: usize, parent: Pose, r: [[i16; 3]; 3], pos: glam::Vec3, out: &mut Vec<Vtx>) -> Pose {
+    let o = &w.objects[i];
     let m = glam::Mat3::from_cols(
         glam::Vec3::new(r[0][0] as f32, r[1][0] as f32, r[2][0] as f32),
         glam::Vec3::new(r[0][1] as f32, r[1][1] as f32, r[2][1] as f32),
         glam::Vec3::new(r[0][2] as f32, r[1][2] as f32, r[2][2] as f32),
     ) / 4096.0;
-    let mine = (parent.0 * m, parent.0 * glam::Vec3::new(o.pos[0] as f32, o.pos[1] as f32, o.pos[2] as f32) + parent.1);
+    let mine = (parent.0 * m, parent.0 * pos + parent.1);
     for q in &o.mesh {
         let corner = |k: usize| {
             let v = q.v[k];
@@ -157,12 +206,7 @@ fn object(w: &World, i: usize, parent: (glam::Mat3, glam::Vec3), out: &mut Vec<V
             out.extend([corner(0), corner(3), corner(1), corner(1), corner(3), corner(2)]);
         }
     }
-    if let Some(c) = o.child {
-        object(w, c, mine, out, depth + 1);
-    }
-    if let Some(s) = o.sibling {
-        object(w, s, parent, out, depth + 1);
-    }
+    mine
 }
 
 /// The middle of the track's grid, as a starting point.

@@ -70,6 +70,12 @@ pub struct RaceSetup {
     pub cars: Vec<Entrant>,
     /// 0 to 255.
     pub difficulty: u8,
+    /// A best line other than the track's (+13; "tcup" for the TwinMill
+    /// Cup).
+    pub best_line: Option<String>,
+    /// The players' names (0x8009b5b8 copies them to 0x801399b0 for each
+    /// race the players start), which the results show.
+    pub names: [String; 2],
 }
 use crate::car::{Car, Controls, EngineSpec, Handling, Tuning};
 use crate::camera::{Camera, Surroundings};
@@ -105,6 +111,15 @@ pub enum Phase {
 /// What happened in a race that the sounds and the HUD show.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RaceEvent {
+    /// A player's car was wrecked (sound 29).
+    Wreck { car: u8 },
+    /// Any car was wrecked: its engine stops (0x80016004).
+    Wrecked { car: u8 },
+    /// A car was put back on the road: its engine starts (0x80015ebc).
+    Reset { car: u8 },
+    /// The pause menu came up (sound 14), and was left to go on.
+    Pause,
+    Resume,
     /// The countdown calls 3, 2, 1 (sounds 6 to 8).
     Count(u8),
     /// The start (sound 9).
@@ -115,6 +130,21 @@ pub enum RaceEvent {
     Finish,
     /// The results have been up four seconds: the race stands still.
     Results,
+    /// A player's car took a power-up (sound 24).
+    PowerUp { car: u8 },
+    /// A world object was knocked over, with its sound (0x80036270).
+    Knock { sound: u8, at: crate::math::Vec3 },
+}
+
+/// A world volume as the race keeps it: the object drawn for it, whether
+/// its box follows that object, its knock's sound, and its collision
+/// object.
+#[derive(Clone, Copy, Debug)]
+pub struct WorldVolume {
+    pub object: Option<usize>,
+    pub follows: bool,
+    pub sound: Option<u8>,
+    pub collision: usize,
 }
 
 /// A car's result.
@@ -148,6 +178,8 @@ const LONGEST_MS: u32 = 0x1b_773f;
 /// leave by themselves.
 const RESULTS_MS: u32 = 4000;
 const RESULTS_LEAVE_MS: u32 = 30_000;
+/// How long the results show each snapshot.
+const SNAPSHOT_MS: u32 = 2000;
 /// The championship points for first to sixth.
 const POINTS: [u8; 6] = [10, 8, 7, 6, 5, 4];
 
@@ -168,6 +200,31 @@ pub struct Race {
     /// The system clock (0x800d240c), which the host advances 17 ms a
     /// vertical blank.
     pub clock: u32,
+    /// The players' pads' motors, and whether each player has vibration on.
+    pub motors: [crate::pad::Motors; 2],
+    pub vibration: [bool; 2],
+    /// The pause menu's makings, the menu while it is up, and Start's latch
+    /// (0x800d260b: let go since the last pause) and the pause it asks for
+    /// (0x800d260c).
+    pub pause_kit: Option<crate::pause::PauseKit>,
+    pub paused: Option<crate::pause::Pause>,
+    /// The sound volumes (the settings', the pause menu changes them), the
+    /// effects' level last set (0x800d24c8 from 0 to 255), and a new one
+    /// for the sound to take.
+    pub volumes: crate::pause::Volumes,
+    pub effects_level: u8,
+    pub effects_asked: Option<u8>,
+    /// The CD's song (0x800d2484), which the pause menu's Boom Box shows
+    /// and changes.
+    pub song: u8,
+    /// The CD asked for: the pause menu's, and its own as the menu comes
+    /// up (0x80036634 holds the song) and goes (0x80036758 goes on).
+    pub cd: Vec<crate::cd::CdAsk>,
+    start_free: bool,
+    pause_asked: bool,
+    /// How the race ends for the front end (0x800d0de8): 1 run to the end,
+    /// 2 restarted, 3 aborted.
+    pub end: u8,
     /// One camera a player.
     pub cameras: Vec<Camera>,
     /// The track's best line, where reset cars are put back.
@@ -197,6 +254,18 @@ pub struct Race {
     /// The HUD, and the cars by place (0x800d264c).
     pub hud: Hud,
     pub order: Vec<u8>,
+    /// The pickups and the cars' power-ups, and the track's moving objects.
+    pub power_ups: crate::powerup::PowerUps,
+    pub anims: crate::world_anim::WorldAnims,
+    /// The world's collision volumes, and the objects knocked over (no
+    /// longer drawn: 0x80020824 clears their visible bit).
+    pub world_volumes: Vec<WorldVolume>,
+    pub knocked: Vec<usize>,
+    /// The moments kept for the results, and the results' words.
+    pub snapshots: crate::snapshot::Snapshots,
+    pub results_text: crate::hud::ResultsText,
+    /// The world's trackside cameras, which the attract race cuts to.
+    pub camera_spots: Vec<crate::camera::Spot>,
 }
 
 /// How many of the views a player cycles through (the fifth, the side view,
@@ -252,6 +321,11 @@ impl Race {
         // starts when the flyby ends (0x8003abec).
         let mut cameras: Vec<Camera> =
             cars.iter().filter(|c| c.flags & 3 != 0).map(|c| Camera::new(c.slot, &tables.views.one)).collect();
+        // camera_load (0x80036830): always one camera; with no players (the
+        // attract race) it follows car 0 by the demo's views.
+        if cameras.is_empty() {
+            cameras.push(Camera::new(0, &tables.views.demo));
+        }
         for camera in &mut cameras {
             camera.flyby = true;
         }
@@ -281,9 +355,69 @@ impl Race {
             accept_released: false,
             standings: Vec::new(),
             over: false,
+            motors: Default::default(),
+            vibration: [true; 2],
+            pause_kit: None,
+            paused: None,
+            volumes: crate::pause::Volumes::default(),
+            effects_level: 0,
+            effects_asked: None,
+            song: 0,
+            cd: Vec::new(),
+            start_free: true,
+            pause_asked: false,
+            end: 1,
             events: Vec::new(),
             hud,
             order,
+            power_ups: crate::powerup::PowerUps::default(),
+            anims: crate::world_anim::WorldAnims::default(),
+            world_volumes: Vec::new(),
+            knocked: Vec::new(),
+            snapshots: Default::default(),
+            results_text: Default::default(),
+            camera_spots: Vec::new(),
+        }
+    }
+
+    /// 0x8006b2a8: the world's collision volumes (flags, the object drawn
+    /// for it, centre, rotation, size, weight, and the knock's sound bytes),
+    /// each a collision object.
+    pub fn set_volumes(&mut self, volumes: &[(u32, Option<usize>, crate::math::Vec3, crate::math::Matrix, crate::math::Vec3, u32, u8)]) {
+        self.world_volumes = volumes
+            .iter()
+            .enumerate()
+            .map(|(k, &(flags, object, centre, rot, size, heft, sound))| {
+                let collision = self.collision.add_world_object(&self.tables, k as u16, flags, centre, rot, size, heft);
+                WorldVolume { object, follows: flags & 8 != 0, sound: (flags & 4 != 0).then_some(sound), collision }
+            })
+            .collect();
+    }
+
+    /// 0x8006b754's moving volumes: each box where its object is now.
+    fn volumes_follow(&mut self) {
+        for v in &self.world_volumes {
+            let (true, Some(object)) = (v.follows, v.object) else { continue };
+            let Some(k) = self.anims.anims.iter().position(|a| a.object == object) else { continue };
+            if let Some((rot, pos)) = self.anims.pose(&self.tables, k) {
+                let o = &mut self.collision.objects[v.collision];
+                o.centre = pos;
+                o.rot = rot;
+            }
+        }
+    }
+
+    /// 0x80067418: the track's pickups (name, place, size, the world object
+    /// drawn for it), the power-ups they use, and the track's two cars to
+    /// unlock; each pickup's collision box made.
+    pub fn set_power_ups(&mut self, spots: &[(String, crate::math::Vec3, i32, Option<usize>)], defs: Vec<crate::powerup::PowerUp>, unlockable: [u8; 2]) {
+        let places: Vec<_> = spots.iter().map(|(n, p, _, o)| (n.clone(), *p, *o)).collect();
+        self.power_ups = crate::powerup::PowerUps::new(&places, defs, self.cars.len(), unlockable);
+        for (k, (_, pos, size, _)) in spots.iter().enumerate() {
+            self.collision.add_pickup(&self.tables, k as u16, *pos, *size);
+        }
+        for car in &mut self.cars {
+            car.power_up = 0;
         }
     }
 
@@ -294,6 +428,7 @@ impl Race {
     /// object in the respawn zone, a free turbo if it had none, and two
     /// seconds' grace from other cars.
     pub fn reset_car(&mut self, slot: usize) {
+        self.events.push(RaceEvent::Reset { car: slot as u8 });
         let others: Vec<_> = self
             .cars
             .iter()
@@ -346,7 +481,7 @@ impl Race {
         if car.turbos == 0 {
             car.add_turbos(1);
         }
-        tracing::trace!("car {slot}: its power-ups ended, not yet ported");
+        self.power_ups.drop_all(car);
         car.reset_grace_ms = 2000;
         if let Some(obj) = self.collision.objects.iter_mut().find(|o| o.car == Some(slot as u8)) {
             obj.flags |= 1;
@@ -372,9 +507,27 @@ impl Race {
             let racing = self.phase != Phase::Starting;
             if racing {
                 self.cars_update(dt);
+                self.volumes_follow();
                 let mut step =
                     Step { tuning: &self.tuning, rand: &mut self.rand, time: self.time, clock: self.clock };
                 self.collision.update(&self.tables, &mut self.cars, &mut step);
+                if self.collision.players_touched {
+                    self.snapshots.take(self.time, &self.cars, &self.cameras, None);
+                }
+                // 0x8004619c: a player's wreck jolts the pad of its port.
+                for car in &mut self.cars {
+                    let jolted = std::mem::take(&mut car.jolted);
+                    if jolted {
+                        self.events.push(RaceEvent::Wrecked { car: car.slot });
+                    }
+                    if jolted && car.flags & 1 != 0 {
+                        self.events.push(RaceEvent::Wreck { car: car.slot });
+                        let port = car.slot as usize;
+                        if let Some(m) = self.motors.get_mut(port) {
+                            m.jolt(self.vibration[port], self.tuning.wreck_jolt, self.clock);
+                        }
+                    }
+                }
                 let laps = self.collision.lap_events.iter().filter(|(slot, _)| {
                     self.cars.get(*slot as usize).is_some_and(|c| c.flags & 1 != 0) && !self.collision.course.quiet
                 });
@@ -387,24 +540,67 @@ impl Race {
                     }
                     self.events.push(RaceEvent::Lap { car, event });
                 }
-                tracing::trace!("the race's effects and debris (0x8006b754, 0x8007c894): not yet ported");
+                // 0x80067f98: the pickups driven through.
+                let touched = std::mem::take(&mut self.collision.pickups_touched);
+                for (slot, pickup) in touched {
+                    let Some(car) = self.cars.get_mut(slot as usize) else { continue };
+                    let before = car.turbos;
+                    let rand = &mut self.rand;
+                    if let Some(player) = self.power_ups.take(car, pickup as usize, self.time, |n| rand.below(n)) {
+                        if player {
+                            self.events.push(RaceEvent::PowerUp { car: slot });
+                        }
+                        if std::mem::take(&mut car.turbo_given)
+                            && let Some(p) = self.cameras.iter().position(|c| c.car == slot)
+                        {
+                            // 0x80065398: the meter shows the turbo coming.
+                            self.hud.turbos_given(p, before, 1, self.time);
+                        }
+                    }
+                }
+                // 0x8006b958: what the cars knocked over.
+                for (v, _vel) in std::mem::take(&mut self.collision.knocked) {
+                    let Some(vol) = self.world_volumes.get(v as usize).copied() else { continue };
+                    if let Some(object) = vol.object {
+                        self.knocked.push(object);
+                    }
+                    if let Some(sound) = vol.sound {
+                        let at = self.collision.objects[vol.collision].centre;
+                        self.events.push(RaceEvent::Knock { sound, at });
+                    }
+                }
+                tracing::trace!("the knocked objects' flight and the wrecks' debris (0x8002e27c, 0x8007c894): not yet ported");
             }
+            let demo = self.demo_views();
+            let (views, count) = if demo {
+                (&self.tables.views.demo, self.tables.views.demo_count)
+            } else {
+                (&self.tables.views.one, VIEWS_OFFERED)
+            };
             let around = Surroundings {
                 tables: &self.tables,
                 tuning: &self.tuning,
-                views: &self.tables.views.one,
-                count: VIEWS_OFFERED,
+                views,
+                count,
                 racing,
                 time: self.time,
                 flyby: &self.collision.scp.flyby,
                 collision: &self.collision,
+                spots: &self.camera_spots,
+                demo,
             };
-            for (camera, c) in self.cameras.iter_mut().zip(controls) {
-                camera.button = c.view;
+            let range = self.tables.camera_range(&self.setup.track, self.setup.track_number);
+            for (k, camera) in self.cameras.iter_mut().enumerate() {
+                camera.button = controls.get(k).is_some_and(|c| c.view);
                 if let Some(car) = self.cars.get_mut(camera.car as usize) {
                     camera.step(&around, car, STEP_MS as u32, &mut self.rand);
                 }
+                if demo {
+                    camera.direct(&self.tables, &self.camera_spots, &self.cars, range, views, count, STEP_MS as u32, &mut self.rand);
+                }
             }
+            // 0x80068130: power-ups run out, pickups come back.
+            self.power_ups.step(&mut self.cars, self.time);
         }
         self.time = self.time.wrapping_add(STEP_MS as u32);
     }
@@ -412,14 +608,100 @@ impl Race {
     /// The rest of race_frame (0x80033ed8), once a display frame after its
     /// steps, with the front end's buttons: the race's phase moves on.
     pub fn frame(&mut self, buttons: Buttons) {
+        if self.paused.is_some() {
+            return;
+        }
+        // 0x8007f17c: the track's objects move, by the race clock and the
+        // time before the start, unless the race stands still.
+        if !self.frozen {
+            self.anims.step(self.time.wrapping_add(self.before_start));
+        }
+        self.rumble();
         match self.phase {
             Phase::Starting => self.starting(buttons),
             Phase::Racing => {
                 if self.race_over() {
-                    self.finish();
+                    if self.demo() {
+                        self.over = true;
+                    } else {
+                        self.finish();
+                    }
                 }
             }
             Phase::Finished => self.results(buttons),
+        }
+        // 0x800345dc: Start, pressed after being let go, asks for the pause
+        // menu; it comes up before the end of the race.
+        if self.start_free && buttons.start {
+            self.pause_asked = true;
+        }
+        if !buttons.start {
+            self.start_free = true;
+        }
+        if self.pause_asked && self.phase != Phase::Finished && !self.over && !self.demo()
+            && let Some(kit) = &self.pause_kit
+        {
+            let mut pause = crate::pause::Pause::new(kit, 0);
+            pause.song = self.song;
+            pause.set_volumes(self.volumes, self.effects_level);
+            self.paused = Some(pause);
+            self.cd.push(crate::cd::CdAsk::Pause);
+            self.events.push(RaceEvent::Pause);
+        }
+    }
+
+    /// 0x80034770: a blank of the pause menu; when it is left, the race
+    /// goes on, starts again (the front end sets it up anew) or is
+    /// abandoned (before the start at once, else through the results).
+    pub fn pause_tick(&mut self, pads: [crate::pad::PadState; 2]) {
+        let Some(pause) = &mut self.paused else { return };
+        let end = pause.tick(pads, self.clock);
+        self.cd.append(&mut pause.cd);
+        self.song = pause.song;
+        self.volumes = pause.volumes;
+        if pause.effects_changed {
+            self.effects_level = pause.effects_level();
+            self.effects_asked = Some(self.effects_level);
+        }
+        let Some(end) = end else { return };
+        self.paused = None;
+        // 0x800346fc: Start must be let go again.
+        self.pause_asked = false;
+        self.start_free = false;
+        match end {
+            crate::pause::PauseEnd::Continue => {
+                self.cd.push(crate::cd::CdAsk::Resume);
+                self.events.push(RaceEvent::Resume);
+            }
+            crate::pause::PauseEnd::Restart => {
+                self.end = 2;
+                self.over = true;
+            }
+            crate::pause::PauseEnd::Abort => {
+                self.end = 3;
+                if self.phase == Phase::Starting {
+                    self.over = true;
+                } else if self.phase == Phase::Racing {
+                    self.finish();
+                }
+            }
+        }
+    }
+
+    /// 0x8005fba8: while racing, each player's pad feels the ground under
+    /// its car (0x80045ff4): the average roughness of the surfaces its
+    /// wheels touch (0x800bea7c), and its speed.
+    fn rumble(&mut self) {
+        if self.phase != Phase::Racing {
+            return;
+        }
+        for port in 0..2 {
+            let Some(car) = self.cars.get(port) else { continue };
+            if car.flags & 1 == 0 {
+                continue;
+            }
+            let (roughness, speed) = car.road_feel(&self.tables.surface_rumble);
+            self.motors[port].rumble(self.vibration[port], roughness, speed);
         }
     }
 
@@ -452,7 +734,7 @@ impl Race {
     /// The start (0x80033a78 with 0x80061264): the race clock goes back to
     /// 0 and every car's laps start.
     fn go(&mut self) {
-        tracing::trace!("the replay's snapshots (0x8007feb0): not yet ported");
+        self.snapshots.take(self.time, &self.cars, &self.cameras, None);
         self.events.push(RaceEvent::Go);
         self.hud.countdown.call(0);
         self.before_start = self.time;
@@ -464,12 +746,16 @@ impl Race {
         self.called = None;
     }
 
-    /// 0x8003485c: the race is over past its longest time, or when every
-    /// player's car has run its laps (each then coasts, 0x800617c8). (The
-    /// races with a time limit are not yet ported.)
+    /// 0x8003485c: the race is over past its longest time; against the
+    /// clock (flag 4, 0x800d0de0 from race_load) once its limit is reached;
+    /// otherwise when every player's car has run its laps (each then
+    /// coasts, 0x800617c8).
     fn race_over(&mut self) -> bool {
         if self.time > LONGEST_MS {
             return true;
+        }
+        if self.setup.flags & 4 != 0 {
+            return self.time >= self.setup.time_limit;
         }
         let mut all = true;
         for car in self.cars.iter_mut().filter(|c| c.flags & 1 != 0) {
@@ -485,7 +771,7 @@ impl Race {
     /// The race ends: the standings (0x80033aa0) and every racing car
     /// coasting.
     fn finish(&mut self) {
-        tracing::trace!("the replay's snapshots (0x8007feb0): not yet ported");
+        self.snapshots.take(self.time, &self.cars, &self.cameras, None);
         self.results_from = self.clock;
         self.accept_released = false;
         self.standings = self.standings();
@@ -519,9 +805,9 @@ impl Race {
         standings
     }
 
-    /// The results: after four seconds the race stands still (the replay
-    /// that then plays is not yet ported); they leave after thirty, or on
-    /// Cross pressed afresh, or on Start.
+    /// The results: after four seconds the race stands still and shows its
+    /// snapshots, two seconds each, round and round; they leave after
+    /// thirty, or on Cross pressed afresh, or on Start.
     fn results(&mut self, buttons: Buttons) {
         if !self.accept_released {
             self.accept_released = !buttons.accept;
@@ -534,9 +820,25 @@ impl Race {
             self.events.push(RaceEvent::Results);
         }
         self.frozen = true;
+        let shots = self.snapshots.len();
+        if shots != 0 {
+            let k = ((since - RESULTS_MS) / SNAPSHOT_MS) as usize % shots;
+            self.snapshots.put_back(k, &mut self.cars, &mut self.cameras);
+        }
         if since > RESULTS_LEAVE_MS || (self.accept_released && buttons.accept) || buttons.start {
             self.over = true;
         }
+    }
+
+    /// The attract race (setup flag 1, 0x800d2608): it ends as its time
+    /// runs out, without results, and cannot be paused.
+    pub fn demo(&self) -> bool {
+        self.setup.flags & 1 != 0
+    }
+
+    /// No players' cameras: the demo's views (0x800d2632).
+    fn demo_views(&self) -> bool {
+        self.hud.players == 0
     }
 
     /// The countdown's number showing, if any.
@@ -585,6 +887,9 @@ impl Race {
             };
             let before = self.cars[slot].turbos;
             let stepped = self.cars[slot].update(&mut drive, zone);
+            if let Some(rot) = stepped.snapshot {
+                self.snapshots.take(self.time, &self.cars, &self.cameras, Some((slot, rot)));
+            }
             if let Some(award) = stepped.stunt {
                 if let Some(player) = self.cameras.iter().position(|c| c.car as usize == slot) {
                     self.hud.turbos_given(player, before, award.turbos, self.time);
@@ -595,7 +900,12 @@ impl Race {
         self.ai.step(&self.tables, &self.tuning, &self.line.stream, &mut self.cars, STEP_MS, self.time, &mut self.rand);
         self.ai.handoff(&mut self.cars, &self.tuning);
         self.rank();
-        tracing::trace!("the players' 0x8005c9b4: not yet ported");
+        for slot in 0..self.cars.len() {
+            if self.cars[slot].flags & 1 != 0 {
+                let zone = self.collision.objects.iter().find(|o| o.car == Some(slot as u8)).and_then(|o| o.zones.iter().next());
+                crate::laps::watch_way(&self.collision.scp, &mut self.cars[slot], zone, STEP_MS as u32);
+            }
+        }
     }
 
     /// 0x800408cc: the cars' places: more laps run first, then the lesser
@@ -616,13 +926,79 @@ impl Race {
         }
     }
 
-    /// What player `player`'s HUD draws now: the race HUD while the player
-    /// races (the results' screen is not yet ported).
+    /// What player `player`'s HUD draws now (0x80064b8c): the race HUD
+    /// while the player races; once its car has run its laps, or the race
+    /// is over, the results' table, drawn once over the whole screen when
+    /// every player is done (0x8006452c); nothing before the start, or once
+    /// the race is left.
     pub fn hud(&mut self, player: usize) -> Vec<crate::hud::Sprite> {
-        let Some(slot) = self.cameras.get(player).map(|c| c.car as usize) else { return Vec::new() };
-        match self.cars.get(slot) {
-            Some(car) if self.phase == Phase::Racing && !car.laps.finished => self.hud.draw(player, car, self.time),
-            _ => Vec::new(),
+        if self.over {
+            return Vec::new();
         }
+        if self.hud.players == 0 {
+            return match (&self.pause_kit, player) {
+                (Some(kit), 0) => crate::hud::demo_mode(kit.style(), &self.results_text.demo, self.time),
+                _ => Vec::new(),
+            };
+        }
+        let done = |race: &Race, p: usize| {
+            let car = race.cameras.get(p).and_then(|c| race.cars.get(c.car as usize));
+            race.phase == Phase::Finished || (race.phase == Phase::Racing && car.is_some_and(|c| c.laps.finished))
+        };
+        let Some(slot) = self.cameras.get(player).map(|c| c.car as usize) else { return Vec::new() };
+        if self.phase == Phase::Starting {
+            return Vec::new();
+        }
+        if !done(self, player) {
+            let Some(car) = self.cars.get(slot) else { return Vec::new() };
+            let mut out = self.hud.draw(player, car, self.time);
+            if let Some(kit) = &self.pause_kit {
+                out.extend(self.hud.wrong_way(player, car, self.time, kit.style(), &self.results_text.wrong_way));
+            }
+            return out;
+        }
+        if player != 0 || !(0..self.cameras.len()).all(|p| done(self, p)) {
+            return Vec::new();
+        }
+        let Some(kit) = &self.pause_kit else { return Vec::new() };
+        let text = &self.results_text;
+        let name = |car: &Car| self.setup.names[(car.slot != 0) as usize].clone();
+        if self.setup.flags & 2 != 0 {
+            // 0x80064294: the players by their stunt points, most first.
+            let players = (self.hud.players as usize).min(self.cars.len());
+            let swapped = players == 2 && (self.cars[0].stunt_points as u32) < (self.cars[1].stunt_points as u32);
+            let mut lines: Vec<Option<crate::hud::ResultLine>> = self.cars[..players]
+                .iter()
+                .map(|c| Some(crate::hud::ResultLine { name: name(c), player: true, value: c.stunt_points.to_string() }))
+                .collect();
+            if swapped {
+                lines.swap(0, 1);
+            }
+            tracing::trace!("the points' table lowering 0x800d0e54 to player one's lap time: not yet ported");
+            return crate::hud::results_table(kit.style(), &text.points, &lines, false);
+        }
+        // 0x80064040: every car by its place, its race time (best lap
+        // against the clock).
+        let best = self.setup.flags & 4 != 0;
+        let lines: Vec<Option<crate::hud::ResultLine>> = (0..self.setup.cars.len())
+            .map(|k| {
+                let s = self.standings.get(k)?;
+                let car = self.cars.get(s.car as usize)?;
+                let player = car.flags & 1 != 0;
+                let name = if player {
+                    name(car)
+                } else {
+                    let id = self.setup.cars.get(s.car as usize).map_or(0, |e| e.car_id);
+                    text.cars.get(id as usize).cloned().unwrap_or_default()
+                };
+                let value = if best {
+                    crate::hud::result_time(s.best, None)
+                } else {
+                    crate::hud::result_time(s.time, Some(&text.no_time))
+                };
+                Some(crate::hud::ResultLine { name, player, value })
+            })
+            .collect();
+        crate::hud::results_table(kit.style(), if best { &text.best } else { &text.time }, &lines, true)
     }
 }

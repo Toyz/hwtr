@@ -18,6 +18,7 @@ pub fn exe() -> Option<hwtr_psx::Exe> {
 /// A small deterministic generator for test inputs.
 pub struct Rng(pub u64);
 
+#[allow(dead_code)]
 impl Rng {
     pub fn word(&mut self) -> u32 {
         self.0 ^= self.0 << 13;

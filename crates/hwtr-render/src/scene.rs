@@ -54,8 +54,12 @@ pub struct Scene {
     /// came from.
     pub track: String,
     pub vram: Vram,
-    /// The track's triangles.
+    /// The track's triangles, without the objects drawn apart: the
+    /// pickups (drawn while out) and the moving objects, each with where it
+    /// hangs, from the world kept for drawing them.
     pub track_tris: Vec<Vtx>,
+    pub apart: Vec<(usize, mesh::Pose)>,
+    pub world: World,
     /// The cars on the start grid, in grid order.
     pub cars: Vec<SceneCar>,
     /// Somewhere to look from: above the first grid place, or above the
@@ -93,7 +97,16 @@ impl Scene {
         );
         // The game's world is right-handed with z up, like this renderer's:
         // no conversion (worklog 12).
-        let track_tris = mesh::world_triangles(&world);
+        let mut skip: Vec<usize> = world.pickups.iter().filter_map(|p| p.object).collect();
+        // The moving objects, and those a car can knock over.
+        let knockable = world.volumes.iter().filter(|v| v.flags & 1 != 0).filter_map(|v| v.object);
+        for o in world.anims.iter().filter_map(|a| a.object).chain(knockable) {
+            if !skip.contains(&o) {
+                skip.push(o);
+            }
+        }
+        let (track_tris, parents) = mesh::world_triangles_apart(&world, &skip);
+        let apart = skip.into_iter().zip(parents).collect();
         // The grid: the SCP's start points (20.12) from byte 24 and its
         // orientations (quaternions x, y, z, w) from byte 120, 16 bytes each.
         let scp = (layout != Layout::Sky).then(|| get(&format!("{t}SCP")).ok()).flatten().filter(|s| s.len() >= 216);
@@ -127,7 +140,8 @@ impl Scene {
             let (clut, tpage) = mesh::place_car_texture(&mut vram, &tim, slot);
             scene_cars.push(SceneCar { model, clut, tpage, pos, rot });
         }
-        Ok(Scene { track: t, vram, track_tris, cars: scene_cars, start, background: world.background })
+        let background = world.background;
+        Ok(Scene { track: t, vram, track_tris, apart, world, cars: scene_cars, start, background })
     }
 
     /// Every car's triangles.

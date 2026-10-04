@@ -96,6 +96,17 @@ impl Car {
         }
     }
 
+    /// 0x8004528c again after a power-up changed the handling: the springs
+    /// and the wheels' mounts, diameters and layout anew, the wheels' state
+    /// kept.
+    pub fn refit_handling(&mut self) {
+        let old = std::mem::take(&mut self.wheels);
+        self.fit_handling(self.options);
+        for (new, old) in self.wheels.iter_mut().zip(old) {
+            *new = Wheel { mount: new.mount, diameter: new.diameter, rear: new.rear, steers: new.steers, driven: new.driven, ..old };
+        }
+    }
+
     /// The car in race slot `slot`, from its handling (the CWH), placed on
     /// its start grid point `grid` (position and quaternion, from the SCP),
     /// for the race `setup`. Computer cars start on the AI's line instead,
@@ -109,6 +120,7 @@ impl Car {
         tuning: &Tuning,
     ) -> Car {
         let mut car = Car { slot, handling: handling.clone(), engine: Engine::from_spec(spec), ..Car::default() };
+        car.options = setup.options;
         car.fit_handling(setup.options);
         car.body = Body::new(car.handling.mass, [car.width, car.length, car.height], [0; 3]);
         car.body.rot = transpose(&quat_to_matrix(grid.1));

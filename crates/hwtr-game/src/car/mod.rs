@@ -227,6 +227,9 @@ pub struct Tuning {
     /// restitution): players, computer cars, a player and a computer car,
     /// anything else (TUNING +42 to +45, 0x8006f20c).
     pub pair_bounce: [u8; 4],
+    /// How hard a player's wreck jolts the pad's motors (TUNING +0x32,
+    /// 0x8001b934).
+    pub wreck_jolt: u8,
 }
 
 /// Where TUNING.PRM keeps each setting.
@@ -271,6 +274,7 @@ impl Tuning {
             camera_travel_mph: at(CAMERA_TRAVEL_MPH),
             ai: crate::ai::AiTuning::from_prm(&at),
             pair_bounce: [at(42), at(43), at(44), at(45)],
+            wreck_jolt: at(0x32),
         }
     }
 
@@ -358,6 +362,8 @@ pub struct Car {
     /// Player one's wreck has a line to play (decided at random as it
     /// wrecks, played half a second on).
     pub wreck_line: bool,
+    /// A player's car has just been wrecked: the pad gets a jolt.
+    pub jolted: bool,
     /// Milliseconds since it wrecked; at 3000 it is put back on the road.
     pub wreck_ms: u32,
     /// Asked to be put back on the road at its next update.
@@ -373,9 +379,23 @@ pub struct Car {
     /// A power-up (0x80065520) makes its brakes bite: braking while
     /// rolling forward takes a tenth of its momentum each step.
     pub strong_brakes: bool,
+    /// Power-ups' other marks (0x866 to 0x868): steel and rubber (in the
+    /// cars' knocks), gyro; the power-up the HUD shows (0x892); a turbo a
+    /// power-up gave, for the HUD's meter.
+    pub steel: bool,
+    pub rubber: bool,
+    pub gyro: bool,
+    pub power_up: u8,
+    pub turbo_given: bool,
+    /// The race's options, which size the car and its wheels.
+    pub options: u32,
     /// Milliseconds it has been stuck (pressing on, steering hard, slow,
     /// touching something).
     pub stuck_ms: u32,
+    /// Milliseconds it has been heading back along the track (+0x870), and
+    /// whether that is over half a second (+0x86c: the HUD says so).
+    pub wrong_way_ms: u32,
+    pub wrong_way: bool,
     /// Its checkpoints and laps; once they are run it drives itself, the
     /// controls ignored.
     pub laps: crate::laps::Laps,

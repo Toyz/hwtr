@@ -576,3 +576,32 @@ fn stunt_watch_matches_the_original() {
     eprintln!("{landings} landings rewarded, seeds apart after {seeds_apart}");
     assert!(landings > 100);
 }
+
+/// How the road feels through the pad (0x80045ff4), for the cars of
+/// `desert1-drive` with random ground under their wheels and random speeds.
+#[test]
+fn road_feel_matches_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-drive") else { return };
+    let tables = hwtr_game::math::Tables::from_exe(&exe);
+    let mut rng = common::Rng(0xfee1_0001);
+    let mut felt = 0;
+    for round in 0..3000 {
+        let slot = rng.below(6);
+        let at = CARS + slot * CAR_SIZE;
+        let wheels = m.bus.read(at + car::WHEEL_COUNT, 1).unwrap();
+        for w in 0..wheels {
+            let wheel = at + WHEELS + w * WHEEL_SIZE;
+            m.bus.write(wheel + 0x3c, 1, (rng.below(3) != 0) as u32).unwrap();
+            m.bus.write(wheel + 0x3d, 1, rng.below(16)).unwrap();
+        }
+        let speed = (rng.word() >> rng.below(14)) as i32 * if rng.below(5) == 0 { -1 } else { 1 };
+        m.bus.write_u32(at + car::SPEED, speed as u32);
+        m.call(0x8004_5ff4, &[slot, common::OUT, common::OUT + 1]).unwrap();
+        let (rough, speed) = (m.bus.read(common::OUT, 1).unwrap() as u8, m.bus.read(common::OUT + 1, 1).unwrap() as u8);
+        let ported = Car::read(&Ram(&mut m.bus.ram), at);
+        assert_eq!(ported.road_feel(&tables.surface_rumble), (rough, speed), "round {round}, car {slot}");
+        felt += (rough != 0 && speed > 10) as u32;
+    }
+    assert!(felt > 300, "{felt} rough rounds");
+}

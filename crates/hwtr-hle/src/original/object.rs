@@ -63,6 +63,8 @@ impl InMemory for CollisionObject {
             car,
             paired: ram.i32(o + PAIRED) as u32,
             heft: ram.i32(o + HEFT) as u32,
+            pickup: None,
+            volume: None,
         }
     }
 

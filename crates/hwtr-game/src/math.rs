@@ -44,6 +44,11 @@ pub struct Tables {
     /// The effects sheet's 24 sprite slots: each one's palette and texture
     /// page, with its blend bits (0x800bd0d0, 0x800bd130).
     pub sprite_slots: [(u16, u16); 24],
+    /// How rough each kind of ground feels through the pad (0x800bea7c).
+    pub surface_rumble: Vec<u8>,
+    /// How far the attract race's trackside cameras see, a twelfth of it
+    /// in world units, by world and number (0x800be934).
+    pub camera_ranges: [[u16; 3]; 4],
 }
 
 const CHECKPOINT_TABLE: u32 = 0x800c_5c64;
@@ -72,7 +77,9 @@ impl Tables {
             let (clut, page) = (u16_at(0x800b_d0d0 + 4 * k as u32), u16_at(0x800b_d0d2 + 4 * k as u32));
             (clut, (page & 0xff9f) | ((byte(0x800b_d130 + k as u32) as u16) << 5))
         });
-        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints, meter, acos, rcossin, sprite_slots }
+        let surface_rumble = (0..256).map(|i| byte(0x800b_ea7c + i)).collect();
+        let camera_ranges = std::array::from_fn(|w| std::array::from_fn(|n| u16_at(0x800b_e934 + 2 * (3 * w + n) as u32)));
+        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints, meter, acos, rcossin, sprite_slots, surface_rumble, camera_ranges }
     }
 
     /// The checkpoints a lap of `world` (a name from [`crate::race::WORLDS`])
@@ -80,6 +87,13 @@ impl Tables {
     pub fn checkpoints(&self, world: &str, number: u8) -> u8 {
         let w = crate::race::WORLDS.iter().position(|&n| n.eq_ignore_ascii_case(world));
         w.zip((number as usize).checked_sub(1)).and_then(|(w, n)| self.checkpoints[w].get(n).copied()).unwrap_or(0)
+    }
+
+    /// `camera_load`'s range for `world` track `number` (0x8003699c); 0
+    /// for a track not in the table.
+    pub fn camera_range(&self, world: &str, number: u8) -> u16 {
+        let w = crate::race::WORLDS.iter().position(|&n| n.eq_ignore_ascii_case(world));
+        w.zip((number as usize).checked_sub(1)).and_then(|(w, n)| self.camera_ranges[w].get(n).copied()).unwrap_or(0)
     }
 
     /// 0x80010bb4: acos of a cosine (4.12, -1 to 1), radians.

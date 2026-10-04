@@ -38,8 +38,8 @@ header, 104 bytes
   +44  off  listed            u32 offsets of objects; the loader sets bit 31 (visible) of each one's flags
   +48  u32  n_dyn             84-byte records (collision volumes, inferred)
   +52  off  dyn
-  +56  u32  n_rec40           40-byte records, meaning unknown
-  +60  off  rec40
+  +56  u32  n_cameras         40-byte records: trackside cameras
+  +60  off  cameras
   +64  u32  n_anim            24-byte records: object animations
   +68  off  anim
   +72  u32  n_pickups         32-byte records
@@ -82,6 +82,10 @@ mesh quad, 76 bytes
   +64  u32 flat colour (unread by the renderer)
   +68  u16 clut   +70 u16 tpage
   +72  u32 bit 0 double-sided, bits 16-31 depth bias (x4 ordering-table entries)
+
+trackside camera, 40 bytes (0x80021390 reads one; the attract race cuts to them)
+  +0   u32    flags (bit 1: never chosen)   +4 u32 field of view, 4.12 radians
+  +8   s16[3][3] rotation, 4.12, then a pad   +28 s32[3] position, 20.12
 
 pickup, 32 bytes
   +0   s32[3] position, 20.12   +12 u32   +16 off/0 object   +20 char[12] name ("Handling", "Gyro", ...)
@@ -133,7 +137,7 @@ mirrored export re-split some polygons.
 
 ## Unknown
 
-- rec40, rec24b, anim fields +4/+16/+20, dyn +72..+80, object flags 0x2,
+- Trackside camera flags other than bit 1, rec24b, anim fields +4/+16/+20, dyn +72..+80, object flags 0x2,
   0x4, 0x8, and pickup +12.
 - Whether 0x800328dc subdivides near polygons, and the stray `gpf` in
   0x800317e0.

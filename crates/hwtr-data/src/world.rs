@@ -99,6 +99,53 @@ pub struct ClutAnim {
     pub colours: [u16; 16],
 }
 
+/// A collision volume (84 bytes, the table at +52): flags (8: it follows
+/// its object; 16: a body of its own; 1 knocked over, 2 lifts a car, 64
+/// wrecks one; 4 a sound when knocked), the object drawn for it, its box's
+/// centre (20.12), half size and rotation, its weight, and two words (the
+/// knock's sounds).
+#[derive(Clone, Debug)]
+pub struct Volume {
+    pub flags: u32,
+    pub object: Option<usize>,
+    pub pos: [i32; 3],
+    pub size: [i32; 3],
+    pub rot: [[i16; 3]; 3],
+    pub heft: u32,
+    pub extra: [u32; 2],
+}
+
+/// A trackside camera (40 bytes, the table at +56), which the attract
+/// race's director cuts to (0x80021390 reads one): flags (2: never used),
+/// field of view, rotation (+8, s16[9] and a pad) and position (+28,
+/// 20.12).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CameraSpot {
+    pub flags: u32,
+    pub fov: u32,
+    pub rot: [[i16; 3]; 3],
+    pub pos: [i32; 3],
+}
+
+/// An object's animation (24 bytes): the object, how long one round takes
+/// (ms), its keys evenly spaced over the round, and two words a trigger
+/// uses (+16, +20).
+#[derive(Clone, Debug)]
+pub struct ObjectAnim {
+    pub object: Option<usize>,
+    pub period: u32,
+    pub keys: Vec<AnimKey>,
+    pub trigger: [u32; 2],
+}
+
+/// A key (28 bytes): position (20.12) and orientation (a quaternion x, y,
+/// z, w, 4.12).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AnimKey {
+    pub pos: [i32; 3],
+    pub quat: [i32; 4],
+}
+
 #[derive(Clone, Debug)]
 pub struct Pickup {
     /// Position, 20.12.
@@ -120,6 +167,9 @@ pub struct World {
     /// Objects the table at +44 lists (the visible set the loader flags).
     pub listed: Vec<usize>,
     pub clut_anims: Vec<ClutAnim>,
+    pub anims: Vec<ObjectAnim>,
+    pub volumes: Vec<Volume>,
+    pub cameras: Vec<CameraSpot>,
     pub pickups: Vec<Pickup>,
     pub counts: Counts,
     pub flags: u32,
@@ -292,9 +342,72 @@ impl World {
             .collect::<Result<Vec<_>>>()?;
 
         let counts = Counts { dyn84: r.u32(48)?, rec40: r.u32(56)?, anim: r.u32(64)?, rec24b: r.u32(88)? };
-        r.table(52, counts.dyn84, 84)?;
-        r.table(60, counts.rec40, 40)?;
-        r.table(68, counts.anim, 24)?;
+        let vol_at = r.table(52, counts.dyn84, 84)?;
+        let volumes = (0..counts.dyn84 as usize)
+            .map(|k| {
+                let v = vol_at + 84 * k;
+                let half = |at: usize| r.u16(at).map(|h| h as i16);
+                let mut rot = [[0i16; 3]; 3];
+                for (i, row) in rot.iter_mut().enumerate() {
+                    for (j, c) in row.iter_mut().enumerate() {
+                        *c = half(v + 40 + 2 * (3 * i + j))?;
+                    }
+                }
+                Ok(Volume {
+                    flags: r.u32(v)?,
+                    object: match r.u32(v + 4)? {
+                        u32::MAX => None,
+                        off => index_of(off, obj_base, OBJECT, n_obj as usize)?,
+                    },
+                    pos: [r.i32(v + 8)?, r.i32(v + 12)?, r.i32(v + 16)?],
+                    size: [r.i32(v + 24)?, r.i32(v + 28)?, r.i32(v + 32)?],
+                    rot,
+                    heft: r.u32(v + 0x48)?,
+                    extra: [r.u32(v + 0x4c)?, r.u32(v + 0x50)?],
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let cam_at = r.table(60, counts.rec40, 40)?;
+        let cameras = (0..counts.rec40 as usize)
+            .map(|k| {
+                let c = cam_at + 40 * k;
+                let mut rot = [[0i16; 3]; 3];
+                for (i, row) in rot.iter_mut().enumerate() {
+                    for (j, v) in row.iter_mut().enumerate() {
+                        *v = r.i16(c + 8 + 2 * (3 * i + j))?;
+                    }
+                }
+                Ok(CameraSpot {
+                    flags: r.u32(c)?,
+                    fov: r.u32(c + 4)?,
+                    rot,
+                    pos: [r.i32(c + 28)?, r.i32(c + 32)?, r.i32(c + 36)?],
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let anim_at = r.table(68, counts.anim, 24)?;
+        let anims = (0..counts.anim as usize)
+            .map(|k| {
+                let a = anim_at + 24 * k;
+                let n = r.u32(a + 8)?;
+                let keys_at = r.table(a + 12, n, 28)?;
+                let keys = (0..n as usize)
+                    .map(|i| {
+                        let p = keys_at + 28 * i;
+                        Ok(AnimKey {
+                            pos: [r.i32(p)?, r.i32(p + 4)?, r.i32(p + 8)?],
+                            quat: [r.i32(p + 12)?, r.i32(p + 16)?, r.i32(p + 20)?, r.i32(p + 24)?],
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(ObjectAnim {
+                    object: index_of(r.u32(a)?, obj_base, OBJECT, n_obj as usize)?,
+                    period: r.u32(a + 4)?,
+                    keys,
+                    trigger: [r.u32(a + 16)?, r.u32(a + 20)?],
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
         r.table(92, counts.rec24b, 24)?;
 
         let n_pick = r.u32(72)?;
@@ -343,6 +456,9 @@ impl World {
             objects,
             listed,
             clut_anims,
+            anims,
+            volumes,
+            cameras,
             pickups,
             counts,
             flags: r.u32(96)?,

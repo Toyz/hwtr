@@ -49,12 +49,14 @@ pub struct Views {
     pub one: [View; 5],
     pub two: [View; 5],
     pub demo: [View; 5],
+    /// How many of the attract demo's views there are (0x800d0e20).
+    pub demo_count: u8,
 }
 
 impl Default for Views {
     fn default() -> Views {
         let view = View { mode: ViewMode::Chase, offset: [0; 3], lift: 0 };
-        Views { one: [view; 5], two: [view; 5], demo: [view; 5] }
+        Views { one: [view; 5], two: [view; 5], demo: [view; 5], demo_count: 2 }
     }
 }
 
@@ -76,7 +78,7 @@ impl Views {
                 }
             })
         };
-        Views { one: table(Self::ONE), two: table(Self::TWO), demo: table(Self::DEMO) }
+        Views { one: table(Self::ONE), two: table(Self::TWO), demo: table(Self::DEMO), demo_count: byte(0x800d_0e20) }
     }
 }
 
@@ -95,6 +97,11 @@ pub struct Surroundings<'a> {
     pub flyby: &'a [Keyframe],
     /// The track, to keep the camera inside it.
     pub collision: &'a Collision,
+    /// The trackside cameras, and whether this is the attract race (no
+    /// players: the director picks the shots, the chase spring is three
+    /// times as stiff).
+    pub spots: &'a [Spot],
+    pub demo: bool,
 }
 
 /// A player's camera.
@@ -123,7 +130,23 @@ pub struct Camera {
     pub intro_ms: i32,
     /// Flying over the track before the race (the SCP's flyby).
     pub flyby: bool,
+    /// The attract race's director: milliseconds before it picks the next
+    /// shot (+0x50).
+    pub director_ms: u32,
 }
+
+/// A trackside camera (the world's 40-byte records, read by 0x80021390):
+/// flags (2: never chosen), field of view, rotation and position (20.12).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Spot {
+    pub flags: u32,
+    pub fov: i32,
+    pub rot: Matrix,
+    pub pos: Vec3,
+}
+
+/// How long the director holds a shot, ms.
+const SHOT_MS: u32 = 4000;
 
 /// The spring's limits: speed (in/s), acceleration (in/s²), and the share
 /// of the gap closed in a second.
@@ -158,6 +181,10 @@ impl Camera {
         match self.mode {
             Some(ViewMode::Mounted) => self.mount(t, collision, car, view),
             Some(ViewMode::Chase) => self.chase(world, car, view, dt_ms, rate),
+            Some(ViewMode::Other(2)) => self.spot_fixed(world.spots),
+            Some(ViewMode::Other(3)) => self.spot_track(t, world.spots, car),
+            // Mode 4 (0x8003abe4) does nothing.
+            Some(ViewMode::Other(4)) => {}
             other => tracing::trace!("camera mode {other:?}: not yet ported"),
         }
         if dt_ms < self.shake {
@@ -170,6 +197,11 @@ impl Camera {
             self.shake = 0;
         }
         self.snap = false;
+        // The attract race's director (0x8003a690) takes the view
+        // button's place; the race runs it, as it looks at every car.
+        if world.demo {
+            return;
+        }
         if self.button != self.button_before && self.button {
             self.view = (self.view + 1) % count.max(1);
             self.mode = Some(views[self.view as usize % 5].mode);
@@ -286,7 +318,7 @@ impl Camera {
             if dot(sub(self.pos, centre), sub(target, centre)) < 0 {
                 target[2] = target[2].wrapping_add(0x7_8000);
             }
-            target = self.spring(t, target, rate);
+            target = self.spring(t, target, rate, world.demo);
         }
         let mut look = t.normalize(sub(centre, target));
         let up = if car.flags & 16 != 0 { [0, 0, 0x1000] } else { up };
@@ -332,24 +364,116 @@ impl Camera {
         }
     }
 
+    /// Mode 2: trackside camera `view` as it stands (0x80021390).
+    fn spot_fixed(&mut self, spots: &[Spot]) {
+        let Some(spot) = spots.get(self.view as usize) else { return };
+        self.pos = spot.pos;
+        self.rot = spot.rot;
+        self.fov = spot.fov;
+        self.vel = [0; 3];
+    }
+
+    /// Mode 3: trackside camera `view` turned to look at the car's centre,
+    /// level-sided.
+    fn spot_track(&mut self, t: &Tables, spots: &[Spot], car: &Car) {
+        let Some(spot) = spots.get(self.view as usize) else { return };
+        self.pos = spot.pos;
+        self.fov = spot.fov;
+        self.vel = [0; 3];
+        let centre = add(car.body.pos, car.body.centre);
+        let look = t.normalize(sub(centre, self.pos));
+        let right = t.normalize([look[1], look[0].wrapping_neg(), 0]);
+        let up = t.normalize(cross(right, look));
+        for (i, row) in self.rot.iter_mut().enumerate() {
+            *row = [right[i] as i16, look[i] as i16, up[i] as i16];
+        }
+    }
+
+    /// 0x8003a690, the attract race's director, after a step of `dt_ms`:
+    /// every four seconds a new shot. The trackside camera that sees the
+    /// most cars coming toward it (within 12 times the track's `range`,
+    /// closing at over half an inch a second) follows the farthest of them
+    /// (mode 3; the farthest kept from camera to camera when a later one
+    /// sees none farther); with none, a chase view other than mounted at
+    /// random, on a car at random that is not wrecked (ten tries).
+    #[allow(clippy::too_many_arguments)]
+    pub fn direct(&mut self, t: &Tables, spots: &[Spot], cars: &[Car], range: u16, views: &[View; 5], count: u8, dt_ms: u32, rand: &mut Rand) {
+        if self.director_ms >= dt_ms {
+            self.director_ms -= dt_ms;
+            return;
+        }
+        let reach = fx((range as i32) << 12, 0xc000);
+        let (mut best_seen, mut best_spot, mut best_car) = (0u32, 0u8, 0u8);
+        let mut farthest_car = 0u8;
+        let mut flags = 0;
+        for (k, spot) in spots.iter().enumerate() {
+            flags = spot.flags | 1;
+            if flags & 2 != 0 {
+                continue;
+            }
+            let (mut seen, mut far) = (0u32, 0i32);
+            for (i, car) in cars.iter().enumerate() {
+                let d = sub(spot.pos, car.body.pos);
+                let len = t.length(d);
+                let dir = d.map(|c| div_fx(c, len));
+                if len < reach && dot(dir, car.body.vel) >= 2049 {
+                    if far < len {
+                        far = len;
+                        farthest_car = i as u8;
+                    }
+                    seen += 1;
+                }
+            }
+            if best_seen < seen {
+                (best_seen, best_spot, best_car) = (seen, k as u8, farthest_car);
+            }
+        }
+        if best_seen != 0 {
+            self.mode = Some(if flags & 1 != 0 { ViewMode::Other(3) } else { ViewMode::Other(2) });
+            self.car = best_car;
+            self.view = best_spot;
+        } else {
+            loop {
+                self.view = rand.below(count as u32) as u8;
+                let mode = views[self.view as usize % 5].mode;
+                if mode != ViewMode::Mounted {
+                    self.mode = Some(mode);
+                    break;
+                }
+            }
+            for _ in 0..10 {
+                self.car = rand.below(cars.len() as u32) as u8;
+                if !cars.get(self.car as usize).is_some_and(|c| c.wrecked) {
+                    break;
+                }
+            }
+        }
+        tracing::debug!("director: {:?}, view {}, car {} ({best_seen} seen)", self.mode, self.view, self.car);
+        self.snap = true;
+        self.director_ms = SHOT_MS.wrapping_sub(dt_ms);
+    }
+
     /// 0x80039d54: the camera moves toward `target`, its velocity heading
     /// for a tenth of the gap each `rate`th of a second (at most
     /// [`SPRING_SPEED`]), changing by at most [`SPRING_ACCEL`] while it
     /// speeds up; the new position.
-    fn spring(&mut self, t: &Tables, target: Vec3, rate: i32) -> Vec3 {
-        let tenth = div_fx(0x1000, 10 << 12);
+    fn spring(&mut self, t: &Tables, target: Vec3, rate: i32, demo: bool) -> Vec3 {
+        // The attract race triples the share and both limits (0x800383d0).
+        let stiff = |v: i32| if demo { fx(v, 0x3000) } else { v };
+        let tenth = stiff(div_fx(0x1000, 10 << 12));
+        let (top_speed, top_accel) = (stiff(SPRING_SPEED), stiff(SPRING_ACCEL));
         let lengths = |v: Vec3| t.length(v);
         let mut want = sub(target, self.pos).map(|c| fx(fx(c, tenth), rate));
         let speed = lengths(want);
-        if SPRING_SPEED < speed {
-            let k = div_fx(SPRING_SPEED, speed);
+        if top_speed < speed {
+            let k = div_fx(top_speed, speed);
             want = want.map(|c| fx(c, k));
         }
         let mut accel = sub(want, self.vel).map(|c| fx(c, rate));
         if lengths(self.vel) < lengths(want) {
             let a = lengths(accel);
-            if SPRING_ACCEL < a {
-                let k = div_fx(SPRING_ACCEL, a);
+            if top_accel < a {
+                let k = div_fx(top_accel, a);
                 accel = accel.map(|c| fx(c, k));
             }
         }

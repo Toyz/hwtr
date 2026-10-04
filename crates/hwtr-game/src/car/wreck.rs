@@ -10,7 +10,8 @@ impl Car {
     /// wall) stops it and turns its spin about; then it loses half its
     /// speed, is thrown up at 10 to 19 mph, and spins up to 12 radians a
     /// second faster about each axis, its angular momentum following from
-    /// its inertia. Player one's wreck may get a line, at random.
+    /// its inertia. Player one's wreck may get a line, at random, and a
+    /// player's jolts the pad.
     ///
     /// Not yet ported: the wheels flying off as debris (0x8007c9b0, a
     /// player's car, which draws random numbers before the throw), the
@@ -49,7 +50,24 @@ impl Car {
             if rand.below(2) != 0 {
                 self.wreck_line = true;
             }
-            tracing::trace!("car {}: the wreck's sound, rumble and HUD, not yet ported", self.slot);
+            self.jolted = true;
+            tracing::trace!("car {}: the wreck's sound and HUD, not yet ported", self.slot);
         }
+    }
+}
+
+impl Car {
+    /// 0x80045ff4: how the road feels through the pad: the average, over
+    /// all the wheels, of how rough the ground under each one touching it
+    /// is (`rumble` by surface, 0x800bea7c), and the speed, 0 to 255.
+    pub fn road_feel(&self, rumble: &[u8]) -> (u8, u8) {
+        let speed = (fx(0xff000, self.body.speed / 2304) >> 12).clamp(0, 255) as u8;
+        let feel: u32 = self
+            .wheels
+            .iter()
+            .filter(|w| w.on_ground)
+            .map(|w| rumble.get(w.surface as usize).copied().unwrap_or(0) as u32)
+            .sum();
+        (feel.checked_div(self.wheels.len() as u32).unwrap_or(0) as u8, speed)
     }
 }

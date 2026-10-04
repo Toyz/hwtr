@@ -4,7 +4,7 @@ use super::object::{CollisionObject, Kind, RefSet};
 use super::scp::Scp;
 use super::world::{Collision, ObjectId};
 use crate::car::Car;
-use crate::math::{Tables, Vec3, add, apply_matrix_lv, div, fx, sub};
+use crate::math::{Matrix, Tables, Vec3, add, apply_matrix_lv, div, fx, sub};
 
 impl Collision {
     /// An empty world on the track `scp`.
@@ -54,6 +54,8 @@ impl Collision {
             car: Some(car.slot),
             paired: 0,
             heft: 0,
+            pickup: None,
+            volume: None,
         };
         let id = self.objects.len();
         self.objects.push(obj);
@@ -81,6 +83,105 @@ impl Collision {
         self.cars.add(id);
         for &z in &zones {
             self.zone_effects(car, z, None);
+        }
+        id
+    }
+
+    /// 0x80067418 with 0x8004cedc and 0x8004d798: pickup `number`'s object,
+    /// a box of half `size` each way at `pos` with one point, its centre, in
+    /// the zone there; it stays put (not among the moving).
+    pub fn add_pickup(&mut self, t: &Tables, number: u16, pos: Vec3, size: i32) -> ObjectId {
+        let half = [fx(size, 0x800); 3];
+        let zone = self.scp.zone_at(pos);
+        let id = self.objects.len();
+        self.objects.push(CollisionObject {
+            id: id as u16,
+            kind: Kind::Other(5),
+            flags: 0,
+            centre: pos,
+            rot: [[0x1000, 0, 0], [0, 0x1000, 0], [0, 0, 0x1000]],
+            half,
+            local: vec![[0; 3]],
+            points: vec![pos],
+            point_zones: vec![zone],
+            radius: t.length(half),
+            zones: RefSet::default(),
+            stamp: 0,
+            contact_point: [0; 3],
+            car: None,
+            paired: 0,
+            heft: 0,
+            pickup: Some(number),
+            volume: None,
+        });
+        self.members[zone as usize].add(id);
+        self.objects[id].zones.add(zone);
+        self.all.add(id);
+        id
+    }
+
+    /// 0x8006b2a8 with 0x8004cedc and 0x8004d798: world volume `number`'s
+    /// object: kind 2 if it follows its object (volume flag 8), else 0 (no
+    /// track has a body of its own, kind 1); knocked over (flag 1 to 2),
+    /// lifting a car (2 to 4), wrecking one (64 to 8); a box half `size`
+    /// each way at `centre` turned by `rot`, one point at its centre (eight, its corners,
+    /// for flag 16), in that point's zone. One that follows its object moves.
+    pub fn add_world_object(&mut self, t: &Tables, number: u16, flags: u32, centre: Vec3, rot: Matrix, size: Vec3, heft: u32) -> ObjectId {
+        let kind = if flags & 8 != 0 {
+            Kind::Other(2)
+        } else if flags & 16 != 0 {
+            Kind::Other(1)
+        } else {
+            Kind::Other(0)
+        };
+        let mut obj_flags = 0;
+        if flags & 1 != 0 {
+            obj_flags |= 2;
+        }
+        if flags & 2 != 0 {
+            obj_flags |= 4;
+        }
+        if flags & 64 != 0 {
+            obj_flags |= 8;
+        }
+        let half = size.map(|c| fx(c, 0x800));
+        let local: Vec<Vec3> = if flags & 16 != 0 {
+            [(1, 1, 1), (1, 1, -1), (1, -1, 1), (1, -1, -1), (-1, 1, 1), (-1, 1, -1), (-1, -1, 1), (-1, -1, -1)]
+                .map(|(x, y, z): (i32, i32, i32)| [half[0] * x, half[1] * y, half[2] * z])
+                .to_vec()
+        } else {
+            vec![[0; 3]]
+        };
+        let points: Vec<Vec3> = local.iter().map(|&p| add(apply_matrix_lv(&rot, p), centre)).collect();
+        let point_zones: Vec<u16> = points.iter().map(|&p| self.scp.zone_at(p)).collect();
+        let id = self.objects.len();
+        self.objects.push(CollisionObject {
+            id: id as u16,
+            kind,
+            flags: obj_flags,
+            centre,
+            rot,
+            half,
+            local,
+            points,
+            point_zones: point_zones.clone(),
+            radius: t.length(half),
+            zones: RefSet::default(),
+            stamp: 0,
+            contact_point: [0; 3],
+            car: None,
+            paired: 0,
+            heft,
+            pickup: None,
+            volume: Some(number),
+        });
+        for z in point_zones {
+            self.members[z as usize].add(id);
+            self.objects[id].zones.add(z);
+        }
+        self.all.add(id);
+        if kind != Kind::Other(0) {
+            self.moving.add(id);
         }
         id
     }

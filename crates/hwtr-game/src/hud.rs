@@ -215,6 +215,9 @@ pub struct Hud {
     /// Sounds the HUD asks for.
     pub sounds: Vec<u16>,
     pub countdown: Countdown,
+    /// When each player's car was last seen going the wrong way, while the
+    /// warning shows (0x800bead0 +0 and +236).
+    wrong_way_from: [Option<u32>; 2],
 }
 
 /// The sound of a full turbo meter.
@@ -256,7 +259,31 @@ impl Hud {
             meters: [Meter::default(); 2],
             sounds: Vec::new(),
             countdown: Countdown::default(),
+            wrong_way_from: [None; 2],
         }
+    }
+
+    /// 0x80064564: player `player`'s "WRONG WAY" (`text`, string 216) in
+    /// red at (94, 18) (at y 124 for the second of two players), from the
+    /// race clock `now` its car is going the wrong way until 200 ms after,
+    /// hidden every other half second.
+    pub fn wrong_way(&mut self, player: usize, car: &Car, now: u32, style: &impl crate::front::screen::Style, text: &str) -> Vec<Sprite> {
+        let mut out = Vec::new();
+        let Some(from) = self.wrong_way_from.get_mut(player) else { return out };
+        if car.wrong_way {
+            *from = Some(now);
+        }
+        let Some(since) = *from else { return out };
+        if now.wrapping_sub(since) > 200 {
+            *from = None;
+            return out;
+        }
+        if ((now as u64 * 0x1062_4dd3) >> 37) & 1 == 1 {
+            return out;
+        }
+        let y = if self.players == 2 && player != 0 { 124 } else { 18 };
+        race_text(style, text, 94, y, half([255, 0, 0]), &mut out);
+        out
     }
 
     /// 0x80064cf0: player `player` finished a lap in `time`, at `now`.
@@ -296,8 +323,11 @@ impl Hud {
             let x = 40 - ((text.len() as i16 * 12) | 1) / 2;
             d.text(&text, x, at(18, 18, 124), |_| 12);
         }
-        if show & show::POWER_UP != 0 {
-            tracing::trace!("the power-up's icon (0x80062534): not yet ported");
+        if show & show::POWER_UP != 0 && car.power_up != 0 {
+            // 0x80062534: the power-up's icon, white.
+            d.colour = WHITE;
+            let y = if !split { 178 } else if player == 0 { 70 } else { 178 };
+            d.glyph(1, car.power_up.wrapping_add(2), 314, y);
         }
         let mut flashing = false;
         if show & show::LAP_TIME != 0 {
@@ -512,4 +542,83 @@ pub fn speed(speed: i32) -> i32 {
         div_fx(fx(v - 0x5_0000, 0x5_0000), 0x3_2000).wrapping_add(0x6_4000)
     };
     (r >> 12).min(180)
+}
+
+/// The results' words: the column heads (strings 289 to 291: TIME, BEST,
+/// POINTS), what a car with no time shows (215, DNF), and the cars' names
+/// by car number (0x800c5d8c).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ResultsText {
+    pub time: String,
+    pub best: String,
+    pub points: String,
+    pub no_time: String,
+    pub cars: Vec<String>,
+    /// "DEMO MODE" (string 214), over the attract race, and "WRONG WAY"
+    /// (216).
+    pub demo: String,
+    pub wrong_way: String,
+}
+
+/// 0x80063bc4: `s` in the race's text font from (`x`, `y`), left to
+/// right, each letter's glyph upper case and its width plus the kerning to
+/// the next, in layer 1.
+pub fn race_text(style: &impl crate::front::screen::Style, s: &str, x: i16, y: i16, colour: [u8; 3], out: &mut Vec<Sprite>) {
+    let b = s.as_bytes();
+    let mut at = x as i32;
+    for (i, &c) in b.iter().enumerate() {
+        out.push(Sprite { font: 0, glyph: c.to_ascii_uppercase(), x: at as i16, y, colour, layer: 1 });
+        at += style.advance(c, b.get(i + 1).copied().unwrap_or(0));
+    }
+}
+
+/// 0x800644c0: with no players, "DEMO MODE" in red at (130, 20), shown
+/// and hidden in turn every 750 ms of the race clock `time`.
+pub fn demo_mode(style: &impl crate::front::screen::Style, text: &str, time: u32) -> Vec<Sprite> {
+    let mut out = Vec::new();
+    if ((time as u64 * 0x0576_19f1) >> 36) & 1 == 0 {
+        race_text(style, text, 130, 20, half([255, 0, 0]), &mut out);
+    }
+    out
+}
+
+/// One line of the results: a car's name, whether a player drives it (its
+/// name green), and its time or points.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResultLine {
+    pub name: String,
+    pub player: bool,
+    pub value: String,
+}
+
+/// 0x80063ab4: a time for the results; none is `no_time` where the race
+/// counts (DNF), else blank dashes.
+pub fn result_time(ms: u32, no_time: Option<&str>) -> String {
+    match (ms, no_time) {
+        (0, Some(t)) => t.to_string(),
+        (0, None) => "--:--.--".to_string(),
+        _ => clock(ms),
+    }
+}
+
+/// 0x80064040 and 0x80064294: the results' table over the whole screen,
+/// "CAR" and `head` in cyan at the top, then a line every 20 pixels (an
+/// empty place, `None`, skipped), names at the left and times or points at
+/// 248, in the race's text font (0x80063bc4: left to right, each letter by
+/// its width and the kerning to the next). A player's line is green when
+/// `green` (the times' table), else every line is white.
+pub fn results_table(style: &impl crate::front::screen::Style, head: &str, lines: &[Option<ResultLine>], green: bool) -> Vec<Sprite> {
+    let mut out = Vec::new();
+    let mut text = |s: &str, x: i16, y: i16, colour: [u8; 3]| race_text(style, s, x, y, colour, &mut out);
+    let cyan = half([0, 255, 255]);
+    text("CAR", 26, 60, cyan);
+    text(head, 248, 60, cyan);
+    for (k, line) in lines.iter().enumerate() {
+        let Some(line) = line else { continue };
+        let y = 80 + 20 * k as i16;
+        let colour = if green && line.player { half([0, 255, 0]) } else { WHITE };
+        text(&line.name, 26, y, colour);
+        text(&line.value, 248, y, colour);
+    }
+    out
 }

@@ -95,6 +95,9 @@ pub fn collision(ram: &Ram) -> (Collision, Vec<u32>) {
                 .collect(),
             course: course(ram),
             lap_events: Vec::new(),
+            pickups_touched: Vec::new(),
+            players_touched: false,
+            knocked: Vec::new(),
             pairs: (0..ram.i16(PAIR_COUNT) as u16 as u32)
                 .map(|k| {
                     let at = PAIRS + k * CONTACT_SIZE;

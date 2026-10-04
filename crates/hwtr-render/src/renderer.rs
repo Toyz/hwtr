@@ -99,6 +99,9 @@ pub struct Renderer {
     staging: Staging,
     depth: DepthBuffer,
     pub clear: [u8; 3],
+    /// The PlayStation screen the overlay is in, in pixels: the race's
+    /// 384 by 240 unless set (the front end's is 640 by 240).
+    pub screen: (f32, f32),
 }
 
 pub const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -106,15 +109,15 @@ pub const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// The race's screen, in pixels.
 pub const SCREEN: (f32, f32) = (384.0, 240.0);
 
-/// From the PlayStation screen's pixels to a 4:3 box in the middle of a
-/// target of `size`, as a television shows it.
-pub fn overlay_matrix(size: (u32, u32)) -> glam::Mat4 {
+/// From the PlayStation screen's pixels (`screen` of them) to a 4:3 box in
+/// the middle of a target of `size`, as a television shows it.
+pub fn overlay_matrix(size: (u32, u32), screen: (f32, f32)) -> glam::Mat4 {
     let (w, h) = (size.0.max(1) as f32, size.1.max(1) as f32);
     let (bw, bh) = if w * 3.0 > h * 4.0 { (h * 4.0 / 3.0, h) } else { (w, w * 3.0 / 4.0) };
     let (sx, sy) = (bw / w, bh / h);
     glam::Mat4::from_cols_array(&[
-        2.0 * sx / SCREEN.0, 0.0, 0.0, 0.0,
-        0.0, -2.0 * sy / SCREEN.1, 0.0, 0.0,
+        2.0 * sx / screen.0, 0.0, 0.0, 0.0,
+        0.0, -2.0 * sy / screen.1, 0.0, 0.0,
         0.0, 0.0, 1.0, 0.0,
         -sx, sy, 0.0, 1.0,
     ])
@@ -231,6 +234,7 @@ impl Renderer {
             staging: Staging::new(),
             depth: DepthBuffer::new(DEPTH),
             clear: [0, 0, 0],
+            screen: SCREEN,
         }
     }
 
@@ -258,7 +262,7 @@ impl Renderer {
         let depth_view = self.depth.view(device, size.0, size.1).clone();
         let bytes: Vec<u8> = mvp.to_cols_array().iter().flat_map(|f| f.to_le_bytes()).collect();
         queue.write_buffer(&self.camera, 0, &bytes);
-        let overlay = overlay_matrix(size);
+        let overlay = overlay_matrix(size, self.screen);
         let bytes: Vec<u8> = overlay.to_cols_array().iter().flat_map(|f| f.to_le_bytes()).collect();
         queue.write_buffer(&self.overlay_camera, 0, &bytes);
         let mut encoder = device.create_command_encoder(&Default::default());
@@ -286,8 +290,10 @@ impl Renderer {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.group, &[]);
-            pass.set_vertex_buffer(0, self.vertices.slice(..));
-            pass.draw(0..self.count, 0..1);
+            if self.count > 0 {
+                pass.set_vertex_buffer(0, self.vertices.slice(..));
+                pass.draw(0..self.count, 0..1);
+            }
             if let Some(slice) = self.moving.slice()
                 && self.moving_count > 0
             {

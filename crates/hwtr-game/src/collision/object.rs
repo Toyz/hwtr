@@ -102,4 +102,8 @@ pub struct CollisionObject {
     pub paired: u32,
     /// A prop's weight, for the knocks it takes and gives.
     pub heft: u32,
+    /// The pickup it is (kind 5, +0x6c), by number.
+    pub pickup: Option<u16>,
+    /// A world volume's number (0x800d0fdc), for its knock.
+    pub volume: Option<u16>,
 }

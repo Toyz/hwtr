@@ -24,6 +24,9 @@ pub struct Drive<'a> {
 pub struct Stepped {
     /// A stunt was landed (for the HUD).
     pub stunt: Option<Award>,
+    /// A snapshot is due (0x8007feb0), with the car's rotation as it was
+    /// then: the original takes it mid-step, before squaring it up.
+    pub snapshot: Option<crate::math::Matrix>,
 }
 
 fn mph(n: i32) -> i32 {
@@ -156,11 +159,13 @@ impl Car {
             && self.body.vel[2] > 0
             && drive.time.wrapping_sub(self.contact_time) >= 501;
         self.body.integrate(t, drive.dt);
+        // A snapshot for the results, one time in two: at the top of a
+        // big jump, and half a second into a wreck.
         if big_air && self.body.vel[2] < 0 && drive.rand.below(2) == 0 {
-            tracing::trace!("car {}: the big air line, not yet ported", self.slot);
+            stepped.snapshot = Some(self.body.rot);
         }
         if player_one && self.wrecked && self.wreck_ms == 500 && drive.rand.below(2) == 0 {
-            tracing::trace!("car {}: the wreck line, not yet ported", self.slot);
+            stepped.snapshot = Some(self.body.rot);
         }
         if !self.body.asleep {
             self.body.rot = t.orthonormalize(&self.body.rot);

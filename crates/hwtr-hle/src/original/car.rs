@@ -113,7 +113,15 @@ pub const RESET_GRACE: u32 = 0x924;
 pub const WRECK_MS: u32 = 0x630;
 pub const TURBO_BEFORE: u32 = 0x29;
 pub const STRONG_BRAKES: u32 = 0x864;
+pub const STEEL: u32 = 0x866;
+pub const RUBBER: u32 = 0x867;
+pub const GYRO: u32 = 0x868;
+pub const POWER_UP: u32 = 0x892;
+/// The race setup's options (0x80138c94 +0x1c), which size the cars.
+pub const RACE_OPTIONS: u32 = 0x8013_8cb0;
 pub const STUCK_MS: u32 = 0x91c;
+pub const WRONG_WAY: u32 = 0x86c;
+pub const WRONG_WAY_MS: u32 = 0x870;
 pub const RESPAWN_ZONE: u32 = 0x7cc;
 pub const TURBOS: u32 = 0x874;
 pub const AIR_CONTROL: u32 = 0x86a;
@@ -298,6 +306,8 @@ impl InMemory for Car {
             state: ram.u8(at + STATE),
             wrecked: ram.flag(at + WRECKED),
             wreck_line: ram.flag(at + WRECK_VIEW),
+            // An event the port passes on at once; never left set.
+            jolted: false,
             wreck_ms: ram.i32(at + WRECK_MS) as u32,
             reset_requested: ram.flag(at + RESET_REQUESTED),
             reset_grace_ms: ram.i32(at + RESET_GRACE) as u32,
@@ -305,7 +315,15 @@ impl InMemory for Car {
             turbo_held: ram.flag(at + TURBO_HELD),
             turbo_before: ram.flag(at + TURBO_BEFORE),
             strong_brakes: ram.flag(at + STRONG_BRAKES),
+            steel: ram.flag(at + STEEL),
+            rubber: ram.flag(at + RUBBER),
+            gyro: ram.flag(at + GYRO),
+            power_up: ram.u8(at + POWER_UP),
+            turbo_given: false,
+            options: ram.i32(RACE_OPTIONS) as u32,
             stuck_ms: ram.i32(at + STUCK_MS) as u32,
+            wrong_way_ms: ram.i32(at + WRONG_WAY_MS) as u32,
+            wrong_way: ram.flag(at + WRONG_WAY),
             laps: laps(ram, at),
             lap_distance: ram.i32(at + LAP_DISTANCE),
             ground: Ground {
@@ -393,7 +411,13 @@ impl InMemory for Car {
         ram.set_flag(at + TURBO_HELD, self.turbo_held);
         ram.set_flag(at + TURBO_BEFORE, self.turbo_before);
         ram.set_flag(at + STRONG_BRAKES, self.strong_brakes);
+        ram.set_flag(at + STEEL, self.steel);
+        ram.set_flag(at + RUBBER, self.rubber);
+        ram.set_flag(at + GYRO, self.gyro);
+        ram.set_u8(at + POWER_UP, self.power_up);
         ram.set_i32(at + STUCK_MS, self.stuck_ms as i32);
+        ram.set_i32(at + WRONG_WAY_MS, self.wrong_way_ms as i32);
+        ram.set_flag(at + WRONG_WAY, self.wrong_way);
         write_laps(ram, at, &self.laps);
         ram.set_i32(at + LAP_DISTANCE, self.lap_distance);
         let g = &self.ground;
