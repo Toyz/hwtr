@@ -76,6 +76,7 @@ use crate::camera::{Camera, Surroundings};
 use crate::car::Respawn;
 use crate::car::stunt::Award;
 use crate::car::update::Drive;
+use crate::ai::Ai;
 use crate::hud::Hud;
 use crate::laps::{Course, LapEvent, Laps};
 use crate::line::BestLine;
@@ -160,6 +161,8 @@ pub struct Race {
     pub collision: Collision,
     /// The game's random numbers.
     pub rand: Rand,
+    /// The computer cars' drivers.
+    pub ai: Ai,
     /// The race clock (0x800d0e34), 25 ms a step.
     pub time: u32,
     /// The system clock (0x800d240c), which the host advances 17 ms a
@@ -214,23 +217,37 @@ impl Race {
         let course = Course::new(&setup, &scp, line.lap_length);
         let mut collision = Collision::new(scp);
         collision.course = course;
+        let mut rand = Rand::default();
+        // fakeai_load (0x800797f0), then the cars (cars_load, 0x8003beec).
+        let mut ai = Ai::new(&tuning, setup.difficulty, setup.laps, line.lap_length, false, rand.below(0x4000_0000));
+        ai.mirrored = setup.flags & 64 != 0;
         let mut cars = Vec::new();
         for (slot, entrant) in setup.cars.iter().enumerate() {
             let Some((h, spec)) = handling.get(slot) else { break };
             let grid = collision.scp.grid[entrant.grid as usize % collision.scp.grid.len()];
             let mut car = Car::load(slot as u8, entrant, &setup, (h, spec), grid, &tuning);
-            if entrant.driver.is_player() {
-                collision.add_car(&tables, &mut car);
-            } else {
-                // Computer cars wait on the grid until their driving is
-                // ported: no collision object, but their zone's effects (the
-                // lap distance their place counts from).
-                tracing::trace!("car {slot}: computer cars (0x80040494, 0x8007c6fc) not yet ported");
-                let zone = collision.scp.zone_at(crate::math::add(car.body.pos, car.body.centre));
-                collision.zone_effects(&mut car, zone, None);
+            if !entrant.driver.is_player() {
+                // A computer car starts on its route's start point
+                // (0x8007c6fc), raised by its ride height along its up axis.
+                let start = line.starts.get(entrant.grid as usize).and_then(|&at| crate::ai::Op::decode(&line.stream, at));
+                if let Some((crate::ai::Op::Point { pos, .. }, _)) = start {
+                    let ride = car.handling.front.ride_height.max(car.handling.rear.ride_height);
+                    let h = car.origin[2].wrapping_add(ride).wrapping_sub(0x2_4000);
+                    let up = crate::math::column(&car.body.rot, 2).map(|c| crate::math::fx(c, h));
+                    car.body.pos = crate::math::sub(crate::math::add(pos, up), car.body.centre);
+                }
+                ai.add(&mut car, &line, entrant.grid as usize, setup.difficulty, setup.laps, &tuning, 0);
             }
+            collision.add_car(&tables, &mut car);
             cars.push(car);
         }
+        // race_load (0x80033304): the collision's first step, then the
+        // rubber band's players.
+        {
+            let mut step = Step { tuning: &tuning, rand: &mut rand, time: 0, clock: 0 };
+            collision.update(&tables, &mut cars, &mut step);
+        }
+        ai.start(&cars, false);
         // The cameras fly over the track first (0x8003ac30); the countdown
         // starts when the flyby ends (0x8003abec).
         let mut cameras: Vec<Camera> =
@@ -248,7 +265,8 @@ impl Race {
             tuning,
             cars,
             collision,
-            rand: Rand::default(),
+            rand,
+            ai,
             time: 0,
             clock: 0,
             cameras,
@@ -533,8 +551,15 @@ impl Race {
             {
                 obj.flags &= !1;
             }
+            if self.cars[slot].state == 1 {
+                let zone = self.collision.objects.iter().find(|o| o.car == Some(slot as u8)).and_then(|o| o.zones.iter().next());
+                if self.ai.car_update(&self.tables, &mut self.cars[slot], zone, dt) {
+                    self.reset_car(slot);
+                    self.ai.reset(&self.cars[slot]);
+                }
+                continue;
+            }
             if self.cars[slot].state != 2 {
-                tracing::trace!("car {slot}: state {} not yet ported", self.cars[slot].state);
                 continue;
             }
             if self.cars[slot].wants_reset() {
@@ -565,7 +590,8 @@ impl Race {
                 self.stunts[slot] = Some(award);
             }
         }
-        tracing::trace!("the computer cars' driving (0x80078ed8, 0x8007937c): not yet ported");
+        self.ai.step(&self.tables, &self.tuning, &self.line.stream, &mut self.cars, STEP_MS, self.time, &mut self.rand);
+        self.ai.handoff(&mut self.cars, &self.tuning);
         self.rank();
         tracing::trace!("the players' 0x8005c9b4: not yet ported");
     }
