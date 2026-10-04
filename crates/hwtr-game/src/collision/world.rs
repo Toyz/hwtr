@@ -26,6 +26,8 @@ pub struct Collision {
     pub computers: RefSet<ObjectId>,
     /// Counts collision steps (0x800d2654).
     pub step: u32,
+    /// This step's contacts with the track (0x8012c6ec, count 0x800d2674).
+    pub contacts: Vec<super::walls::Contact>,
 }
 
 /// Bit 4 of an object's flags: its lead point changed zone.
@@ -163,6 +165,7 @@ pub mod layout {
     use crate::collision::object::layout::read_list;
     use crate::collision::object::{CollisionObject, RefSet};
     use crate::collision::scp::Scp;
+    use crate::collision::walls::Contact;
     use crate::ram::Ram;
 
     pub const SCP: u32 = 0x800d_2658;
@@ -173,6 +176,9 @@ pub mod layout {
     pub const WALLS: u32 = 0x800d_266c;
     pub const COMPUTERS: u32 = 0x800d_2670;
     pub const STEP: u32 = 0x800d_2654;
+    pub const CONTACTS: u32 = 0x8012_c6ec;
+    pub const CONTACT_COUNT: u32 = 0x800d_2674;
+    pub const CONTACT_SIZE: u32 = 40;
 
     /// The SCP's bytes as loaded, and where.
     pub fn scp_bytes(ram: &Ram) -> (u32, Vec<u8>) {
@@ -205,6 +211,17 @@ pub mod layout {
                 walls: set(WALLS),
                 computers: set(COMPUTERS),
                 step: ram.i32(STEP) as u32,
+                contacts: (0..ram.i16(CONTACT_COUNT) as u16 as u32)
+                    .map(|k| {
+                        let at = CONTACTS + k * CONTACT_SIZE;
+                        Contact {
+                            object: id(ram.i32(at) as u32),
+                            point: ram.vec3(at + 4),
+                            normal: ram.vec3(at + 0x14),
+                            surface: ram.u8(at + 0x24),
+                        }
+                    })
+                    .collect(),
             };
             (world, addresses)
         }
@@ -222,14 +239,16 @@ pub mod layout {
 
 impl Collision {
     /// The part of `collision_update` (0x8004de6c) ported so far: the
-    /// points, the zones, the players' wheels, the ground under each car, and
-    /// the effects of the zones cars' lead points entered.
+    /// points, the zones, the players' wheels, the ground under each car, the
+    /// walls, and the effects of the zones cars' lead points entered.
     pub fn update(&mut self, t: &crate::math::Tables, cars: &mut [Car]) {
+        self.contacts.clear();
         self.step = self.step.wrapping_add(1);
         self.update_points(cars);
         self.track_zones(cars);
         self.wheels(t, cars);
         self.ground(t, cars);
+        self.walls(t, cars);
         for id in self.cars.iter().collect::<Vec<_>>() {
             if self.objects[id].flags & ZONE_CHANGED == 0 {
                 continue;

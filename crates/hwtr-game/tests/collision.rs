@@ -237,3 +237,56 @@ fn ground_matches_the_original() {
     }
     assert!(from_wheels > 0 && from_zones > 0, "floors from wheels {from_wheels}, from zones {from_zones}");
 }
+
+#[test]
+fn walls_match_the_original() {
+    use hwtr_game::collision::world::layout::CONTACT_COUNT;
+    let Some(exe) = common::exe() else { return };
+    let t = hwtr_game::math::Tables::from_exe(&exe);
+    let (mut pushed, mut contacts, mut through) = (0, 0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { continue };
+        let (mut world, _) = Collision::read(&Ram(&mut m.bus.ram));
+        let mut cars = cars_from(&mut m.bus.ram);
+        let mut rng = common::Rng(0x3a11_0000_0000_000e);
+        for step in 0..60 {
+            // Shove the cars about, hard enough now and then to go through a
+            // wall, and spin them so their points move every way.
+            for (k, car) in cars.iter_mut().enumerate() {
+                let mut push = [0; 3].map(|_| (rng.word() as i32) >> (11 + rng.below(8)));
+                push[2] = (rng.word() as i32) >> (12 + rng.below(6));
+                car.body.pos = hwtr_game::math::add(car.body.pos, push);
+                car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (8 + rng.below(8)));
+                car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (16 + rng.below(6)));
+                car.body.asleep = 0;
+                car.flags &= !0x3800;
+                car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
+            }
+            world.update_points(&mut cars);
+            world.track_zones(&cars);
+            world.wheels(&t, &mut cars);
+            world.ground(&t, &mut cars);
+            for addr in [0x8004_e47c, 0x8005_15e0, 0x8005_1bc0, 0x8005_36b4] {
+                m.call(addr, &[]).unwrap();
+            }
+            let before: Vec<_> = cars.iter().map(|c| c.body.pos).collect();
+            world.contacts.clear();
+            Ram(&mut m.bus.ram).set_i16(CONTACT_COUNT, 0);
+            world.walls(&t, &mut cars);
+            m.call(0x8005_4964, &[]).unwrap();
+            let (original, _) = Collision::read(&Ram(&mut m.bus.ram));
+            let original_cars = cars_from(&mut m.bus.ram);
+            assert_eq!(original.contacts, world.contacts, "{name} step {step}: contacts");
+            for (k, (a, b)) in original_cars.iter().zip(&cars).enumerate() {
+                assert_eq!(a, b, "{name} step {step}: car {k}");
+            }
+            pushed += original_cars.iter().zip(&before).filter(|(c, p)| c.body.pos != **p).count();
+            contacts += original.contacts.len();
+            through += original_cars.iter().filter(|c| c.flags & 0x800 != 0 || c.body.asleep != 0).count();
+            world = original;
+            cars = original_cars;
+        }
+    }
+    eprintln!("pushed {pushed}, contacts {contacts}, through {through}");
+    assert!(pushed > 0 && contacts > 0 && through > 0, "pushed {pushed}, contacts {contacts}, through {through}");
+}

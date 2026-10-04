@@ -5,6 +5,7 @@ pub mod create;
 pub mod ground;
 pub mod object;
 pub mod scp;
+pub mod walls;
 pub mod wheels;
 pub mod world;
 
