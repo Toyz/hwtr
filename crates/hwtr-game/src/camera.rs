@@ -19,7 +19,7 @@ pub enum ViewMode {
     Mounted,
     /// On a spring behind it.
     Chase,
-    /// Modes 2 to 4 (replays and the like), not yet ported.
+    /// Modes 2 to 4: the trackside cameras (fixed, tracking) and still.
     Other(u8),
 }
 

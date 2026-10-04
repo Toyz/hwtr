@@ -111,6 +111,15 @@ fn main() {
             Ok(())
         })
     });
+    // The other cars as the original's collision step finds them (its
+    // computer cars have moved by then).
+    let at_collision: Rc<RefCell<Vec<Car>>> = Rc::default();
+    let snap = at_collision.clone();
+    hle.m.check(0x8004_de6c, move |_, bus| {
+        let mut copy = bus.ram.clone();
+        *snap.borrow_mut() = cars(&mut copy);
+        Box::new(|_, _| Ok(()))
+    });
     let (mut steps, mut same, mut reported) = (0u32, 0u32, 0u32);
     for f in 0..frames {
         let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut hle.m.bus.ram));
@@ -160,13 +169,24 @@ fn main() {
             endless_turbo: false,
         };
         native[0].update(&mut drive, zone);
+        for (n, o) in native.iter_mut().zip(at_collision.borrow().iter()).skip(1) {
+            *n = o.clone();
+        }
         world.contacts.clear();
+        world.pairs.clear();
         world.step = world.step.wrapping_add(1);
         world.update_points(&mut native);
+        world.find_pairs(&tables, &mut native);
         let mut step = Step { tuning: &tuning, rand: &mut rand, time, clock };
         world.stages(&tables, &mut native, &mut step);
         let at_impulse = native[0].body.clone();
         world.contact_impulses(&tables, &mut native, &mut step);
+        world.pair_impulses(&tables, step.tuning, &mut native, step.rand);
+        // The wheels' roll (+0x80) turns at the frame's end, in the pose
+        // pass (0x80049ecc), not in the step: the original's is taken.
+        for (n, o) in native[0].wheels.iter_mut().zip(&original[0].wheels) {
+            n.angle = o.angle;
+        }
         let d = diff(&original[0], &native[0]);
         if d.is_empty() {
             same += 1;
