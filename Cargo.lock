@@ -666,6 +666,7 @@ name = "hwtr-hle"
 version = "0.1.0"
 dependencies = [
  "hwtr-cpu",
+ "hwtr-data",
  "hwtr-disc",
  "hwtr-game",
  "hwtr-psx",

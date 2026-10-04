@@ -32,6 +32,11 @@ impl Engine {
     }
 }
 
+/// `flag` when the handling's byte `on` is set.
+fn set(on: u8, flag: u8) -> u8 {
+    if on != 0 { flag } else { 0 }
+}
+
 /// The skill a car drives with: its handling's, scaled by the difficulty
 /// into the tuning's range for its kind of driver, at most 4.
 fn skill(base: i32, difficulty: u8, [low, high]: [u8; 2]) -> i32 {
@@ -83,13 +88,10 @@ impl Car {
                 }
                 let flags = if i < 2 {
                     self.front_wheels += 1;
-                    (handling.front_driven != 0) as u8 * Wheel::DRIVEN
-                        | (handling.front_steers != 0) as u8 * Wheel::STEERS
+                    set(handling.front_driven, Wheel::DRIVEN) | set(handling.front_steers, Wheel::STEERS)
                 } else {
                     self.rear_wheels += 1;
-                    Wheel::REAR
-                        | (handling.rear_driven != 0) as u8 * Wheel::DRIVEN
-                        | (handling.rear_steers != 0) as u8 * Wheel::STEERS
+                    Wheel::REAR | set(handling.rear_driven, Wheel::DRIVEN) | set(handling.rear_steers, Wheel::STEERS)
                 };
                 let wheel = Wheel { mount, mount_pad, unknown_10, diameter, flags, ..Wheel::default() };
                 let ride = handling.axle(wheel.is_rear()).ride_height;
