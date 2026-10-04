@@ -2,7 +2,7 @@
 title: Track collision (SCP)
 status: guess
 discs: US
-covers: US <TRACK>.SCP in the 11 track archives; US CCCPSX.EXE:0x8004c084 collision_scp_load, 0x8004c334 collision_load, 0x800515e0, 0x8005cd38
+covers: US <TRACK>.SCP in the 11 track archives; US CCCPSX.EXE:0x8004c084 collision_scp_load, 0x8004c334 collision_load, 0x800515e0, 0x8005cd38, 0x8005a548
 worklog: 12, 15
 ---
 
@@ -24,7 +24,8 @@ All little-endian.
 
 A, a sector, 20 bytes
   +0 u16 flags   +2 u16 group   +4 u8 angle (inferred)   +5 s8[3] origin, units of 256
-  +8 u16   +10 u8 number of planes   +11 u8   +12 u16 first plane in C
+  +8 u16 lap distance, tenths   +10 u8 number of planes   +11 u8 number of fences
+  +12 u16 first plane in C   +14 u16 first fence in D
 C, a plane, 12 bytes
   s16 nx, ny, nz (4.12)   s16 d   u16   u8   u8 (nonzero: skipped)
 ```
@@ -35,8 +36,18 @@ first is (78, -18524, -216), on the checkered line. The orientations read as
 about 172 degrees, so its model's +y (forward) faces down the track; drawn
 that way every car on DESERT1's grid faces the first corner.
 
-A sector is inferred to be a convex volume bounded by its planes. B, D, E
-and F are unexplained.
+A sector is inferred to be a convex volume bounded by its planes. B, E
+and F are unexplained here (F is the flyby; see the port's `scp.rs`).
+
+D, a fence, 20 bytes (0x8005a548)
+  s16 x, y, z centre   s16 along (unit, 4.12)   s16 normal (unit, 4.12)   s16 half length
+
+A fence is a straight barrier inside its sectors: a sign's post, a rail. A
+player's car spanning more than one sector is tested against the fences of
+each (a separating-axis test, 0x8005bcec, then the fence cut to the car's
+box); overlapping, the car is moved out along its box's axis of least
+overlap, and while it moves into the normal the two cut ends become
+contacts, surface 1.
 
 ## Unknown
 

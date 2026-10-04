@@ -25,6 +25,22 @@ pub struct Zone {
     pub distance: u16,
     pub plane_count: u8,
     pub first_plane: u16,
+    /// Its fences: how many, and the first in [`Scp::fences`].
+    pub fence_count: u8,
+    pub first_fence: u16,
+}
+
+/// A fence (table D, 20 bytes): a straight barrier inside a zone, such as a
+/// sign's post or a barrier's rail, from `centre` `half` either way along
+/// `along`; cars are pushed back off it and bounce from its `normal`
+/// (0x8005a548).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Fence {
+    pub centre: Vec3,
+    /// Unit vectors, 4.12.
+    pub along: Vec3,
+    pub normal: Vec3,
+    pub half: i32,
 }
 
 impl Zone {
@@ -107,8 +123,9 @@ pub struct Scp {
     pub zones: Vec<Zone>,
     pub sections: Vec<Section>,
     pub planes: Vec<Plane>,
-    /// Tables D (20 bytes each) and E (12), not yet understood.
-    pub d: Vec<[u8; 20]>,
+    /// The zones' fences (table D).
+    pub fences: Vec<Fence>,
+    /// Table E (12 bytes each), not yet understood.
     pub e: Vec<[u8; 12]>,
     /// The camera's path over the track before a race (0x8003acbc).
     pub flyby: Vec<Keyframe>,
@@ -152,6 +169,8 @@ impl Scp {
                 distance: u16_at(z + 8),
                 plane_count: b[z + 10],
                 first_plane: u16_at(z + 12),
+                fence_count: b[z + 11],
+                first_fence: u16_at(z + 14),
             })
             .collect();
         let edge = |e: usize| EdgePoint {
@@ -167,7 +186,17 @@ impl Scp {
                 kind: b[p + 10],
             })
             .collect();
-        let d = table(3).map(|o| b[o..o + 20].try_into().unwrap()).collect();
+        let fences = table(3)
+            .map(|o| {
+                let v = |at: usize| [i16_at(at), i16_at(at + 2), i16_at(at + 4)].map(|c| c as i32);
+                Fence {
+                    centre: v(o).map(|c| c << 12),
+                    along: v(o + 6),
+                    normal: v(o + 12),
+                    half: (i16_at(o + 18) as i32) << 12,
+                }
+            })
+            .collect();
         let e = table(4).map(|o| b[o..o + 12].try_into().unwrap()).collect();
         let flyby = table(5)
             .map(|o| Keyframe {
@@ -179,7 +208,7 @@ impl Scp {
             let (p, q) = (24 + 16 * k, 120 + 16 * k);
             ([i32_at(p), i32_at(p + 4), i32_at(p + 8)], [i32_at(q), i32_at(q + 4), i32_at(q + 8), i32_at(q + 12)])
         });
-        Some(Scp { grid, zones, sections, planes, d, e, flyby })
+        Some(Scp { grid, zones, sections, planes, fences, e, flyby })
     }
 
     /// The planes bounding `zone`.

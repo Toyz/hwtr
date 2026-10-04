@@ -3,6 +3,7 @@
 
 pub mod camera;
 pub mod create;
+pub mod fences;
 pub mod ground;
 pub mod object;
 pub mod scp;

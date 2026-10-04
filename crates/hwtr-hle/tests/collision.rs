@@ -349,3 +349,56 @@ fn contact_impulses_match_the_original() {
     // (seen in 0x8006dc08's argument during a race).
     assert_eq!(hwtr_game::collision::walls::contact_friction(&t, 2, false), 0x400);
 }
+
+#[test]
+fn fences_match_the_original() {
+    use hwtr_hle::original::world::CONTACT_COUNT;
+    let Some(exe) = common::exe() else { return };
+    let (mut pushed, mut contacts, mut tried) = (0, 0, 0);
+    let mut rng = common::Rng(0xfe9c_0000_0000_0001);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { continue };
+        let start = m.bus.ram.clone();
+        let scp = scp_from(&mut m.bus.ram);
+        // The fences the zones use.
+        let used: Vec<usize> = scp
+            .zones
+            .iter()
+            .flat_map(|z| z.first_fence as usize..z.first_fence as usize + z.fence_count as usize)
+            .filter(|&k| k < scp.fences.len())
+            .collect();
+        assert!(!used.is_empty(), "{name}: no fences");
+        for round in 0..300 {
+            m.bus.ram.copy_from_slice(&start);
+            // The player's car on or near a fence, moving any way.
+            let f = scp.fences[used[rng.below(used.len() as u32) as usize]];
+            let mut cars = cars_from(&mut m.bus.ram);
+            let car = &mut cars[0];
+            let off = [0; 3].map(|_| (rng.word() as i32) >> (13 + rng.below(6)));
+            car.body.pos = [0, 1, 2].map(|i| f.centre[i].wrapping_sub(car.body.centre[i]).wrapping_add(off[i]));
+            car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (8 + rng.below(8)));
+            car.body.asleep = false;
+            car.write(&mut Ram(&mut m.bus.ram), CARS);
+            // Into the fence's zone, then tracked from there.
+            m.call(0x8004_c5f4, &[CARS, scp.zone_at(f.centre) as u32]).unwrap();
+            for addr in [0x8004_e47c, 0x8005_15e0] {
+                m.call(addr, &[]).unwrap();
+            }
+            Ram(&mut m.bus.ram).set_i16(CONTACT_COUNT, 0);
+            let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+            let mut cars = cars_from(&mut m.bus.ram);
+            let before = cars[0].body.pos;
+            world.fences(&mut cars);
+            m.call(0x8005_a4cc, &[]).unwrap();
+            let (original, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+            let original_cars = cars_from(&mut m.bus.ram);
+            assert_eq!(original.contacts, world.contacts, "{name} round {round}: contacts");
+            assert_eq!(original_cars[0], cars[0], "{name} round {round}: the car");
+            tried += (original.objects.iter().find(|o| o.car == Some(0)).unwrap().zones.entries.len() > 1) as u32;
+            pushed += (original_cars[0].body.pos != before) as u32;
+            contacts += original.contacts.len();
+        }
+    }
+    eprintln!("across zones {tried}, pushed {pushed}, contacts {contacts}");
+    assert!(pushed > 10 && contacts > 10, "across zones {tried}, pushed {pushed}, contacts {contacts}");
+}

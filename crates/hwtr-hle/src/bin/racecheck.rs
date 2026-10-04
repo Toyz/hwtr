@@ -132,6 +132,9 @@ fn main() {
         let (o, n) = (&original[0], &mut native[0]);
         (n.steer, n.accel, n.brake, n.stick, n.handbrake) = (o.steer, o.accel, o.brake, o.stick, o.handbrake);
         (n.reset_held, n.turbo_held) = (o.reset_held, o.turbo_held);
+        // The places are ranked over every car, computer cars too, after
+        // the cars' update (not checked here).
+        n.laps.place = o.laps.place;
         // cars_update for the player's car: its timers, then car_update
         // (a reset needs the whole race, and is only reported).
         n.run_timers(25);
