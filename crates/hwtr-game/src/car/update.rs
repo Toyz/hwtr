@@ -110,6 +110,58 @@ impl Car {
         true
     }
 
+    /// 0x80049a8c: a boost pad. Faster than 2 mph and more than 5 short of
+    /// 130, the car's momentum is scaled to 130 mph; a car not boosting
+    /// already is boosted, a player's with the turbo's sound.
+    pub fn boost_pad(&mut self) {
+        let top = mph(130);
+        let speed = self.body.speed;
+        if top.wrapping_sub(speed) < mph(5) || speed < mph(2) {
+            return;
+        }
+        let scale = div_fx(top, speed);
+        self.body.momentum = self.body.momentum.map(|c| fx(c, scale));
+        if self.boost.is_none() {
+            if self.flags & 1 != 0 {
+                self.sound(1, 1);
+            }
+            self.turbo_fired.0 = Some(());
+            self.boost = Some(top);
+            self.body.speed = top;
+        }
+    }
+
+    /// 0x80048fa4: a launcher, throwing a car faster than 2 mph and going
+    /// its way along `heading` (256ths of a turn about the vertical) at
+    /// `speed_mph` (130 for 0). With all its wheels down and facing that
+    /// way, the car is also turned level onto it. A player's sounds
+    /// (effect 45), and the car is boosted.
+    pub fn launch(&mut self, t: &Tables, speed_mph: u16, heading: u8) {
+        let target = if speed_mph != 0 { mph(speed_mph as i32) } else { mph(130) };
+        if self.body.speed < mph(2) {
+            return;
+        }
+        let degrees = ((heading as u32 * 360) >> 8) as i32;
+        let angle = fx(degrees << 12, 12868) / 180;
+        let (s, c) = (t.sin(angle), t.cos(angle));
+        let way = [c, s, 0];
+        if dot(self.body.vel, way) < 0 {
+            return;
+        }
+        if self.grounded == self.wheels.len() as u8 && dot(column(&self.body.rot, 1), way) > 0 {
+            let (s, c) = (s as i16, c as i16);
+            self.body.rot = [[s, c, 0], [c.wrapping_neg(), s, 0], [0, 0, 0x1000]];
+        }
+        let push = fx(target, self.body.mass);
+        self.body.momentum = way.map(|v| fx(v, push));
+        if self.flags & 1 != 0 {
+            self.sound(45, 1);
+        }
+        self.turbo_fired.0 = Some(());
+        self.boost = Some(target);
+        self.body.speed = target;
+    }
+
     /// The rest of `car_update` once any reset is done: the turbo button,
     /// the respawn point saved while driving well, the strong brakes, the
     /// forces, the air control, the step's motion, the stunt watch, the

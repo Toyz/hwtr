@@ -82,7 +82,7 @@ impl Collision {
         }
         self.cars.add(id);
         for &z in &zones {
-            self.zone_effects(car, z, None);
+            self.zone_effects(t, car, z, None);
         }
         id
     }
@@ -200,8 +200,16 @@ impl Collision {
     /// straight down unless the zone keeps it) and strength (scaled by the
     /// zone's parameter where it says so). A checkpoint zone counts toward
     /// the car's laps when the car drove in, at race time `driven` (not when
-    /// it is put there). Power-ups and special zones are not yet ported.
-    pub fn zone_effects(&self, car: &mut Car, zone: u16, driven: Option<u32>) -> Option<crate::laps::LapEvent> {
+    /// it is put there). A driven car is sped up by a boost pad (flags
+    /// 0x4800) or thrown by a launcher (0x4000 alone). Trigger zones (flag
+    /// 2, 0x8006a200) are not yet ported.
+    pub fn zone_effects(
+        &self,
+        t: &crate::math::Tables,
+        car: &mut Car,
+        zone: u16,
+        driven: Option<u32>,
+    ) -> Option<crate::laps::LapEvent> {
         if car.wrecked {
             return None;
         }
@@ -247,10 +255,14 @@ impl Collision {
         }
         car.body.gravity = if f & 0x20 != 0 { fx(0x18_2000, div((z.param as i32) << 12, 256).0) } else { 0x18_2000 };
         if f & 0x4000 != 0 && car.state == 2 {
-            tracing::trace!("zone {zone}: special zone (not yet ported)");
+            if f & 0x800 != 0 {
+                car.boost_pad();
+            } else {
+                car.launch(t, z.param, z.surface);
+            }
         }
         if f & 2 != 0 {
-            tracing::trace!("zone {zone}: power-up {} (not yet ported)", z.param);
+            tracing::trace!("zone {zone}: trigger {} (0x8006a200, not yet ported)", z.param);
         }
         event
     }
@@ -259,7 +271,7 @@ impl Collision {
 impl Collision {
     /// 0x8004c5f4: puts all of car `slot`'s object's points in `zone`
     /// (leaving their old zones), then applies the zone as at the start.
-    pub fn move_to_zone(&mut self, slot: u8, zone: u16, car: &mut Car) {
+    pub fn move_to_zone(&mut self, t: &crate::math::Tables, slot: u8, zone: u16, car: &mut Car) {
         let Some(id) = self.objects.iter().position(|o| o.car == Some(slot)) else { return };
         for k in 0..self.objects[id].point_zones.len() {
             let old = self.objects[id].point_zones[k];
@@ -271,6 +283,6 @@ impl Collision {
             self.members[zone as usize].add(id);
             self.objects[id].zones.add(zone);
         }
-        self.zone_effects(car, zone, None);
+        self.zone_effects(t, car, zone, None);
     }
 }

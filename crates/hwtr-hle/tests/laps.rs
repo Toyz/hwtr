@@ -93,6 +93,7 @@ fn passing_checkpoints_matches_the_original() {
 #[test]
 fn zone_effects_match_the_original() {
     let Some(exe) = common::exe() else { return };
+    let t = Tables::from_exe(&exe);
     let mut rng = common::Rng(0x2e0e_0000_0000_0002);
     let mut ahead = 0;
     for name in STATES {
@@ -100,7 +101,8 @@ fn zone_effects_match_the_original() {
         let start = m.bus.ram.clone();
         let (world, addresses) = collision(&Ram(&mut m.bus.ram));
         let id = world.objects.iter().position(|o| o.car == Some(0)).expect("the player's object");
-        // Not the power-ups and special zones, which are not yet ported.
+        // Not the trigger zones (not yet ported) nor the special zones
+        // (their own test).
         let zones: Vec<u16> =
             (0..world.scp.zones.len() as u16).filter(|&z| world.scp.zones[z as usize].flags & 0x4002 == 0).collect();
         for round in 0..600 {
@@ -117,7 +119,7 @@ fn zone_effects_match_the_original() {
                 ram.set_i32(TIME, time as i32);
             }
             let mut car = Car::read(&Ram(&mut m.bus.ram), CARS);
-            world.zone_effects(&mut car, zone, driven.then_some(time));
+            world.zone_effects(&t, &mut car, zone, driven.then_some(time));
             m.call(0x8005_c3a4, &[addresses[id], zone as u32, !driven as u32]).unwrap();
             let original = Car::read(&Ram(&mut m.bus.ram), CARS);
             assert_eq!(original, car, "{name} round {round}: zone {zone} {:?}", world.scp.zones[zone as usize]);
@@ -125,4 +127,78 @@ fn zone_effects_match_the_original() {
         }
     }
     assert!(ahead > 0, "no zone was on the lap ahead");
+}
+
+/// The special zones (flag 0x4000): the desert's launchers as they are,
+/// and road zones made boost pads (0x4800) in memory, a driving car
+/// entering them at any speed and heading, every wheel down or not.
+#[test]
+fn boost_pads_and_launchers_match_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let t = hwtr_game::math::Tables::from_exe(&exe);
+    let mut rng = common::Rng(0xb005_7ad5);
+    let (mut launched, mut boosted) = (0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let (world, addresses) = collision(&Ram(&mut m.bus.ram));
+        let id = world.objects.iter().position(|o| o.car == Some(0)).expect("the player's object");
+        let launchers: Vec<u16> = (0..world.scp.zones.len() as u16)
+            .filter(|&z| world.scp.zones[z as usize].flags & 0x4800 == 0x4000)
+            .collect();
+        assert!(!launchers.is_empty(), "{name}: launchers");
+        // Some plain zones made pads.
+        let plain: Vec<u16> = (0..world.scp.zones.len() as u16)
+            .filter(|&z| world.scp.zones[z as usize].flags & 0x4802 == 0)
+            .step_by(37)
+            .collect();
+        {
+            let mut ram = Ram(&mut m.bus.ram);
+            let zones = ram.i32(ram.i32(hwtr_hle::original::world::SCP) as u32 + 216) as u32;
+            for &z in &plain {
+                let at = zones + 20 * z as u32;
+                ram.set_i16(at, (ram.i16(at) as u16 | 0x4800) as i16);
+            }
+        }
+        let start = m.bus.ram.clone();
+        let (world, _) = collision(&Ram(&mut m.bus.ram));
+        for round in 0..800 {
+            m.bus.ram.copy_from_slice(&start);
+            let pad = rng.below(2) == 0;
+            let zone = if pad {
+                plain[rng.below(plain.len() as u32) as usize]
+            } else {
+                launchers[rng.below(launchers.len() as u32) as usize]
+            };
+            let mut car = Car::read(&Ram(&mut m.bus.ram), CARS);
+            car.state = 2;
+            car.wrecked = false;
+            let size = [1 << 14, 1 << 18, 1 << 20, 1 << 22][rng.below(4) as usize];
+            car.body.vel = std::array::from_fn(|_| rng.below(2 * size) as i32 - size as i32);
+            car.body.speed = t.length(car.body.vel);
+            car.body.momentum = car.body.vel.map(|c| hwtr_game::math::fx(c, car.body.mass));
+            car.boost = (rng.below(3) == 0).then(|| 0x8_2000);
+            car.grounded =
+                if rng.below(2) == 0 { car.wheels.len() as u8 } else { rng.below(car.wheels.len() as u32) as u8 };
+            if rng.below(2) == 0 {
+                // Facing any way about the vertical.
+                let a = rng.below(25736) as i32;
+                let (s, c) = (t.sin(a) as i16, t.cos(a) as i16);
+                car.body.rot = [[c, s.wrapping_neg(), 0], [s, c, 0], [0, 0, 0x1000]];
+            }
+            Ram(&mut m.bus.ram).set_i32(TIME, 0);
+            car.write(&mut Ram(&mut m.bus.ram), CARS);
+            let mut car = Car::read(&Ram(&mut m.bus.ram), CARS);
+            world.zone_effects(&t, &mut car, zone, None);
+            m.call(0x8005_c3a4, &[addresses[id], zone as u32, 1]).unwrap();
+            let mut original = Car::read(&Ram(&mut m.bus.ram), CARS);
+            // The effects' asks are the port's own.
+            original.sounds = car.sounds.clone();
+            original.turbo_fired = car.turbo_fired.clone();
+            assert_eq!(original, car, "{name} round {round}: zone {zone} {:?}", world.scp.zones[zone as usize]);
+            if car.boost.is_some() {
+                if pad { boosted += 1 } else { launched += 1 }
+            }
+        }
+    }
+    assert!(launched > 200 && boosted > 200, "{launched} launched, {boosted} boosted");
 }

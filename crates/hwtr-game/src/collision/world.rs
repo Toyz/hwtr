@@ -248,7 +248,7 @@ impl Collision {
             }
             if let Some(slot) = self.objects[id].car {
                 let zone = self.objects[id].point_zones[0];
-                if let Some(event) = self.zone_effects(&mut cars[slot as usize], zone, Some(step.time)) {
+                if let Some(event) = self.zone_effects(t, &mut cars[slot as usize], zone, Some(step.time)) {
                     self.lap_events.push((slot, event));
                 }
             }

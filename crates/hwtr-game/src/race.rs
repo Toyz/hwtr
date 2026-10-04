@@ -622,7 +622,7 @@ impl Race {
         body.spin = [0; 3];
         body.force = [0; 3];
         if let Some(zone) = car.respawn.zone {
-            self.collision.move_to_zone(slot as u8, zone, car);
+            self.collision.move_to_zone(&self.tables, slot as u8, zone, car);
         }
         car.airborne = false;
         if car.flags & 1 != 0
