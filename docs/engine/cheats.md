@@ -2,8 +2,8 @@
 title: Cheats (the button codes and the race options)
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8007f87c code_apply, 0x8007f710 cheat_code, 0x8007f79c car_code, 0x800bee6c cheat_codes, 0x800d1004 car_codes, 0x80088370 car_name_to_id, 0x80086ad0 code_press, 0x80086a70 codes_clear, 0x80086aa0 codes_clear_2, 0x80136c70 codes, 0x8008cff4 menu_pad, 0x8008d12c menu_pad_2, 0x80013ff8 cheat_on, 0x80013f00 race_setup_apply, 0x800d2468 cheats, 0x80021888 car_bind_state, 0x80022064 car_draw, 0x80022cd0 fxp_parse, 0x8002bdb4 effects_init, 0x80012864
-worklog: 84, 85, 86
+covers: US CCCPSX.EXE:0x8007f87c code_apply, 0x8007f710 cheat_code, 0x8007f79c car_code, 0x800bee6c cheat_codes, 0x800d1004 car_codes, 0x80088370 car_name_to_id, 0x80086ad0 code_press, 0x80086a70 codes_clear, 0x80086aa0 codes_clear_2, 0x80136c70 codes, 0x8008cff4 menu_pad, 0x8008d12c menu_pad_2, 0x80013ff8 cheat_on, 0x80013f00 race_setup_apply, 0x800d2468 cheats, 0x80021888 car_bind_state, 0x80022064 car_draw, 0x80022cd0 fxp_parse, 0x8002bdb4 effects_init, 0x80012a10 tim_upload, 0x800d244c tim_fill_on
+worklog: 84, 85, 86, 87
 ---
 
 # Cheats
@@ -46,7 +46,7 @@ On a match the menu plays effect 52 and fills the eight with spaces
 | --- | --- |
 | 77777777 | cheat 1 |
 | 16522561 | cheat 4: small cars |
-| 34563456 | cheat 8: flat textures |
+| 34563456 | cheat 8: flat cars |
 | 64561234 | cheat 16: the DUDE sounds |
 | 12124455 | cheat 32: big wheels |
 | 63124536 | cheat 64 |
@@ -62,7 +62,7 @@ Slots 1 and 7 to 9 hold 77777777 too, so slot 0 always wins. **Cheats 2,
 | 1 | nothing found: no `cheat_on(1)`, and no other read of the bit | |
 | 2 | (cannot be had) a model scale of 2, the scaled draws below, and the effects turned off under 2 or 4 | |
 | 4 | **small cars**: a third of the size (below) | |
-| 8 | **flat textures**: each track texture is filled with its first texel as it loads | 0x80012ac4 |
+| 8 | **flat cars**: each car's skin is one colour, its first texel's | 0x80012ac4 |
 | 16 | **the DUDE sounds**: the race's effects bank is DUDE, every effect one of its eight tones | [race sound](race-sound.md) |
 | 32 | **big wheels**: wheels twice the diameter, and drawn twice the size; glows and headlight beams twice as big | |
 | 64 | nothing found: no `cheat_on(64)` | |
@@ -124,7 +124,26 @@ drawn by the app's renderer, so its scale is not checked against hle.
 
 `hwtr --track NAME --cheats BITS` races under cheats directly.
 
-Not ported: the flat textures (8).
+**The flat cars (8).** `tim_upload` (0x80012a10) fills the image with
+its first byte before LoadImage when all of these hold:
+
+- its fill is on (0x800d244c; off only around SFX.GLM and one sprite
+  upload)
+- cheat 8
+- the caller's last argument is 0
+
+Only two uploads pass 0, both of a car's skin: car_load_race's
+(0x80021c74) and 0x80023aa8's. So the cars go one colour each. The
+track's textures go up through glm_load's own LoadImage and are not
+touched. The fill counts bytes from the image's halfwords: 4-bit (the
+first texel's nibble twice) and 8-bit fill the whole image, 16-bit only
+its first half. The skins go up as 8-bit.
+
+`car::draw::flat_skin` is the fill. The app puts each car's flattened
+skin in place under cheat 8. `the_flat_cars_fill_as_the_original` (hle
+tests/tim_upload.rs) runs tim_upload on the Deora's skin at each depth,
+with the cheat, the fill and the keep argument on and off, and compares
+the image it leaves.
 
 ## Unknown
 

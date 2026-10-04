@@ -108,6 +108,26 @@ pub fn scale_columns(m: &Matrix, s: i32) -> Matrix {
     m.map(|row| row.map(|v| fx(v as i32, s).clamp(-0x8000, 0x7fff) as i16))
 }
 
+/// tim_upload (0x80012a10) under cheat 8, the flat cars: a car's skin
+/// (`data`, its image's halfwords) filled with its first byte, so every
+/// texel is the first one's colour. `depth` is the upload's: 0 for 4-bit
+/// (the first texel's nibble fills both halves of each byte), 1 for 8-bit;
+/// any other fills only the first half of the image, as the fill counts
+/// halfwords as bytes. The cars' skins go up as 8-bit.
+pub fn flat_skin(data: &mut [u16], depth: u32) {
+    let Some(&first) = data.first() else { return };
+    let mut b = first as u8;
+    if depth == 0 {
+        b = (b & 15) | (b & 15) << 4;
+    }
+    let bytes = if depth <= 1 { 2 * data.len() } else { data.len() };
+    let fill = u16::from_le_bytes([b, b]);
+    data[..bytes / 2].fill(fill);
+    if bytes % 2 == 1 {
+        data[bytes / 2] = (data[bytes / 2] & 0xff00) | b as u16;
+    }
+}
+
 /// How far each car's shadow reaches (0x800be00c, by car id): out past its
 /// rear right wheel's tyre, in from its half length, and along.
 pub const SHADOW_TABLE: u32 = 0x800b_e00c;

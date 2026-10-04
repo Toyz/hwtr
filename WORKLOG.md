@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-86 entries: audio 11, bug 1, build 3, content 5, decomp 8, design 3, disc 1, engine 6, format 7, input 10, physics 14, race 11, render 21, test 16, tooling 16, ui 14, video 1.
+87 entries: audio 11, bug 1, build 3, content 5, decomp 8, design 3, disc 1, engine 6, format 7, input 10, physics 14, race 11, render 22, test 16, tooling 16, ui 14, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -98,3 +98,4 @@ The [reference](docs/README.md) says what is true now.
 | 84 | [Cheat 16's DUDE bank and its effects table](worklog/0084-cheat-16-s-dude-bank-and-its-effects-table.md) | 2026-10-04 | audio |
 | 85 | [Button codes and the cheats they give](worklog/0085-button-codes-and-the-cheats-they-give.md) | 2026-10-04 | ui |
 | 86 | [The scale cheats in the car's draws](worklog/0086-the-scale-cheats-in-the-car-s-draws.md) | 2026-10-04 | render |
+| 87 | [Cheat 8 paints each car one colour](worklog/0087-cheat-8-paints-each-car-one-colour.md) | 2026-10-04 | render |

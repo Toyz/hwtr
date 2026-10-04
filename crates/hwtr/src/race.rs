@@ -368,6 +368,16 @@ impl Race {
         let big = hwtr_data::Big::parse(&big).map_err(|e| e.to_string())?;
         let t = track.clone();
         let get = |name: &str| big.lookup(&format!("{t}BIG/{name}")).ok_or(format!("{name} is not in {t}.BIG"));
+        // Cheat 8 (tim_upload, 0x80012a10): each car's skin goes up in its
+        // first texel's colour.
+        if setup.options & 8 != 0 {
+            for (slot, name) in cars.iter().take(scene.cars.len()).enumerate() {
+                let bytes = get(&format!("{}TIM", name.to_uppercase()))?;
+                let mut tim = hwtr_data::Tim::parse(bytes).map_err(|e| e.to_string())?;
+                hwtr_game::car::draw::flat_skin(&mut tim.data, 1);
+                hwtr_render::mesh::place_car_texture(&mut scene.vram, &tim, slot);
+            }
+        }
         let scp = Scp::parse(get(&format!("{t}SCP"))?).ok_or("the SCP does not parse")?;
         let tuning = Tuning::from_prm(get("TUNINGPRM")?);
         let mut parts = Vec::new();
