@@ -37,11 +37,7 @@ impl Collision {
             let mut touch: Vec<Touch> = car
                 .wheels
                 .iter()
-                .map(|w| Touch {
-                    depth: car.extension[w.rear as usize].wrapping_neg(),
-                    normal: [0; 3],
-                    surface: 0,
-                })
+                .map(|w| Touch { depth: car.extension[w.rear as usize].wrapping_neg(), normal: [0; 3], surface: 0 })
                 .collect();
             // Road zones.
             for zone_id in obj.zones.iter() {

@@ -235,7 +235,8 @@ impl Front {
             let (x, choose_x) = if k == 0 { (240, 175) } else { (510, 600) };
             let (top, end) = (self.controls.top[k], self.controls.end[k]);
             for (i, row) in (top..end).enumerate() {
-                let name = if row == 0 { "Vibration".to_string() } else { self.strings.get(69 + row as usize).to_string() };
+                let name =
+                    if row == 0 { "Vibration".to_string() } else { self.strings.get(69 + row as usize).to_string() };
                 let y = 196 + 39 * i as i16;
                 self.set_text(LISTS[k], i, &name, x, y, 0, 0, true, 1, [127; 3]);
                 self.set_text(CHOOSING[k], i, "", choose_x, y, 0, 0, true, 1, [127; 3]);
@@ -288,7 +289,12 @@ impl Front {
                     self.control_names.icons.iter().find(|(n, _)| *n == name).map(|(_, m)| m.clone())
                 };
                 if let Some(model) = model {
-                    self.drawing_pieces.push(PieceDraw { model, pos: [screen::world_x(x), screen::world_y(y), 0], turn: [0; 3], scale: 4096 });
+                    self.drawing_pieces.push(PieceDraw {
+                        model,
+                        pos: [screen::world_x(x), screen::world_y(y), 0],
+                        turn: [0; 3],
+                        scale: 4096,
+                    });
                 }
             }
         }
@@ -401,7 +407,8 @@ impl Front {
             for j in i + 1..ACTIONS {
                 for k in 0..self.people.min(2) as usize {
                     if self.button_name(k, i) == self.button_name(k, j) && self.control_names.shares[i] as usize != j {
-                        self.controls.clash = (self.strings.get(70 + i).to_string(), self.strings.get(70 + j).to_string());
+                        self.controls.clash =
+                            (self.strings.get(70 + i).to_string(), self.strings.get(70 + j).to_string());
                         return true;
                     }
                 }

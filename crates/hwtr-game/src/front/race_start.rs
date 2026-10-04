@@ -123,7 +123,10 @@ impl Front {
             let world = self.rand.below(4) as u8;
             let number = self.rand.below(3) as u8 + 1;
             let t = world * 3 + number - 1;
-            if self.track_open(t) && self.tables.track_files.get(t as usize).is_some_and(Option::is_some) && !(9..12).contains(&t) {
+            if self.track_open(t)
+                && self.tables.track_files.get(t as usize).is_some_and(Option::is_some)
+                && !(9..12).contains(&t)
+            {
                 break (world, number);
             }
         };
@@ -146,7 +149,13 @@ impl Front {
                 free[c as usize] = false;
                 // The original leaves the car's number as the last race
                 // had it; the port gives the car's own.
-                cars.push(Entrant { name: file(c as u8), driver: Driver::Computer, car_id: c as u8, player: 0, grid: k });
+                cars.push(Entrant {
+                    name: file(c as u8),
+                    driver: Driver::Computer,
+                    car_id: c as u8,
+                    player: 0,
+                    grid: k,
+                });
             }
             if self.field_fair(&cars) {
                 break;
@@ -184,7 +193,8 @@ impl Front {
         let world = (p0.track / 3) as usize;
         let number = p0.track % 3 + 1;
         let file = |c: u8| self.tables.car_files.get(c as usize).cloned().flatten().unwrap_or_default();
-        let mut cars = vec![Entrant { name: file(p0.car), driver: Driver::PlayerOne, car_id: p0.car, player: 0, grid: 0 }];
+        let mut cars =
+            vec![Entrant { name: file(p0.car), driver: Driver::PlayerOne, car_id: p0.car, player: 0, grid: 0 }];
         if self.people == 2 {
             cars.push(Entrant { name: file(p1.car), driver: Driver::PlayerOne, car_id: p1.car, player: 1, grid: 1 });
         }

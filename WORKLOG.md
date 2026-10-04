@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-47 entries: audio 4, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 3, format 7, input 8, physics 9, race 9, render 12, test 14, tooling 13, ui 9, video 1.
+48 entries: audio 5, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 3, format 7, input 8, physics 9, race 9, render 12, test 14, tooling 13, ui 9, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -59,3 +59,4 @@ The [reference](docs/README.md) says what is true now.
 | 45 | [Dust, skid marks and sparks; semi-transparent drawing](worklog/0045-dust-skid-marks-and-sparks-semi-transparent-drawing.md) | 2026-10-04 | render |
 | 46 | [Wreck smoke, embers and flying faces; knocked props' debris](worklog/0046-wreck-smoke-embers-and-flying-faces-knocked-props-debris.md) | 2026-10-04 | render |
 | 47 | [The boost flame and the car's colour pulse](worklog/0047-the-boost-flame-and-the-car-s-colour-pulse.md) | 2026-10-04 | render |
+| 48 | [Hits and tyres heard: impacts, scrapes, crashes, rolling and skidding](worklog/0048-hits-and-tyres-heard-impacts-scrapes-crashes-rolling-and.md) | 2026-10-04 | audio |

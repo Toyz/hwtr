@@ -28,7 +28,8 @@ impl Scroller {
         let word = |a: u32| i32::from_le_bytes([byte(a), byte(a + 1), byte(a + 2), byte(a + 3)]);
         let text = |a: u32| (0..80).map(|k| byte(a + k)).take_while(|&b| b != 0).map(char::from).collect::<String>();
         let (list, count) = (word(at) as u32, word(at + 0x1c));
-        let lines = (0..count.max(0) as u32).map(|k| (byte(list + 8 * k) == 0, text(word(list + 8 * k + 4) as u32))).collect();
+        let lines =
+            (0..count.max(0) as u32).map(|k| (byte(list + 8 * k) == 0, text(word(list + 8 * k + 4) as u32))).collect();
         Scroller {
             lines,
             left: word(at + 4),
@@ -104,7 +105,9 @@ impl Front {
             y = (s.pos >> 12) + 24 * i as i32;
             if s.top < y && y < s.bottom {
                 let b = text.as_bytes();
-                let width: i32 = (0..b.len()).map(|i| if i + 1 < b.len() { self.font.advance(b[i], b[i + 1]) } else { self.font.last(b[i]) }).sum();
+                let width: i32 = (0..b.len())
+                    .map(|i| if i + 1 < b.len() { self.font.advance(b[i], b[i + 1]) } else { self.font.last(b[i]) })
+                    .sum();
                 let mut x = (s.left + s.right) / 2 - width / 2;
                 let shade = if *bright { 255 } else { 170 };
                 for i in 0..b.len() {

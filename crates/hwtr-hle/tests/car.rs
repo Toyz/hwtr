@@ -2,11 +2,11 @@
 
 mod common;
 
-use hwtr_hle::original::InMemory;
-use hwtr_hle::original::car::{self as car, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS};
 use hwtr_game::car::{Car, Tuning};
 use hwtr_game::math::{Tables, div_fx, fx};
+use hwtr_hle::original::InMemory;
 use hwtr_hle::original::Ram;
+use hwtr_hle::original::car::{self as car, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS};
 
 /// Runs `f` on the car at `at`, read out of `ram` and written back.
 fn on_car<R>(ram: &mut [u8], at: u32, f: impl FnOnce(&mut Car, &Tuning) -> R) -> R {
@@ -402,7 +402,8 @@ fn righting_matches_the_original() {
                 car.air_armed = hwtr_game::car::Armed { along: rng.below(2) != 0, across: rng.below(2) != 0 };
                 car.air_lock.active = rng.below(2) != 0;
                 if round % 25 != 0 {
-                    let perm = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]][rng.below(6) as usize];
+                    let perm =
+                        [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]][rng.below(6) as usize];
                     let signs = [0, 1, 2].map(|_| if rng.below(2) == 0 { 1i16 } else { -1 });
                     let mut rot = [[0i16; 3]; 3];
                     for (j, &i) in perm.iter().enumerate() {
@@ -514,14 +515,30 @@ fn stunt_awards_match_the_original() {
         m.bus.write_u32(out + 4, 0);
         m.call(
             0x8008_0148,
-            &[args[0] as u32, args[1] as u32, args[2] as u32, args[3] as u32, args[4] as u32, args[5] as u32, aloft, out, out + 4, out + 8],
+            &[
+                args[0] as u32,
+                args[1] as u32,
+                args[2] as u32,
+                args[3] as u32,
+                args[4] as u32,
+                args[5] as u32,
+                aloft,
+                out,
+                out + 4,
+                out + 8,
+            ],
         )
         .unwrap();
-        let (turbos, stunt, points) = (m.bus.read_u32(out) as u8, m.bus.read_u32(out + 4) as u16, m.bus.read_u32(out + 8) as i32);
+        let (turbos, stunt, points) =
+            (m.bus.read_u32(out) as u8, m.bus.read_u32(out + 4) as u16, m.bus.read_u32(out + 8) as i32);
         let ported = award(&t.stunts, (args[0], args[1]), (args[2], args[3]), (args[4], args[5]), aloft);
         match ported {
             Some(a) => {
-                assert_eq!((a.points, a.stunt, a.turbos), (points, stunt, turbos), "round {round}: {args:?} aloft {aloft}");
+                assert_eq!(
+                    (a.points, a.stunt, a.turbos),
+                    (points, stunt, turbos),
+                    "round {round}: {args:?} aloft {aloft}"
+                );
                 named.insert(a.stunt);
             }
             None => assert_eq!((points, turbos), (0, 0), "round {round}: {args:?} aloft {aloft}"),

@@ -144,7 +144,12 @@ impl PowerUps {
     /// its name gives loaded once ("Random" loads none), for `cars` cars;
     /// `unlockable` the track's two cars (the tables at 0x800c5cd0 and
     /// 0x800c5cdc).
-    pub fn new(spots: &[(String, Vec3, Option<usize>)], defs: Vec<PowerUp>, cars: usize, unlockable: [u8; 2]) -> PowerUps {
+    pub fn new(
+        spots: &[(String, Vec3, Option<usize>)],
+        defs: Vec<PowerUp>,
+        cars: usize,
+        unlockable: [u8; 2],
+    ) -> PowerUps {
         let pickups = spots
             .iter()
             .enumerate()
@@ -191,7 +196,12 @@ impl PowerUps {
             return None;
         }
         let def = self.power_up_for(pickup, pick)?;
-        tracing::debug!("car {} took pickup {pickup} ({}): {}", car.slot, self.pickups[pickup].name, self.defs[def].name);
+        tracing::debug!(
+            "car {} took pickup {pickup} ({}): {}",
+            car.slot,
+            self.pickups[pickup].name,
+            self.defs[def].name
+        );
         self.drop_all(car);
         let held = &mut self.held[car.slot as usize];
         let (instant, icon) = (self.defs[def].instant, self.defs[def].icon());
@@ -281,7 +291,8 @@ pub fn apply(d: &PowerUp, car: &mut Car) -> [bool; 2] {
     let v = d.kick.map(|c| fx(c, mass));
     let r = car.body.rot;
     for i in 0..3 {
-        let push = fx(r[i][0] as i32, v[0]).wrapping_add(fx(r[i][1] as i32, v[1])).wrapping_add(fx(r[i][2] as i32, v[2]));
+        let push =
+            fx(r[i][0] as i32, v[0]).wrapping_add(fx(r[i][1] as i32, v[1])).wrapping_add(fx(r[i][2] as i32, v[2]));
         car.body.momentum[i] = car.body.momentum[i].wrapping_add(push);
     }
     scale(car, d, true);

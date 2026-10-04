@@ -4,9 +4,6 @@
 use std::path::Path;
 use std::time::Duration;
 
-use rrt::glam::{self, Mat3, Mat4, Quat, Vec3};
-use rrt::input::Pad;
-use rrt::wgpu;
 use hwtr_game::car::{Tuning, handling};
 use hwtr_game::collision::Scp;
 use hwtr_game::hud::{Font, Sprite};
@@ -15,6 +12,9 @@ use hwtr_game::pad::{ACCEPT, Mapping, PadKind, PadReader, PadState, START};
 use hwtr_game::race::{Buttons, Driver, Entrant, RaceSetup, STEP_MS};
 use hwtr_render::scene::Layout;
 use hwtr_render::{Renderer, Scene};
+use rrt::glam::{self, Mat3, Mat4, Quat, Vec3};
+use rrt::input::Pad;
+use rrt::wgpu;
 
 /// The cars on the grid, the player's first.
 const CARS: [&str; 6] = ["deora", "twinmill", "rocket", "bisector", "snake", "hw500"];
@@ -51,12 +51,7 @@ impl Shown {
     /// Between `self` (a step back) and `now`, `t` of the way.
     fn toward(&self, now: &Shown, t: f32) -> Shown {
         Shown {
-            cars: self
-                .cars
-                .iter()
-                .zip(&now.cars)
-                .map(|(a, b)| (a.0.lerp(b.0, t), a.1.slerp(b.1, t)))
-                .collect(),
+            cars: self.cars.iter().zip(&now.cars).map(|(a, b)| (a.0.lerp(b.0, t), a.1.slerp(b.1, t))).collect(),
             eye: self.eye.lerp(now.eye, t),
             look: self.look.slerp(now.look, t),
             fov: self.fov + (now.fov - self.fov) * t,
@@ -102,11 +97,10 @@ pub struct Race {
 }
 
 /// The race's effects (bank 0, `MAINSFX2`, from the track's archive), the
-/// sound chip, each voice's priority (0x8011acc0), and the effects volume.
+/// sound chip, and the effects volume.
 struct RaceSound {
     spu: std::sync::Arc<std::sync::Mutex<crate::spu::Spu>>,
     effects: crate::spu::Effects,
-    priority: [u8; 24],
     volume: i32,
     /// The effects volume in 127ths (0x800d24c8), which the engines are
     /// heard at.
@@ -114,9 +108,13 @@ struct RaceSound {
     /// The first voice effects may take (0x800d24d2: ten past the cars'
     /// count, the voices below kept for the engines).
     first: usize,
+    /// The engines, the hits and the tyres, with each effect voice's
+    /// importance.
     engines: hwtr_game::engines::Engines,
     /// Each car's engine bank and its samples.
     banks: Vec<Option<(hwtr_game::snd::Bank, std::sync::Arc<[u8]>)>>,
+    /// The crashes bank (libsnd's VAB 1) and its samples.
+    crashes: Option<(hwtr_game::snd::Bank, std::sync::Arc<[u8]>)>,
     /// What each voice was keyed with by the engines (libsnd's record of
     /// it, which a bend checks): the car, program, tone and note.
     owners: [Option<(usize, u8, u8, u8)>; 24],
@@ -128,25 +126,22 @@ impl RaceSound {
     /// important, let go), remembering its importance.
     fn play(&mut self, id: u8, importance: u8) {
         let Ok(mut spu) = self.spu.lock() else { return };
-        let mut chosen = None;
-        let mut weaker = None;
-        for v in self.first..20 {
-            if !spu.active(v) {
-                chosen = Some(v);
-                break;
-            }
-            if self.priority[v] < importance && weaker.is_none() {
-                weaker = Some(v);
-            }
-        }
-        let Some(v) = chosen.or(weaker) else { return };
-        if chosen.is_none() {
+        let Some((v, stolen)) = self.engines.voice(importance, &|v| spu.active(v)) else { return };
+        if stolen {
             spu.key_off(v);
         }
         if let Some(voice) = self.effects.voice(id, self.volume) {
             spu.key_on(v, &self.effects.samples, &voice);
-            self.priority[v] = importance;
+            self.engines.importance[v] = importance;
             self.owners[v] = None;
+        }
+    }
+
+    /// Whether each voice plays.
+    fn alive(&self) -> [bool; 24] {
+        match self.spu.lock() {
+            Ok(spu) => std::array::from_fn(|v| spu.active(v)),
+            Err(_) => [false; 24],
         }
     }
 
@@ -156,23 +151,37 @@ impl RaceSound {
         let Ok(mut spu) = self.spu.lock() else { return };
         for &c in changes {
             match c {
-                Change::KeyOn { voice, car, program, tone, note, fine } => {
-                    let Some(Some((bank, samples))) = self.banks.get(car) else { continue };
+                Change::KeyOn { voice, bank, program, tone, note, fine, left, right } => {
+                    use hwtr_game::engines::Bank;
+                    let (b, samples) = match bank {
+                        Bank::Car(car) => match self.banks.get(car) {
+                            Some(Some((b, s))) => (b, s),
+                            _ => continue,
+                        },
+                        Bank::Effects => (&self.effects.bank, &self.effects.samples),
+                        Bank::Crashes => match &self.crashes {
+                            Some((b, s)) => (b, s),
+                            None => continue,
+                        },
+                    };
                     let keyed = hwtr_game::snd::key_on(
-                        bank,
+                        b,
                         &self.effects.notes,
                         program as usize,
                         tone as usize,
                         note as i32,
                         fine as i32,
-                        0,
-                        0,
+                        left as i32,
+                        right as i32,
                         self.effects.mono,
                         0,
                     );
                     if let (Some(v), Some(owner)) = (keyed, self.owners.get_mut(voice)) {
                         spu.key_on(voice, samples, &v);
-                        *owner = Some((car, program, tone, note));
+                        *owner = match bank {
+                            Bank::Car(car) => Some((car, program, tone, note)),
+                            _ => None,
+                        };
                     }
                 }
                 Change::KeyOff { voice } => spu.key_off(voice),
@@ -182,7 +191,14 @@ impl RaceSound {
                     if p != program {
                         continue;
                     }
-                    let pitch = hwtr_game::snd::bend_pitch(bank, &self.effects.notes, p as usize, tone as usize, note as i32, bend);
+                    let pitch = hwtr_game::snd::bend_pitch(
+                        bank,
+                        &self.effects.notes,
+                        p as usize,
+                        tone as usize,
+                        note as i32,
+                        bend,
+                    );
                     if let Some(pitch) = pitch {
                         spu.set_pitch(voice, pitch);
                     }
@@ -216,12 +232,26 @@ impl Drop for RaceSound {
 impl RaceSound {
     /// The voices and banks for the race's engines: each car's from the
     /// executable's tables by name, its bank from the track's archive.
-    fn load_engines(&mut self, byte: &dyn Fn(u32) -> u8, names: &[String], players: usize, get: &dyn Fn(&str) -> Option<Vec<u8>>) {
+    fn load_engines(
+        &mut self,
+        byte: &dyn Fn(u32) -> u8,
+        names: &[String],
+        players: usize,
+        get: &dyn Fn(&str) -> Option<Vec<u8>>,
+    ) {
         let kinds = hwtr_game::engines::kinds(byte);
         let engines: Vec<_> = names.iter().map(|n| hwtr_game::engines::car_engine(byte, &n.to_lowercase())).collect();
         let [tone, program, note] = self.effects.record(0);
         let effect = hwtr_game::engines::Effect { program: program as u8, tone: tone as u8, note: note as u8 };
         self.engines = hwtr_game::engines::Engines::new(kinds, &engines, players, effect);
+        self.engines.first = self.first;
+        self.engines.effects = (0..61)
+            .map(|id| {
+                let [tone, program, note] = self.effects.record(id);
+                hwtr_game::engines::Effect { program: program as u8, tone: tone as u8, note: note as u8 }
+            })
+            .collect();
+        self.engines.hits = hwtr_game::engines::HitTables::read(byte);
         self.banks = (0..names.len())
             .map(|slot| {
                 engines[slot]?;
@@ -259,7 +289,11 @@ fn pad_state(pad: &Pad, analog: bool) -> PadState {
 impl Race {
     /// A quick race on `track` ("DESERT1"): the player first on the grid
     /// in the Deora, five computer cars behind.
-    pub fn load(cue: &Path, track: &str, spu: Option<std::sync::Arc<std::sync::Mutex<crate::spu::Spu>>>) -> Result<Race, String> {
+    pub fn load(
+        cue: &Path,
+        track: &str,
+        spu: Option<std::sync::Arc<std::sync::Mutex<crate::spu::Spu>>>,
+    ) -> Result<Race, String> {
         let disc = rrt::disc::Image::open(cue).map_err(|e| e.to_string())?;
         let iso = disc.iso().map_err(|e| e.to_string())?;
         let exe = iso.find("CCCPSX.EXE").and_then(|e| iso.read(&e)).map_err(|e| e.to_string())?;
@@ -345,18 +379,22 @@ impl Race {
                 hwtr_data::tim::Mode::Bpp8 => 1,
                 _ => 2,
             };
-            let mode = ((cy as u32) << 6 | (cx as u32) >> 4) | (((x / 64) | ((y / 256) << 4) | (depth << 7)) as u32) << 16;
+            let mode =
+                ((cy as u32) << 6 | (cx as u32) >> 4) | (((x / 64) | ((y / 256) << 4) | (depth << 7)) as u32) << 16;
             fonts.push((font, mode));
         }
         let line_name = setup.best_line.as_ref().map_or(t.clone(), |n| n.to_uppercase());
-        let line = hwtr_game::line::BestLine::parse(get(&format!("{line_name}BLD"))?).ok_or("the best line does not parse")?;
+        let line =
+            hwtr_game::line::BestLine::parse(get(&format!("{line_name}BLD"))?).ok_or("the best line does not parse")?;
         // The world's place in the table of names at 0x800c5c24, and the
         // track's number in it.
         let world_number = (setup.track_number as u32).max(1);
         let world_index = {
             let view = exe.view();
             let word = |a: u32| u32::from_le_bytes(std::array::from_fn(|k| view.u8(a + k as u32).unwrap_or(0)));
-            let name = |a: u32| (0..16).map(|i| view.u8(a + i).unwrap_or(0)).take_while(|&c| c != 0).map(char::from).collect::<String>();
+            let name = |a: u32| {
+                (0..16).map(|i| view.u8(a + i).unwrap_or(0)).take_while(|&c| c != 0).map(char::from).collect::<String>()
+            };
             (0..4u32).find(|&k| name(word(0x800c_5c24 + 4 * k)).eq_ignore_ascii_case(&setup.track)).unwrap_or(0)
         };
         let mut race = hwtr_game::race::Race::new(setup, scp, line, &parts, tables, tuning);
@@ -370,7 +408,10 @@ impl Race {
             for p in &world.pickups {
                 let lower = p.name.to_ascii_lowercase();
                 if lower != "random" && !defs.iter().any(|d| d.name.eq_ignore_ascii_case(&lower)) {
-                    match get(&format!("{}PUP", p.name.to_uppercase())).ok().and_then(hwtr_game::powerup::PowerUp::parse) {
+                    match get(&format!("{}PUP", p.name.to_uppercase()))
+                        .ok()
+                        .and_then(hwtr_game::powerup::PowerUp::parse)
+                    {
                         Some(def) => defs.push(def),
                         None => rrt::tracing::warn!("PwrupLoadPowerUp : error loading file {lower}.pup"),
                     }
@@ -457,8 +498,10 @@ impl Race {
         }
         // The pause menu: the string table and the front end's kerning (its
         // font loaded once), and the race's text font.
-        let screens = |name: &str| big.lookup(&format!("SCREENSBIG/{name}")).ok_or(format!("{name} is not in SCREENS.BIG"));
-        let strings = hwtr_game::front::strings::Strings::parse(screens("ENGLISHHWT")?).ok_or("ENGLISH.HWT does not parse")?;
+        let screens =
+            |name: &str| big.lookup(&format!("SCREENSBIG/{name}")).ok_or(format!("{name} is not in SCREENS.BIG"));
+        let strings =
+            hwtr_game::front::strings::Strings::parse(screens("ENGLISHHWT")?).ok_or("ENGLISH.HWT does not parse")?;
         let screen_font = Font::parse(screens("SCRNFNTOVL")?).ok_or("SCRNFNT.OVL does not parse")?;
         let view = exe.view();
         let byte = |a: u32| view.u8(a).unwrap_or(0);
@@ -495,12 +538,12 @@ impl Race {
             (Some(spu), Ok(vh), Ok(vb)) => hwtr_game::snd::Bank::from_vh(vh, 0).map(|bank| RaceSound {
                 spu,
                 effects: crate::spu::Effects::new(&byte, bank, vb),
-                priority: [0; 24],
                 volume: (volume as i32 * 127 / 255) * 3 / 8,
                 effects_volume: volume as i32 * 127 / 255,
                 first: cars + 10,
                 engines: Default::default(),
                 banks: Vec::new(),
+                crashes: None,
                 owners: [None; 24],
             }),
             _ => None,
@@ -510,8 +553,19 @@ impl Race {
         if let Some(s) = &mut sound {
             let players = race.setup.cars.iter().filter(|e| e.driver.is_player()).count();
             s.load_engines(&byte, &cars_names, players, &|name| get(name).ok().map(<[u8]>::to_vec));
+            // 0x8001924c: the crashes bank the race drew, as VAB 1.
+            let n = race.crash_bank;
+            if let (Ok(vh), Ok(vb)) = (get(&format!("CRASHES{n}VH")), get(&format!("CRASHES{n}VB"))) {
+                s.crashes = hwtr_game::snd::Bank::from_vh(vh, 0).map(|b| (b, std::sync::Arc::from(vb)));
+                tracing::info!("crashes bank {n}");
+            }
         }
-        tracing::info!("race on {t}: {} car(s) ported, flyby of {} keyframes, countdown from {} ms", race.cars.len(), race.collision.scp.flyby.len(), race.countdown_from);
+        tracing::info!(
+            "race on {t}: {} car(s) ported, flyby of {} keyframes, countdown from {} ms",
+            race.cars.len(),
+            race.collision.scp.flyby.len(),
+            race.countdown_from
+        );
         Ok(Race {
             scene,
             race,
@@ -583,12 +637,21 @@ impl Race {
             self.count = self.race.hud.countdown.frame(self.race.hud.players);
         }
         for event in std::mem::take(&mut self.race.events) {
+            use hwtr_game::race::RaceEvent;
+            if let RaceEvent::Hit(hit) = event {
+                tracing::debug!("{hit:?} at {} ms", self.race.time);
+                if let Some(s) = &mut self.sound {
+                    let alive = s.alive();
+                    let changes = s.engines.hit(&self.race.tables, &hit, &|v| alive.get(v).copied().unwrap_or(false));
+                    s.apply(&changes);
+                }
+                continue;
+            }
             tracing::info!("{event:?} at {} ms", self.race.time);
             // What each sounds (the calls to 0x800157f8): the countdown,
             // the start, a player's checkpoints, laps and wrong way, a
             // player's wreck, the pause.
             use hwtr_game::laps::LapEvent;
-            use hwtr_game::race::RaceEvent;
             let effect = match event {
                 RaceEvent::Count(3) => Some((6, 1)),
                 RaceEvent::Count(2) => Some((7, 1)),
@@ -634,15 +697,19 @@ impl Race {
                 .cars
                 .iter()
                 .enumerate()
-                .map(|(slot, car)| hwtr_game::engines::input_of(car, if slot == 0 { self.reader.eased } else { 0 }))
+                .map(|(slot, car)| {
+                    hwtr_game::engines::input_of(
+                        car,
+                        if slot == 0 { self.reader.eased } else { 0 },
+                        &s.engines.hits.priority,
+                    )
+                })
                 .collect();
             let listener = self.race.cameras.first().map(hwtr_game::engines::Listener::of).unwrap_or_default();
-            let alive: Vec<bool> = match s.spu.lock() {
-                Ok(spu) => (0..24).map(|v| spu.active(v)).collect(),
-                Err(_) => vec![false; 24],
-            };
-            let changes =
-                s.engines.frame(&self.race.tables, &inputs, &listener, s.effects_volume, &|v| alive.get(v).copied().unwrap_or(false));
+            let alive = s.alive();
+            let changes = s.engines.frame(&self.race.tables, &inputs, &listener, s.effects_volume, ms, &|v| {
+                alive.get(v).copied().unwrap_or(false)
+            });
             s.apply(&changes);
         }
         if let (Some(p), Some(s)) = (&self.race.paused, &mut self.sound) {
@@ -701,7 +768,14 @@ impl Race {
             }
             // A wrecked car's model is blackened (0x8002e51c).
             let rgb = self.race.effects.root_colour.get(k).copied().unwrap_or(0x80_8080);
-            tris.extend(hwtr_render::mesh::car_triangles(&look.model, look.clut, look.tpage, pos, Mat3::from_quat(rot), rgb));
+            tris.extend(hwtr_render::mesh::car_triangles(
+                &look.model,
+                look.clut,
+                look.tpage,
+                pos,
+                Mat3::from_quat(rot),
+                rgb,
+            ));
         }
         tris
     }
@@ -744,7 +818,9 @@ impl Race {
     fn apart_triangles(&mut self) -> Vec<hwtr_render::Vtx> {
         let mut out = Vec::new();
         for &(object, parent) in &self.scene.apart {
-            if self.race.power_ups.pickups.iter().any(|p| p.object == Some(object) && !p.out) || self.race.knocked.contains(&object) {
+            if self.race.power_ups.pickups.iter().any(|p| p.object == Some(object) && !p.out)
+                || self.race.knocked.contains(&object)
+            {
                 continue;
             }
             let anim = self.race.anims.anims.iter().position(|a| a.object == object);
@@ -954,7 +1030,11 @@ mod tests {
         let mut loudness = [0u64; 2];
         let mut pitches = Vec::new();
         for frame in 0..2400 {
-            let pad = if frame < 1200 { Pad::default() } else { Pad { buttons: rrt::input::Buttons::CROSS, ..Pad::default() } };
+            let pad = if frame < 1200 {
+                Pad::default()
+            } else {
+                Pad { buttons: rrt::input::Buttons::CROSS, ..Pad::default() }
+            };
             race.frame(&pad, Duration::from_micros(16_683));
             let mut chunk = vec![0i16; 2 * 735];
             let mut s = spu.lock().unwrap();
@@ -967,7 +1047,12 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
         let mono: Vec<i16> = out.chunks(2).map(|f| ((f[0] as i32 + f[1] as i32) / 2) as i16).collect();
         std::fs::write(tmp.join("engines.wav"), hwtr_data::vab::wav(&mono, 44100)).unwrap();
-        eprintln!("loudness idle {} driven {}; player pitch {:?}", loudness[0], loudness[1], &pitches[..].iter().step_by(50).collect::<Vec<_>>());
+        eprintln!(
+            "loudness idle {} driven {}; player pitch {:?}",
+            loudness[0],
+            loudness[1],
+            &pitches[..].iter().step_by(50).collect::<Vec<_>>()
+        );
         assert!(loudness[0] > 1_000_000, "silent on the grid");
         let (low, high) = (pitches.iter().min().unwrap(), pitches.iter().max().unwrap());
         assert!(high > low, "the player's engine never changed pitch");

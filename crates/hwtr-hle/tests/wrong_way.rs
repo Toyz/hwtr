@@ -27,7 +27,8 @@ fn wrong_way_matches_the_original() {
             car.body.rot = [[c as i16, -s as i16, 0], [s as i16, c as i16, 0], [0, 0, 4096]];
             let speed = (rng.below(120) as i32) << 12;
             let dir = rng.below(4096) as i32 * 0x3244 / 2048;
-            car.body.vel = [hwtr_game::math::fx(t.sin(dir + 0x1922), speed) * 18, hwtr_game::math::fx(t.sin(dir), speed) * 18, 0];
+            car.body.vel =
+                [hwtr_game::math::fx(t.sin(dir + 0x1922), speed) * 18, hwtr_game::math::fx(t.sin(dir), speed) * 18, 0];
             car.wrong_way_ms = [0, 0, 25, 480, 490, 600][rng.below(6) as usize];
             if rng.below(8) == 0 {
                 car.grounded = 0;

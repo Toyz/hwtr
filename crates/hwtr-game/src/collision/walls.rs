@@ -41,6 +41,12 @@ pub fn contact_friction(t: &Tables, surface: u8, computer: bool) -> i32 {
     if computer { fx(friction, 0x4000) } else { friction }
 }
 
+/// 0x80035a88: a contact's volume from the car's speed: its mph (20 to
+/// 100) over 100.
+pub fn contact_volume(speed: i32) -> i32 {
+    div_fx(fx(speed, 232).clamp(0x1_4000, 0x6_4000), 0x6_4000)
+}
+
 /// The share of a point's inward speed a contact takes away.
 const BOUNCE: i32 = 0x800;
 
@@ -51,8 +57,9 @@ impl Collision {
     /// and, against the floor, works to right it (0x80046ac0), and the race
     /// clock is noted. Then each pushes its body back with an impulse,
     /// sliding against the surface's friction ([`contact_friction`]); the
-    /// object remembers the step and the point. The hit's sounds, sparks and
-    /// rumble are not yet ported.
+    /// object remembers the step and the point. The step's first contact is
+    /// heard ([`super::world::Hit::Track`]) and a player's throws a spark.
+    /// The rumble is not yet ported.
     pub fn contact_impulses(&mut self, t: &Tables, cars: &mut [Car], step: &mut Step) {
         for c in self.contacts.clone() {
             let obj = &mut self.objects[c.object];
@@ -60,8 +67,14 @@ impl Collision {
             let car = &mut cars[slot as usize];
             let first = obj.stamp != self.step;
             let (kind, half) = (obj.kind, obj.half);
-            if first {
-                tracing::trace!("contact sound for car {slot}: not yet ported");
+            // 0x80035a88: the step's first contact is heard, louder the
+            // faster the car goes.
+            if first && !self.hushed {
+                self.hits.push(super::world::Hit::Track {
+                    slot,
+                    surface: c.surface,
+                    volume: contact_volume(car.body.speed),
+                });
             }
             let was_wrecked = car.wrecked;
             if obj.kind == Kind::PlayerCar && !was_wrecked {
@@ -85,8 +98,10 @@ impl Collision {
             car.body.impulse(t, c.point, c.normal, BOUNCE, friction);
             // 0x8002e9f8: a player's car's first contact of the step throws
             // a spark.
-            if first && kind == Kind::PlayerCar
-                && let Some(s) = crate::effects::contact_spark(step.rand, t, &car.body, half, c.point, c.normal, c.surface)
+            if first
+                && kind == Kind::PlayerCar
+                && let Some(s) =
+                    crate::effects::contact_spark(step.rand, t, &car.body, half, c.point, c.normal, c.surface)
             {
                 self.sparks.push(s);
             }

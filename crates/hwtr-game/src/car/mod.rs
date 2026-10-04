@@ -8,12 +8,12 @@
 
 mod controls;
 pub mod handling;
-pub mod righting;
-pub mod wreck;
 pub mod impact;
+mod load;
+pub mod righting;
 pub mod stunt;
 pub mod update;
-mod load;
+pub mod wreck;
 
 pub use controls::Controls;
 
@@ -96,7 +96,6 @@ pub struct Wheel {
     /// How fast it turns, radians a second, for drawing.
     pub spin_rate: i32,
 }
-
 
 /// The engine and gearbox. Speeds of rotation are revolutions a minute.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -462,7 +461,6 @@ pub struct Car {
 }
 
 impl Car {
-
     fn axle(&self, rear: bool) -> &Axle {
         self.handling.axle(rear)
     }
@@ -864,7 +862,6 @@ impl Car {
         }
     }
 }
-
 
 impl Car {
     /// 0x800157f8 as the car's code calls it: effect `id` at full volume.

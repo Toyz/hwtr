@@ -1,9 +1,9 @@
 //! The original's memory as object: where it keeps it, read into and written
 //! from the port's types.
 
-use hwtr_game::collision::object::{CollisionObject, Kind, RefSet};
 use super::car::{CAR_SIZE, CARS};
 use super::{InMemory, Ram};
+use hwtr_game::collision::object::{CollisionObject, Kind, RefSet};
 
 pub const ID: u32 = 0x00;
 pub const FLAGS: u32 = 0x04;

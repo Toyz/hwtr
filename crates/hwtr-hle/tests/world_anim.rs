@@ -49,7 +49,8 @@ fn objects_move_as_the_original_moves_them() {
             };
             m.call(0x8007_f2a4, &[k as u32]).unwrap();
             let ram = Ram(&mut m.bus.ram);
-            let rot: [[i16; 3]; 3] = std::array::from_fn(|r| std::array::from_fn(|c| ram.i32(object + 2 * (3 * r + c) as u32) as i16));
+            let rot: [[i16; 3]; 3] =
+                std::array::from_fn(|r| std::array::from_fn(|c| ram.i32(object + 2 * (3 * r + c) as u32) as i16));
             let pos: [i32; 3] = std::array::from_fn(|i| ram.i32(object + 0x14 + 4 * i as u32));
             ours.anims[k].time = time;
             let (our_rot, our_pos) = ours.pose(&t, k).expect("a pose");

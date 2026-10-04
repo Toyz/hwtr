@@ -7,9 +7,9 @@ mod docs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use rrt::disc::{Image, TrackKind};
 use hwtr_psx::Exe;
 use hwtr_psx::mips;
+use rrt::disc::{Image, TrackKind};
 
 const USAGE: &str = "usage: hwtr-re <command> ...
 

@@ -135,7 +135,8 @@ fn attract_camera_matches_the_original() {
         let (tuning, mut cam, mut cars) = {
             let ram = Ram(&mut m.bus.ram);
             let n = ram.i32(hwtr_hle::original::car::CAR_COUNT) as u32;
-            let cars: Vec<Car> = (0..n).map(|i| Car::read(&ram, CARS + i * hwtr_hle::original::car::CAR_SIZE)).collect();
+            let cars: Vec<Car> =
+                (0..n).map(|i| Car::read(&ram, CARS + i * hwtr_hle::original::car::CAR_SIZE)).collect();
             (hwtr_hle::original::car::tuning(&ram), Camera::read(&ram, at(0)), cars)
         };
         let n = cars.len() as u32;
@@ -159,7 +160,8 @@ fn attract_camera_matches_the_original() {
                 let dir = t.normalize(hwtr_game::math::sub(spot.pos, car.body.pos));
                 car.body.vel = dir.map(|c| hwtr_game::math::fx(c, 100 << 12));
                 if rng.below(2) == 0 {
-                    car.body.pos = hwtr_game::math::add(spot.pos, [rng.word() as i32 >> 10, rng.word() as i32 >> 10, 0]);
+                    car.body.pos =
+                        hwtr_game::math::add(spot.pos, [rng.word() as i32 >> 10, rng.word() as i32 >> 10, 0]);
                 }
             }
             car.body.speed = t.length(car.body.vel);
@@ -176,7 +178,8 @@ fn attract_camera_matches_the_original() {
         }
         let (mut cam, mut cars) = {
             let ram = Ram(&mut m.bus.ram);
-            let cars: Vec<Car> = (0..n).map(|i| Car::read(&ram, CARS + i * hwtr_hle::original::car::CAR_SIZE)).collect();
+            let cars: Vec<Car> =
+                (0..n).map(|i| Car::read(&ram, CARS + i * hwtr_hle::original::car::CAR_SIZE)).collect();
             (Camera::read(&ram, at(0)), cars)
         };
         let mut rand = Rand { seed };

@@ -109,8 +109,16 @@ impl Save {
             }
         }
         let s = &self.settings;
-        b[SETTINGS..SETTINGS + 8]
-            .copy_from_slice(&[s.other[0], s.mode, s.volume, s.music, s.difficulty, s.other[1], s.effects, s.spare]);
+        b[SETTINGS..SETTINGS + 8].copy_from_slice(&[
+            s.other[0],
+            s.mode,
+            s.volume,
+            s.music,
+            s.difficulty,
+            s.other[1],
+            s.effects,
+            s.spare,
+        ]);
         put(&mut b, PLAYER_IDS, self.player_ids[0]);
         put(&mut b, PLAYER_IDS + 4, self.player_ids[1]);
         let n = self.players.len().min(MOST_PLAYERS);
@@ -150,7 +158,9 @@ impl Save {
             return None;
         }
         let table = |at: usize, n: usize| {
-            (0..n).map(|k| Score { name: text(&b[at + 16 * k..at + 16 * k + 12]), value: word(b, at + 16 * k + 12) }).collect()
+            (0..n)
+                .map(|k| Score { name: text(&b[at + 16 * k..at + 16 * k + 12]), value: word(b, at + 16 * k + 12) })
+                .collect()
         };
         let s = &b[SETTINGS..SETTINGS + 8];
         let n = (b[PLAYER_COUNT] as usize).min(MOST_PLAYERS);

@@ -19,17 +19,16 @@
 //! the original's.
 
 pub mod card;
-pub mod password;
 pub mod font;
+pub mod password;
 pub mod screen;
 pub mod strings;
 
 mod boot;
-mod credits;
 mod card_menu;
 mod controls;
+mod credits;
 mod cup;
-mod unlocks;
 mod garage;
 mod hiscores;
 mod main_menu;
@@ -38,6 +37,7 @@ mod race_start;
 mod results;
 mod sign_in;
 mod title;
+mod unlocks;
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -49,8 +49,8 @@ use crate::pad::{Mapping, PadState};
 use crate::race::{Driver, Entrant, RaceSetup};
 use crate::rand::Rand;
 use card::Save;
-pub use results::{CarResult, RaceResult};
 use font::ScreenFont;
+pub use results::{CarResult, RaceResult};
 use screen::{Glyph, Line, PieceDraw, Screen};
 use strings::{CarFacts, Strings};
 
@@ -195,12 +195,16 @@ impl Tables {
         Tables {
             car_files: strs(0x800c_5ce8, 42),
             car_names: strs(0x800c_5d8c, 42).into_iter().map(Option::unwrap_or_default).collect(),
-            car_ratings: (0..42).map(|k| u16::from_le_bytes([byte(0x800c_289c + 2 * k), byte(0x800c_289d + 2 * k)])).collect(),
+            car_ratings: (0..42)
+                .map(|k| u16::from_le_bytes([byte(0x800c_289c + 2 * k), byte(0x800c_289d + 2 * k)]))
+                .collect(),
             track_files: strs(0x800c_5bf4, 12),
             track_names: strs(0x800c_5c34, 12).into_iter().map(Option::unwrap_or_default).collect(),
             worlds: strs(0x800c_5c24, 4).into_iter().map(Option::unwrap_or_default).collect(),
             checkpoints: (0..12).map(|k| byte(0x800c_5c64 + k)).collect(),
-            sign_in: std::array::from_fn(|k| u16::from_le_bytes([byte(0x800d_116c + 2 * k as u32), byte(0x800d_116d + 2 * k as u32)])),
+            sign_in: std::array::from_fn(|k| {
+                u16::from_le_bytes([byte(0x800d_116c + 2 * k as u32), byte(0x800d_116d + 2 * k as u32)])
+            }),
             track_songs: (0..12).map(|k| byte(0x800b_e8c0 + k)).collect(),
         }
     }
@@ -230,7 +234,14 @@ struct Help {
 impl Help {
     fn read(byte: &dyn Fn(u32) -> u8, at: u32) -> Help {
         let word = |a: u32| i32::from_le_bytes([byte(a), byte(a + 1), byte(a + 2), byte(a + 3)]);
-        Help { string: word(at) as u16, left: word(at + 4), right: word(at + 8), y: word(at + 12), start: word(at + 16), x: word(at + 20) }
+        Help {
+            string: word(at) as u16,
+            left: word(at + 4),
+            right: word(at + 8),
+            y: word(at + 12),
+            start: word(at + 16),
+            x: word(at + 20),
+        }
     }
 }
 
@@ -499,7 +510,12 @@ impl Front {
             }
         }
         let save_due = [false; 2];
-        let card = slots.iter().flatten().next().cloned().unwrap_or_else(|| Save::new(0, strings.get(84), Settings::new(difficulty)));
+        let card = slots
+            .iter()
+            .flatten()
+            .next()
+            .cloned()
+            .unwrap_or_else(|| Save::new(0, strings.get(84), Settings::new(difficulty)));
         Some(Front {
             actions: Rc::new(registry()),
             card,
@@ -590,7 +606,9 @@ impl Front {
             qualities: files
                 .cwhs
                 .and_then(|b| bmf_parts(b))
-                .map(|parts| parts.iter().map(|p| std::array::from_fn(|k| p.get(4 + 0x130 + k).copied().unwrap_or(0))).collect())
+                .map(|parts| {
+                    parts.iter().map(|p| std::array::from_fn(|k| p.get(4 + 0x130 + k).copied().unwrap_or(0))).collect()
+                })
                 .unwrap_or_default(),
             car_stats: [[0, 0, 0, -1]; 2],
             scrollers: credits::SCROLLERS_AT.iter().map(|&a| credits::Scroller::read(byte, a)).collect(),
@@ -641,7 +659,6 @@ impl Front {
         self.race_end = Some(result);
     }
 
-
     /// 0x8008a668: the music on, if it is not already (0x800d119f).
     fn start_music(&mut self) {
         if !self.music_started {
@@ -678,7 +695,19 @@ impl Front {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn set_text(&mut self, screen: usize, k: usize, text: &str, x: i16, y: i16, extra: i16, entry: u8, centred: bool, font: u8, colour: [u8; 3]) {
+    fn set_text(
+        &mut self,
+        screen: usize,
+        k: usize,
+        text: &str,
+        x: i16,
+        y: i16,
+        extra: i16,
+        entry: u8,
+        centred: bool,
+        font: u8,
+        colour: [u8; 3],
+    ) {
         if let Some(t) = self.screens[screen].texts.get_mut(k) {
             t.set(&Line { text, x, y, extra, entry, centred, font, colour });
         }
@@ -852,7 +881,9 @@ impl Front {
                 any = true;
             }
         }
-        for (action, code, event) in [(20, 49, None), (21, 50, None), (22, 51, Some(3)), (23, 52, Some(99)), (24, 53, None), (25, 54, None)] {
+        for (action, code, event) in
+            [(20, 49, None), (21, 50, None), (22, 51, Some(3)), (23, 52, Some(99)), (24, 53, None), (25, 54, None)]
+        {
             if self.pressed(pad, action) {
                 self.code(pad, code);
                 if let Some(e) = event {
@@ -1121,7 +1152,12 @@ impl Front {
                 if icon {
                     self.drawing_pieces.push(button_icon(c, x, h.y));
                 } else {
-                    self.drawing.push(Glyph { ch: c.to_ascii_uppercase(), x: x as i16, y: (h.y / 2 - 8) as i16, colour: [120; 3] });
+                    self.drawing.push(Glyph {
+                        ch: c.to_ascii_uppercase(),
+                        x: x as i16,
+                        y: (h.y / 2 - 8) as i16,
+                        colour: [120; 3],
+                    });
                 }
                 drawn += 1;
             }
@@ -1441,7 +1477,8 @@ impl Front {
         let number = p0.track % 3 + 1;
         let file = |c: u8| self.tables.car_files.get(c as usize).cloned().flatten().unwrap_or_default();
         let mut grid_free = [true; 6];
-        let mut entrants = vec![Entrant { name: file(p0.car), driver: Driver::PlayerOne, car_id: p0.car, player: 0, grid: 0 }];
+        let mut entrants =
+            vec![Entrant { name: file(p0.car), driver: Driver::PlayerOne, car_id: p0.car, player: 0, grid: 0 }];
         let g = loop {
             let r = self.rand.below(6) as usize;
             if grid_free[r] {
@@ -1455,7 +1492,13 @@ impl Front {
             // Both players are drivers of kind 1, on the first two places.
             let p1 = &self.players[1];
             entrants[0].grid = 0;
-            entrants.push(Entrant { name: file(p1.car), driver: Driver::PlayerOne, car_id: p1.car, player: 1, grid: 1 });
+            entrants.push(Entrant {
+                name: file(p1.car),
+                driver: Driver::PlayerOne,
+                car_id: p1.car,
+                player: 1,
+                grid: 1,
+            });
         } else {
             for _ in 1..count {
                 let g = loop {
@@ -1465,7 +1508,13 @@ impl Front {
                     }
                 };
                 grid_free[g] = false;
-                entrants.push(Entrant { name: String::new(), driver: Driver::Computer, car_id: 0, player: 0, grid: g as u8 });
+                entrants.push(Entrant {
+                    name: String::new(),
+                    driver: Driver::Computer,
+                    car_id: 0,
+                    player: 0,
+                    grid: g as u8,
+                });
             }
             for _ in 0..100 {
                 let mut free = [true; 41];
@@ -1491,7 +1540,11 @@ impl Front {
             }
         }
         let cheats = if p0.cheats != 0 { p0.cheats } else { self.players[1].cheats };
-        let flags = 32 | ((p0.cheats >> 3) & 16) | ((self.players[1].cheats >> 3) & 16) | (((p0.cheats & 256 != 0) as u32) << 6) | (((self.players[1].cheats & 256 != 0) as u32) << 6);
+        let flags = 32
+            | ((p0.cheats >> 3) & 16)
+            | ((self.players[1].cheats >> 3) & 16)
+            | (((p0.cheats & 256 != 0) as u32) << 6)
+            | (((self.players[1].cheats & 256 != 0) as u32) << 6);
         self.race = Some(RaceSetup {
             flags,
             track: self.tables.worlds.get(world).cloned().unwrap_or_default(),
@@ -1688,7 +1741,6 @@ fn card_id(rand: &mut Rand) -> u32 {
         }
     }
 }
-
 
 /// 0x800287b8: the background's brightness at fade level `level`: black
 /// below 51, else half and one (128 is as drawn).

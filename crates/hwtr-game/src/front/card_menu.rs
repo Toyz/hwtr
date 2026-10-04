@@ -135,7 +135,9 @@ pub(super) fn register(r: &mut Registry<Front>) {
         }
         f.pad_events(f.sign_in_back as usize, mask, p);
     });
-    r.add(0x8009_71a4, |f: &mut Front, _: &mut Poster| f.cards_ui.entry_choice = f.cards_ui.entry_choice.saturating_sub(1));
+    r.add(0x8009_71a4, |f: &mut Front, _: &mut Poster| {
+        f.cards_ui.entry_choice = f.cards_ui.entry_choice.saturating_sub(1)
+    });
     r.add(0x8009_71c0, |f: &mut Front, _: &mut Poster| {
         if f.cards_ui.entry_choice < 2 {
             f.cards_ui.entry_choice += 1;
@@ -339,12 +341,26 @@ impl Front {
             if self.slot_bad(slot) {
                 continue;
             }
-            let names: Vec<String> = self.slots[slot].as_ref().map(|s| s.players.iter().map(|p| p.name.clone()).collect()).unwrap_or_default();
+            let names: Vec<String> = self.slots[slot]
+                .as_ref()
+                .map(|s| s.players.iter().map(|p| p.name.clone()).collect())
+                .unwrap_or_default();
             self.set_text(SLOT_LISTS[k], 6, "Memory Card", x, 195, 0, 0, true, 1, [255; 3]);
             self.set_text(SLOT_LISTS[k], 0, &format!("In Slot {}", slot + 1), x, 220, 0, 0, true, 1, [127; 3]);
             for i in 0..4 {
                 let name = names.get(i).unwrap_or(&empty);
-                self.set_text(SLOT_LISTS[k], i + 1, &format!("{}. {name}", i + 1), x, 260 + 40 * i as i16, 0, 0, true, 1, [127; 3]);
+                self.set_text(
+                    SLOT_LISTS[k],
+                    i + 1,
+                    &format!("{}. {name}", i + 1),
+                    x,
+                    260 + 40 * i as i16,
+                    0,
+                    0,
+                    true,
+                    1,
+                    [127; 3],
+                );
             }
         }
     }

@@ -10,7 +10,7 @@
 
 use crate::car::Car;
 use crate::line::BestLine;
-use crate::math::{gte_mul, Matrix, Tables, Vec3, add, cross, div_fx, dot, fx, mul_16_64, mul_64_16, sub, transpose};
+use crate::math::{Matrix, Tables, Vec3, add, cross, div_fx, dot, fx, gte_mul, mul_16_64, mul_64_16, sub, transpose};
 use crate::rand::Rand;
 
 /// The AI's own random numbers (0x800d2710): a linear congruential
@@ -112,9 +112,17 @@ pub struct Choice {
 pub enum Op {
     /// A keypoint at `pos`, with the route's widths either side, its flags
     /// (bit 1: a jump) and its distance to go (in hundredths of a lap).
-    Point { pos: Vec3, widths: (i32, i32), flags: u16, distance: u16 },
+    Point {
+        pos: Vec3,
+        widths: (i32, i32),
+        flags: u16,
+        distance: u16,
+    },
     /// A keypoint `delta` from the last.
-    Step { delta: Vec3, widths: (i32, i32) },
+    Step {
+        delta: Vec3,
+        widths: (i32, i32),
+    },
     Jump(u16),
     /// The choices, and where each goes.
     Branch(Vec<(Choice, u16)>),
@@ -478,7 +486,16 @@ impl Ai {
     /// 0x80079e58: the driver for computer car `car` from grid place
     /// `grid`, which takes the car's place and turn, its pace and skill.
     #[allow(clippy::too_many_arguments)]
-    pub fn add(&mut self, car: &mut Car, route: &BestLine, grid: usize, difficulty: u8, laps: u8, tuning: &crate::car::Tuning, time: u32) {
+    pub fn add(
+        &mut self,
+        car: &mut Car,
+        route: &BestLine,
+        grid: usize,
+        difficulty: u8,
+        laps: u8,
+        tuning: &crate::car::Tuning,
+        time: u32,
+    ) {
         let a = &tuning.ai;
         let skill = between(a.stunt_skill[0], a.stunt_skill[1], difficulty) >> 12;
         let body = &mut car.body;
@@ -554,7 +571,10 @@ impl Ai {
     /// a computer car, or in a cup race), and the players found: the band
     /// holds to the first.
     pub fn start(&mut self, cars: &[Car], cup: bool) {
-        if !cup && let Some(first) = cars.first() && first.state != DRIVEN {
+        if !cup
+            && let Some(first) = cars.first()
+            && first.state != DRIVEN
+        {
             let k = 4096 - fx(self.share, 4096 - first.handling.ai_rubber);
             for d in self.drivers.iter_mut().take(cars.len()) {
                 d.pace = fx(d.pace + 0x6_4000, k) - 0x6_4000;
@@ -1077,9 +1097,7 @@ impl Ai {
             let m = m.map(|row| row.map(|v| v as i16 as i32));
             let r = d.stunt_rot;
             c.body.rot = std::array::from_fn(|i| {
-                std::array::from_fn(|j| {
-                    (0..3).fold(0i32, |s, q| s.wrapping_add(fx(r[i][q] as i32, m[q][j]))) as i16
-                })
+                std::array::from_fn(|j| (0..3).fold(0i32, |s, q| s.wrapping_add(fx(r[i][q] as i32, m[q][j]))) as i16)
             });
         }
 

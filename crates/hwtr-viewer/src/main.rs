@@ -200,9 +200,9 @@ fn main() {
     }
     if let Some(out) = out {
         let (w, h) = (1280, 960);
-        let written = scene.shot(w, h, camera.matrix(w as f32 / h as f32)).and_then(|rgba| {
-            std::fs::write(&out, rrt::image::png::encode(w, h, &rgba)).map_err(|e| e.to_string())
-        });
+        let written = scene
+            .shot(w, h, camera.matrix(w as f32 / h as f32))
+            .and_then(|rgba| std::fs::write(&out, rrt::image::png::encode(w, h, &rgba)).map_err(|e| e.to_string()));
         if let Err(e) = written {
             rrt::tracing::error!("{e}");
             std::process::exit(1);

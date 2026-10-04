@@ -99,7 +99,8 @@ impl Intro {
                         self.picture = Some(rgba(&rgb, p.width, p.height));
                     }
                 }
-                if next && let Some(spu) = &self.spu
+                if next
+                    && let Some(spu) = &self.spu
                     && let Ok(mut s) = spu.lock()
                 {
                     s.stop_stream();
@@ -124,7 +125,18 @@ impl Intro {
                     }
                 }
                 let k = (*level).clamp(0, 128) as u32;
-                let rgba = picture.rgba.chunks_exact(4).flat_map(|p| [(p[0] as u32 * k / 128) as u8, (p[1] as u32 * k / 128) as u8, (p[2] as u32 * k / 128) as u8, 255]).collect();
+                let rgba = picture
+                    .rgba
+                    .chunks_exact(4)
+                    .flat_map(|p| {
+                        [
+                            (p[0] as u32 * k / 128) as u8,
+                            (p[1] as u32 * k / 128) as u8,
+                            (p[2] as u32 * k / 128) as u8,
+                            255,
+                        ]
+                    })
+                    .collect();
                 self.picture = Some(Picture { width: picture.width, height: picture.height, rgba });
             }
         }

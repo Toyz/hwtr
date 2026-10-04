@@ -128,11 +128,16 @@ impl Voice {
     fn envelope_tick(&mut self) {
         let (increase, exponential, shift, step) = match self.phase {
             Phase::Off => return,
-            Phase::Attack => (true, self.adsr1 & 0x8000 != 0, ((self.adsr1 >> 10) & 31) as u32, ((self.adsr1 >> 8) & 3) as u32),
-            Phase::Decay => (false, true, ((self.adsr1 >> 4) & 15) as u32, 0),
-            Phase::Sustain => {
-                (self.adsr2 & 0x4000 == 0, self.adsr2 & 0x8000 != 0, ((self.adsr2 >> 8) & 31) as u32, ((self.adsr2 >> 6) & 3) as u32)
+            Phase::Attack => {
+                (true, self.adsr1 & 0x8000 != 0, ((self.adsr1 >> 10) & 31) as u32, ((self.adsr1 >> 8) & 3) as u32)
             }
+            Phase::Decay => (false, true, ((self.adsr1 >> 4) & 15) as u32, 0),
+            Phase::Sustain => (
+                self.adsr2 & 0x4000 == 0,
+                self.adsr2 & 0x8000 != 0,
+                ((self.adsr2 >> 8) & 31) as u32,
+                ((self.adsr2 >> 6) & 3) as u32,
+            ),
             Phase::Release => (false, self.adsr2 & 0x20 != 0, (self.adsr2 & 31) as u32, 0),
         };
         if self.wait > 0 {
@@ -313,7 +318,18 @@ impl Effects {
     /// Effect `id` at `volume` (0 to 127) as a voice's settings.
     pub fn voice(&self, id: u8, volume: i32) -> Option<hwtr_game::snd::Voice> {
         let [tone, program, note] = self.table.get(id as usize).copied().unwrap_or_default();
-        hwtr_game::snd::key_on(&self.bank, &self.notes, program as usize, tone as usize, note as i16 as i32, 0, volume, volume, self.mono, 0)
+        hwtr_game::snd::key_on(
+            &self.bank,
+            &self.notes,
+            program as usize,
+            tone as usize,
+            note as i16 as i32,
+            0,
+            volume,
+            volume,
+            self.mono,
+            0,
+        )
     }
 }
 
@@ -379,8 +395,19 @@ mod tests {
         let record = (0..61u32).map(|k| 0x800b_d5f8 + 16 * k).find(|&r| word(r + 12) == 50).expect("effect 50");
         let bank = hwtr_game::snd::Bank::from_vh(&vh, 0).unwrap();
         let notes = hwtr_game::snd::Tables::read(&byte);
-        let v = hwtr_game::snd::key_on(&bank, &notes, word(record + 4) as usize, word(record) as usize, word(record + 8) as i32, 0, 127, 127, false, 0)
-            .expect("a voice");
+        let v = hwtr_game::snd::key_on(
+            &bank,
+            &notes,
+            word(record + 4) as usize,
+            word(record) as usize,
+            word(record + 8) as i32,
+            0,
+            127,
+            127,
+            false,
+            0,
+        )
+        .expect("a voice");
         let mut spu = Spu::default();
         spu.key_on(1, &vb.into(), &v);
         let mut out = vec![0i16; 2 * 44100 * 2];

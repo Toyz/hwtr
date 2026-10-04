@@ -4,8 +4,8 @@
 
 mod common;
 
-use hwtr_game::front::password::Passwords;
 use hwtr_game::front::Profile;
+use hwtr_game::front::password::Passwords;
 use hwtr_game::pad::Mapping;
 use hwtr_hle::original::Ram;
 

@@ -215,7 +215,16 @@ impl Front {
             Typing::Password => (None, n + 1, password::LENGTH),
             _ => (Some(n + 1), n + 2, 10),
         };
-        self.board = Board { letters, back: n, space, done, longest, typing, text: text.bytes().take(20).collect(), ..Board::default() };
+        self.board = Board {
+            letters,
+            back: n,
+            space,
+            done,
+            longest,
+            typing,
+            text: text.bytes().take(20).collect(),
+            ..Board::default()
+        };
     }
 
     /// The slider to the key it is on (0x80097c88: the board's slider's
@@ -282,7 +291,12 @@ impl Front {
                     self.board.letters.get(k).copied().unwrap_or(b' ')
                 };
                 let (x, y) = self.key_place(k.min(KEY_PLACES - 1));
-                self.drawing.push(screen::Glyph { ch: ch.to_ascii_uppercase(), x: (x - 5) as i16, y: (y - 4) as i16, colour: colour.map(|c| c >> 1) });
+                self.drawing.push(screen::Glyph {
+                    ch: ch.to_ascii_uppercase(),
+                    x: (x - 5) as i16,
+                    y: (y - 4) as i16,
+                    colour: colour.map(|c| c >> 1),
+                });
             }
             self.draw_help(BOARD_HELP);
         }

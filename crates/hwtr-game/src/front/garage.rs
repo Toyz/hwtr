@@ -128,7 +128,9 @@ pub(super) fn register(r: &mut Registry<Front>) {
         }
     });
     r.add(0x8009_1480, |f: &mut Front, p: &mut Poster| p.post(if f.garage.picked[0] { 93 } else { 92 }));
-    r.add(0x8009_14c4, |f: &mut Front, p: &mut Poster| p.post(if f.people == 2 && !f.garage.picked[1] { 54 } else { 55 }));
+    r.add(0x8009_14c4, |f: &mut Front, p: &mut Poster| {
+        p.post(if f.people == 2 && !f.garage.picked[1] { 54 } else { 55 })
+    });
     r.add(0x8009_114c, |f: &mut Front, _: &mut Poster| {
         if f.car_loaded[0] {
             let y = if f.people == 1 { 525 } else { 610 };
@@ -242,7 +244,11 @@ impl Front {
         let (screen, x) = (PANELS[k], PANEL_X[k]);
         let lines: [String; 3] = if self.car_open(car, k) {
             let f = self.facts.0.get(car as usize).cloned().unwrap_or_default();
-            if self.garage.second_pair[k] { [f[0].clone(), f[3].clone(), f[4].clone()] } else { [f[0].clone(), f[1].clone(), f[2].clone()] }
+            if self.garage.second_pair[k] {
+                [f[0].clone(), f[3].clone(), f[4].clone()]
+            } else {
+                [f[0].clone(), f[1].clone(), f[2].clone()]
+            }
         } else {
             [self.strings.get(97).to_string(), self.strings.get(236).to_string(), self.strings.get(237).to_string()]
         };

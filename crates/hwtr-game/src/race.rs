@@ -77,20 +77,20 @@ pub struct RaceSetup {
     /// race the players start), which the results show.
     pub names: [String; 2],
 }
-use crate::car::{Car, Controls, EngineSpec, Handling, Tuning};
+use crate::ai::Ai;
 use crate::camera::{Camera, Surroundings};
 use crate::car::Respawn;
 use crate::car::stunt::Award;
 use crate::car::update::Drive;
-use crate::ai::Ai;
+use crate::car::{Car, Controls, EngineSpec, Handling, Tuning};
+use crate::collision::world::Step;
+use crate::collision::{Collision, Scp};
 use crate::hud::Hud;
 use crate::laps::{Course, LapEvent, Laps};
 use crate::line::BestLine;
-use crate::math::div_fx;
-use crate::collision::world::Step;
-use crate::collision::{Collision, Scp};
-use crate::rand::Rand;
 use crate::math::Tables;
+use crate::math::div_fx;
+use crate::rand::Rand;
 
 /// One race step: the game logic runs at 40 steps a second (`race_frame`,
 /// 0x80033ed8), whatever the display does.
@@ -112,11 +112,17 @@ pub enum Phase {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RaceEvent {
     /// A player's car was wrecked (sound 29).
-    Wreck { car: u8 },
+    Wreck {
+        car: u8,
+    },
     /// Any car was wrecked: its engine stops (0x80016004).
-    Wrecked { car: u8 },
+    Wrecked {
+        car: u8,
+    },
     /// A car was put back on the road: its engine starts (0x80015ebc).
-    Reset { car: u8 },
+    Reset {
+        car: u8,
+    },
     /// The pause menu came up (sound 14), and was left to go on.
     Pause,
     Resume,
@@ -125,18 +131,31 @@ pub enum RaceEvent {
     /// The start (sound 9).
     Go,
     /// Car `car` passed a checkpoint.
-    Lap { car: u8, event: LapEvent },
+    Lap {
+        car: u8,
+        event: LapEvent,
+    },
     /// The race is over; the results follow.
     Finish,
     /// The results have been up four seconds: the race stands still.
     Results,
     /// A player's car took a power-up (sound 24).
-    PowerUp { car: u8 },
+    PowerUp {
+        car: u8,
+    },
     /// A world object was knocked over, with its sound (0x80036270).
-    Knock { sound: u8, at: crate::math::Vec3 },
+    Knock {
+        sound: u8,
+        at: crate::math::Vec3,
+    },
     /// Sound effect `id` with its importance (0x800157f8), as the cars or
     /// the HUD ask.
-    Effect { id: u8, importance: u8 },
+    Effect {
+        id: u8,
+        importance: u8,
+    },
+    /// A car's hit, for its sound.
+    Hit(crate::collision::world::Hit),
 }
 
 /// A world volume as the race keeps it: the object drawn for it, whether
@@ -200,6 +219,10 @@ pub struct Race {
     pub collision: Collision,
     /// The game's random numbers.
     pub rand: Rand,
+    /// The crashes bank (CRASHES1, 3 or 4) and the dialog bank (1 to 12)
+    /// the race's sounds load (0x8001924c).
+    pub crash_bank: u8,
+    pub dialog_bank: u8,
     /// The computer cars' drivers.
     pub ai: Ai,
     /// The race clock (0x800d0e34), 25 ms a step.
@@ -301,6 +324,15 @@ impl Race {
         let mut collision = Collision::new(scp);
         collision.course = course;
         let mut rand = Rand::default();
+        // The race's sounds (0x8001924c, from race_load's 0x80034fd0): one
+        // of the crashes banks 1, 3 and 4, and one of twelve dialogs.
+        let crash_bank = loop {
+            let n = rand.below(4);
+            if n != 1 {
+                break n as u8 + 1;
+            }
+        };
+        let dialog_bank = rand.below(12) as u8 + 1;
         // fakeai_load (0x800797f0), then the cars (cars_load, 0x8003beec).
         let mut ai = Ai::new(&tuning, setup.difficulty, setup.laps, line.lap_length, false, rand.below(0x4000_0000));
         ai.mirrored = setup.flags & 64 != 0;
@@ -312,7 +344,8 @@ impl Race {
             if !entrant.driver.is_player() {
                 // A computer car starts on its route's start point
                 // (0x8007c6fc), raised by its ride height along its up axis.
-                let start = line.starts.get(entrant.grid as usize).and_then(|&at| crate::ai::Op::decode(&line.stream, at));
+                let start =
+                    line.starts.get(entrant.grid as usize).and_then(|&at| crate::ai::Op::decode(&line.stream, at));
                 if let Some((crate::ai::Op::Point { pos, .. }, _)) = start {
                     let ride = car.handling.front.ride_height.max(car.handling.rear.ride_height);
                     let h = car.origin[2].wrapping_add(ride).wrapping_sub(0x2_4000);
@@ -354,6 +387,8 @@ impl Race {
             cars,
             collision,
             rand,
+            crash_bank,
+            dialog_bank,
             ai,
             time: 0,
             clock: 0,
@@ -400,13 +435,24 @@ impl Race {
     /// 0x8006b2a8: the world's collision volumes (flags, the object drawn
     /// for it, centre, rotation, size, weight, and the knock's sound bytes),
     /// each a collision object.
-    pub fn set_volumes(&mut self, volumes: &[(u32, Option<usize>, crate::math::Vec3, crate::math::Matrix, crate::math::Vec3, u32, u8)]) {
+    pub fn set_volumes(
+        &mut self,
+        volumes: &[(u32, Option<usize>, crate::math::Vec3, crate::math::Matrix, crate::math::Vec3, u32, u8)],
+    ) {
         self.world_volumes = volumes
             .iter()
             .enumerate()
             .map(|(k, &(flags, object, centre, rot, size, heft, sound))| {
                 let collision = self.collision.add_world_object(&self.tables, k as u16, flags, centre, rot, size, heft);
-                WorldVolume { object, follows: flags & 8 != 0, sound: (flags & 4 != 0).then_some(sound), collision, flags, pos: centre, height: size[2] }
+                WorldVolume {
+                    object,
+                    follows: flags & 8 != 0,
+                    sound: (flags & 4 != 0).then_some(sound),
+                    collision,
+                    flags,
+                    pos: centre,
+                    height: size[2],
+                }
             })
             .collect();
     }
@@ -438,7 +484,12 @@ impl Race {
     /// 0x80067418: the track's pickups (name, place, size, the world object
     /// drawn for it), the power-ups they use, and the track's two cars to
     /// unlock; each pickup's collision box made.
-    pub fn set_power_ups(&mut self, spots: &[(String, crate::math::Vec3, i32, Option<usize>)], defs: Vec<crate::powerup::PowerUp>, unlockable: [u8; 2]) {
+    pub fn set_power_ups(
+        &mut self,
+        spots: &[(String, crate::math::Vec3, i32, Option<usize>)],
+        defs: Vec<crate::powerup::PowerUp>,
+        unlockable: [u8; 2],
+    ) {
         let places: Vec<_> = spots.iter().map(|(n, p, _, o)| (n.clone(), *p, *o)).collect();
         self.power_ups = crate::powerup::PowerUps::new(&places, defs, self.cars.len(), unlockable);
         for (k, (_, pos, size, _)) in spots.iter().enumerate() {
@@ -539,11 +590,13 @@ impl Race {
             if racing {
                 self.cars_update(dt);
                 self.volumes_follow();
-                let mut step =
-                    Step { tuning: &self.tuning, rand: &mut self.rand, time: self.time, clock: self.clock };
+                let mut step = Step { tuning: &self.tuning, rand: &mut self.rand, time: self.time, clock: self.clock };
                 self.collision.update(&self.tables, &mut self.cars, &mut step);
                 for s in std::mem::take(&mut self.collision.sparks) {
                     self.effects.spark(s);
+                }
+                for h in std::mem::take(&mut self.collision.hits) {
+                    self.events.push(RaceEvent::Hit(h));
                 }
                 for d in std::mem::take(&mut self.collision.prop_draws) {
                     let Some(v) = self.world_volumes.get(d.volume as usize).copied() else { continue };
@@ -608,7 +661,9 @@ impl Race {
                         self.events.push(RaceEvent::Knock { sound, at });
                     }
                 }
-                tracing::trace!("the knocked objects' flight and the wrecks' debris (0x8002e27c, 0x8007c894): not yet ported");
+                tracing::trace!(
+                    "the knocked objects' flight and the wrecks' debris (0x8002e27c, 0x8007c894): not yet ported"
+                );
             }
             let demo = self.demo_views();
             let (views, count) = if demo {
@@ -635,7 +690,16 @@ impl Race {
                     camera.step(&around, car, STEP_MS as u32, &mut self.rand);
                 }
                 if demo {
-                    camera.direct(&self.tables, &self.camera_spots, &self.cars, range, views, count, STEP_MS as u32, &mut self.rand);
+                    camera.direct(
+                        &self.tables,
+                        &self.camera_spots,
+                        &self.cars,
+                        range,
+                        views,
+                        count,
+                        STEP_MS as u32,
+                        &mut self.rand,
+                    );
                 }
             }
             // 0x80068130: power-ups run out, pickups come back.
@@ -694,7 +758,10 @@ impl Race {
         if !buttons.start {
             self.start_free = true;
         }
-        if self.pause_asked && self.phase != Phase::Finished && !self.over && !self.demo()
+        if self.pause_asked
+            && self.phase != Phase::Finished
+            && !self.over
+            && !self.demo()
             && let Some(kit) = &self.pause_kit
         {
             let mut pause = crate::pause::Pause::new(kit, 0);
@@ -833,6 +900,8 @@ impl Race {
         self.standings = self.standings();
         self.phase = Phase::Finished;
         self.events.push(RaceEvent::Finish);
+        // 0x800364cc: the race's sounds shut.
+        self.collision.hushed = true;
         for car in self.cars.iter_mut().filter(|c| c.flags & 3 != 0) {
             car.coast();
         }
@@ -913,7 +982,10 @@ impl Race {
     /// grace after a reset.
     pub fn car_shown(&self, slot: usize) -> bool {
         let Some(car) = self.cars.get(slot) else { return false };
-        let ridden = self.cameras.first().is_some_and(|c| c.car as usize == slot && c.mode == Some(crate::camera::ViewMode::Mounted));
+        let ridden = self
+            .cameras
+            .first()
+            .is_some_and(|c| c.car as usize == slot && c.mode == Some(crate::camera::ViewMode::Mounted));
         !ridden && (car.reset_grace_ms / 100) & 1 == 0
     }
 
@@ -936,7 +1008,17 @@ impl Race {
             let exhaust = self.tables.exhausts.get(id as usize).copied().unwrap_or_default();
             let special = id == 8 || id == 21;
             let car = &self.cars[slot];
-            quads.extend(self.effects.draw_flame(&self.tables, &mut self.rand, slot as u8, &poses[slot], &car.handling, exhaust, special, paused, self.clock));
+            quads.extend(self.effects.draw_flame(
+                &self.tables,
+                &mut self.rand,
+                slot as u8,
+                &poses[slot],
+                &car.handling,
+                exhaust,
+                special,
+                paused,
+                self.clock,
+            ));
         }
         tracing::trace!("effects: {} quads", quads.len());
         self.effects.frame_done(paused);
@@ -962,7 +1044,12 @@ impl Race {
                 obj.flags &= !1;
             }
             if self.cars[slot].state == 1 {
-                let zone = self.collision.objects.iter().find(|o| o.car == Some(slot as u8)).and_then(|o| o.zones.iter().next());
+                let zone = self
+                    .collision
+                    .objects
+                    .iter()
+                    .find(|o| o.car == Some(slot as u8))
+                    .and_then(|o| o.zones.iter().next());
                 if self.ai.car_update(&self.tables, &mut self.cars[slot], zone, dt) {
                     self.reset_car(slot);
                     self.ai.reset(&self.cars[slot]);
@@ -1008,7 +1095,12 @@ impl Race {
         self.rank();
         for slot in 0..self.cars.len() {
             if self.cars[slot].flags & 1 != 0 {
-                let zone = self.collision.objects.iter().find(|o| o.car == Some(slot as u8)).and_then(|o| o.zones.iter().next());
+                let zone = self
+                    .collision
+                    .objects
+                    .iter()
+                    .find(|o| o.car == Some(slot as u8))
+                    .and_then(|o| o.zones.iter().next());
                 crate::laps::watch_way(&self.collision.scp, &mut self.cars[slot], zone, STEP_MS as u32);
             }
         }
@@ -1079,7 +1171,9 @@ impl Race {
             let swapped = players == 2 && (self.cars[0].stunt_points as u32) < (self.cars[1].stunt_points as u32);
             let mut lines: Vec<Option<crate::hud::ResultLine>> = self.cars[..players]
                 .iter()
-                .map(|c| Some(crate::hud::ResultLine { name: name(c), player: true, value: c.stunt_points.to_string() }))
+                .map(|c| {
+                    Some(crate::hud::ResultLine { name: name(c), player: true, value: c.stunt_points.to_string() })
+                })
                 .collect();
             if swapped {
                 lines.swap(0, 1);

@@ -44,6 +44,11 @@ pub struct Collision {
     pub sparks: Vec<crate::effects::Spark>,
     pub prop_draws: Vec<crate::effects::PropDraws>,
     pub volume_fx: Vec<(u32, u16)>,
+    /// The hits the cars' sounds hear this step (0x80035a88, 0x80035c7c).
+    pub hits: Vec<Hit>,
+    /// The race's sounds are shut (set when the race ends, by 0x800364cc):
+    /// no hit is heard, and none draws its random number.
+    pub hushed: bool,
     /// This step's contacts between objects (0x8012c96c, count 0x800d2676).
     pub pairs: Vec<super::pairs::Pair>,
     /// The axis each pair of objects was last found apart along, by their
@@ -62,6 +67,19 @@ pub struct Step<'a> {
     /// milliseconds.
     pub time: u32,
     pub clock: u32,
+}
+
+/// A car's hit, as its sound hears it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hit {
+    /// 0x80035a88: car `slot`'s first contact of the step with a surface
+    /// of kind `surface`, at `volume` (its speed in mph over 100, 20 to
+    /// 100, as 0 to 4096).
+    Track { slot: u8, surface: u8, volume: i32 },
+    /// 0x80035c7c: two bodies meeting, heard on the later car of the two:
+    /// over 10 mph kind 2, over 20 kind 3, over 50 kind 4, with its volume
+    /// and the tone of the crashes bank drawn for it (0x80016a18).
+    Crash { slot: u8, kind: u8, volume: i32, tone: u8 },
 }
 
 /// Bit 4 of an object's flags: its lead point changed zone.
@@ -203,6 +221,7 @@ impl Collision {
         self.players_touched = false;
         self.sparks.clear();
         self.prop_draws.clear();
+        self.hits.clear();
         self.step = self.step.wrapping_add(1);
         self.update_points(cars);
         self.find_pairs(t, cars);

@@ -159,13 +159,7 @@ pub const INTRO_MS: i32 = 5000;
 impl Camera {
     /// `camera_load`'s camera for player `slot`, at the first view.
     pub fn new(slot: u8, views: &[View; 5]) -> Camera {
-        Camera {
-            car: slot,
-            mode: Some(views[0].mode),
-            fov: fx(0x3244, 0x800),
-            snap: true,
-            ..Camera::default()
-        }
+        Camera { car: slot, mode: Some(views[0].mode), fov: fx(0x3244, 0x800), snap: true, ..Camera::default() }
     }
 
     /// 0x800369e4 for one camera, a step of `dt_ms`, following `car`: the
@@ -275,11 +269,8 @@ impl Camera {
         let mph = div_fx(176 << 12, 10 << 12);
         let slow = fx((tuning.camera_travel_mph as i32) << 12, mph);
         let along = if t.length(travel) < slow {
-            let mut dir = if car.grounded != 0 || self.intro_ms != 0 || self.snap {
-                car_forward
-            } else {
-                sub(centre, self.pos)
-            };
+            let mut dir =
+                if car.grounded != 0 || self.intro_ms != 0 || self.snap { car_forward } else { sub(centre, self.pos) };
             dir[2] = 0;
             if dir[0].wrapping_abs().wrapping_add(dir[1].wrapping_abs()) > 0 { dir } else { car_up }
         } else {
@@ -397,7 +388,17 @@ impl Camera {
     /// sees none farther); with none, a chase view other than mounted at
     /// random, on a car at random that is not wrecked (ten tries).
     #[allow(clippy::too_many_arguments)]
-    pub fn direct(&mut self, t: &Tables, spots: &[Spot], cars: &[Car], range: u16, views: &[View; 5], count: u8, dt_ms: u32, rand: &mut Rand) {
+    pub fn direct(
+        &mut self,
+        t: &Tables,
+        spots: &[Spot],
+        cars: &[Car],
+        range: u16,
+        views: &[View; 5],
+        count: u8,
+        dt_ms: u32,
+        rand: &mut Rand,
+    ) {
         if self.director_ms >= dt_ms {
             self.director_ms -= dt_ms;
             return;

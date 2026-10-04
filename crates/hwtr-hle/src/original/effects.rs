@@ -162,7 +162,11 @@ pub fn read(ram: &Ram) -> Effects {
         let cvs = ram.i32(m + 16) as u32;
         e.root_colour[slot] = ram.i32(ram.i32(m + 4) as u32 + 0x44) as u32 & 0xff_ffff;
         e.wrecked[slot] = ram.u8(cvs + 0x28) == 1;
-        e.flames[slot] = hwtr_game::effects::Flame { on: ram.u8(cvs + 0x1f0) != 0, start: ram.i32(cvs + 0x24) as u32, count: ram.u8(cvs + 0x1ec) };
+        e.flames[slot] = hwtr_game::effects::Flame {
+            on: ram.u8(cvs + 0x1f0) != 0,
+            start: ram.i32(cvs + 0x24) as u32,
+            count: ram.u8(cvs + 0x1ec),
+        };
         e.pulse[slot] = (ram.i32(0x8011_ec14 + 4 * slot as u32), ram.i32(0x8011_ebf4 + 4 * slot as u32) as u32);
     }
     e

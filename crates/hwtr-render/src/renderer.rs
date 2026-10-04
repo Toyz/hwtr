@@ -143,10 +143,22 @@ pub fn overlay_matrix(size: (u32, u32), screen: (f32, f32)) -> glam::Mat4 {
     let (bw, bh) = if w * 3.0 > h * 4.0 { (h * 4.0 / 3.0, h) } else { (w, w * 3.0 / 4.0) };
     let (sx, sy) = (bw / w, bh / h);
     glam::Mat4::from_cols_array(&[
-        2.0 * sx / screen.0, 0.0, 0.0, 0.0,
-        0.0, -2.0 * sy / screen.1, 0.0, 0.0,
-        0.0, 0.0, 1.0, 0.0,
-        -sx, sy, 0.0, 1.0,
+        2.0 * sx / screen.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -2.0 * sy / screen.1,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        -sx,
+        sy,
+        0.0,
+        1.0,
     ])
 }
 
@@ -239,7 +251,8 @@ impl Renderer {
         let pipeline = make_pipeline(device, &pipeline_layout, &shader, format, true, None);
         // The HUD: drawn over everything, both faces.
         let overlay_pipeline = make_pipeline(device, &pipeline_layout, &shader, format, false, None);
-        let semi_pipelines = std::array::from_fn(|abr| make_pipeline(device, &pipeline_layout, &shader, format, true, Some(abr as u8)));
+        let semi_pipelines =
+            std::array::from_fn(|abr| make_pipeline(device, &pipeline_layout, &shader, format, true, Some(abr as u8)));
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("triangles"),
             contents: Staging::new().pack(tris),
@@ -401,8 +414,14 @@ fn make_pipeline(
     semi: Option<u8>,
 ) -> wgpu::RenderPipeline {
     let attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Uint32, 2 => Uint32, 3 => Uint32, 4 => Uint32];
-device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some(if semi.is_some() { "semi" } else if world { "world" } else { "overlay" }),
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(if semi.is_some() {
+            "semi"
+        } else if world {
+            "world"
+        } else {
+            "overlay"
+        }),
         layout: Some(layout),
         vertex: wgpu::VertexState {
             module: shader,
@@ -443,7 +462,11 @@ device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             module: shader,
             entry_point: Some(if semi.is_some() { "fs_semi" } else { "fs" }),
             compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState { format, blend: semi.map(blend_of), write_mask: wgpu::ColorWrites::ALL })],
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: semi.map(blend_of),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
         }),
         multiview_mask: None,
         cache: None,

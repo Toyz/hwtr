@@ -1,8 +1,8 @@
 //! The original's memory as pad: where it keeps it, read into and written
 //! from the port's types.
 
-use hwtr_game::pad::PadReader;
 use super::{InMemory, Ram};
+use hwtr_game::pad::PadReader;
 
 pub const LEVELS: u32 = 0x8011_b2b8;
 pub const PORT_SIZE: u32 = 0x62;

@@ -292,7 +292,8 @@ impl Pause {
     fn enter(&mut self, k: usize) {
         let style = &self.kit.style;
         let screen = &mut self.screens[k];
-        for (l, label) in screen.boxes.iter_mut().map(|b| (b, false)).chain(screen.labels.iter_mut().map(|l| (l, true))) {
+        for (l, label) in screen.boxes.iter_mut().map(|b| (b, false)).chain(screen.labels.iter_mut().map(|l| (l, true)))
+        {
             l.lay_out(style, label);
             l.start_entry(style);
         }
@@ -447,7 +448,9 @@ impl Pause {
     fn text_in(&mut self, text: &str, x: i16, y: i16, colour: [u8; 3]) {
         let style = &self.kit.style;
         let b = text.as_bytes();
-        let width: i32 = (0..b.len()).map(|i| style.width(b[i]) + b.get(i + 1).map_or(0, |&n| style.kerning.kerning(b[i], n) as i32)).sum();
+        let width: i32 = (0..b.len())
+            .map(|i| style.width(b[i]) + b.get(i + 1).map_or(0, |&n| style.kerning.kerning(b[i], n) as i32))
+            .sum();
         let mut at = x as i32 - width / 2;
         for (i, &c) in b.iter().enumerate() {
             // The glyph upper case (0x8001ddc4), the kerning on the letters

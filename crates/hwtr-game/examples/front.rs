@@ -35,7 +35,8 @@ fn main() {
     let byte = |a: u32| a.checked_sub(0x8001_0000).and_then(|o| exe.get(o as usize + 0x800)).copied().unwrap_or(0);
     let strings = std::fs::read("work/big/SCREENSBIG/ENGLISHHWT").expect("strings");
     let cars = std::fs::read("work/big/SCREENSBIG/ENGCARSCDT").expect("cars");
-    let font = hwtr_game::hud::Font::parse(&std::fs::read("work/big/SCREENSBIG/SCRNFNTOVL").expect("font")).expect("font");
+    let font =
+        hwtr_game::hud::Font::parse(&std::fs::read("work/big/SCREENSBIG/SCRNFNTOVL").expect("font")).expect("font");
     let tuning = std::fs::read("work/big/SCREENSBIG/TUNINGPRM").expect("tuning");
     let cwhs = std::fs::read("work/big/SCREENSBIG/CWHSBMF").ok();
     let name_keys = std::fs::read("work/big/SCREENSBIG/ENGNAMECHM").ok();
@@ -91,7 +92,11 @@ fn main() {
                     score: 0,
                 })
                 .collect();
-            front.race_over(hwtr_game::front::RaceResult { end: hwtr_game::front::RaceEnd::Finished, cars, unlocks: [0; 6] });
+            front.race_over(hwtr_game::front::RaceResult {
+                end: hwtr_game::front::RaceEnd::Finished,
+                cars,
+                unlocks: [0; 6],
+            });
         }
     }
 }

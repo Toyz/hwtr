@@ -7,7 +7,7 @@ mod common;
 use hwtr_game::camera::Camera;
 use hwtr_game::car::Car;
 use hwtr_game::snapshot::{CameraShot, CarShot, Snapshots};
-use hwtr_hle::original::car::{CARS, CAR_SIZE};
+use hwtr_hle::original::car::{CAR_SIZE, CARS};
 use hwtr_hle::original::{InMemory, Ram, camera};
 
 /// The snapshots' buffer, and their count and bytes used.
@@ -52,7 +52,10 @@ fn snapshots_keep_and_put_back_what_the_original_does() {
             let ram = Ram(&mut m.bus.ram);
             let n = ram.i32(hwtr_hle::original::car::CAR_COUNT) as u32;
             let k = ram.u8(camera::COUNT) as u32;
-            ((0..n).map(|i| Car::read(&ram, CARS + i * CAR_SIZE)).collect(), (0..k).map(|i| Camera::read(&ram, camera::at(i))).collect())
+            (
+                (0..n).map(|i| Car::read(&ram, CARS + i * CAR_SIZE)).collect(),
+                (0..k).map(|i| Camera::read(&ram, camera::at(i))).collect(),
+            )
         };
         m.call(0x8007_fe48, &[]).unwrap();
         m.call(0x8007_feb0, &[]).unwrap();

@@ -189,9 +189,19 @@ pub fn watch_way(scp: &crate::collision::scp::Scp, car: &mut crate::car::Car, zo
         });
         car.wrong_way_ms = match beyond {
             Some((here, there)) if car.wrong_way_ms != 0 => {
-                if there < here { 0 } else { car.wrong_way_ms.wrapping_add(dt_ms) }
+                if there < here {
+                    0
+                } else {
+                    car.wrong_way_ms.wrapping_add(dt_ms)
+                }
             }
-            Some((here, there)) => if here < there { dt_ms } else { 0 },
+            Some((here, there)) => {
+                if here < there {
+                    dt_ms
+                } else {
+                    0
+                }
+            }
             None => 0,
         };
     }

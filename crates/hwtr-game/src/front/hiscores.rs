@@ -148,7 +148,15 @@ impl Front {
     /// 0x80099320, 0x8009946c: the kind round, or the next open track or
     /// cup.
     fn table_step(&mut self, right: bool) {
-        let step = |v: u8, n: u8| if right { if v + 1 < n { v + 1 } else { 0 } } else if v == 0 { n - 1 } else { v - 1 };
+        let step = |v: u8, n: u8| {
+            if right {
+                if v + 1 < n { v + 1 } else { 0 }
+            } else if v == 0 {
+                n - 1
+            } else {
+                v - 1
+            }
+        };
         match self.hs.row {
             0 => self.hs.kind = step(self.hs.kind, 3),
             1 if self.hs.kind < 2 => {
@@ -219,7 +227,11 @@ impl Front {
                 };
                 (format!("{}. {}", i + 1, s.name), value)
             };
-            let (name, value) = if self.hs.cycling && i as u8 >= self.hs.shown { (String::new(), String::new()) } else { (name, value) };
+            let (name, value) = if self.hs.cycling && i as u8 >= self.hs.shown {
+                (String::new(), String::new())
+            } else {
+                (name, value)
+            };
             self.set_text(HISCORES, 2 + i, &name, 290, y, 0, 0, false, 0, [255; 3]);
             self.set_text(HISCORES, 7 + i, &value, 508, y, 0, 0, false, 0, [255; 3]);
         }

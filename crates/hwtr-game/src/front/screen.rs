@@ -250,8 +250,7 @@ impl Label {
 
     /// 0x800878b4, 0x80087988: the string's letters.
     pub(crate) fn fill(&mut self, strings: &Strings) {
-        self.letters =
-            strings.get(self.string as usize).bytes().map(|ch| Letter { ch, ..Letter::default() }).collect();
+        self.letters = strings.get(self.string as usize).bytes().map(|ch| Letter { ch, ..Letter::default() }).collect();
     }
 
     /// 0x8008173c (a box: always centred) and 0x800818f4 (a label); in the

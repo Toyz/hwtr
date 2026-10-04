@@ -126,7 +126,16 @@ impl Collision {
     /// lifting a car (2 to 4), wrecking one (64 to 8); a box half `size`
     /// each way at `centre` turned by `rot`, one point at its centre (eight, its corners,
     /// for flag 16), in that point's zone. One that follows its object moves.
-    pub fn add_world_object(&mut self, t: &Tables, number: u16, flags: u32, centre: Vec3, rot: Matrix, size: Vec3, heft: u32) -> ObjectId {
+    pub fn add_world_object(
+        &mut self,
+        t: &Tables,
+        number: u16,
+        flags: u32,
+        centre: Vec3,
+        rot: Matrix,
+        size: Vec3,
+        heft: u32,
+    ) -> ObjectId {
         let kind = if flags & 8 != 0 {
             Kind::Other(2)
         } else if flags & 16 != 0 {

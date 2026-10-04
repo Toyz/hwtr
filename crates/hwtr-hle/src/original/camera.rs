@@ -61,11 +61,14 @@ impl InMemory for Camera {
         ram.set_u8(at + CAR, self.car);
         ram.set_u8(at + VIEW, self.view);
         if let Some(mode) = self.mode {
-            ram.set_u8(at + MODE, match mode {
-                ViewMode::Mounted => 0,
-                ViewMode::Chase => 1,
-                ViewMode::Other(b) => b,
-            });
+            ram.set_u8(
+                at + MODE,
+                match mode {
+                    ViewMode::Mounted => 0,
+                    ViewMode::Chase => 1,
+                    ViewMode::Other(b) => b,
+                },
+            );
         }
         ram.set_vec3(at + POS, self.pos);
         ram.set_vec3(at + VEL, self.vel);

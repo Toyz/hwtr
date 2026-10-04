@@ -267,7 +267,14 @@ impl Hud {
     /// red at (94, 18) (at y 124 for the second of two players), from the
     /// race clock `now` its car is going the wrong way until 200 ms after,
     /// hidden every other half second.
-    pub fn wrong_way(&mut self, player: usize, car: &Car, now: u32, style: &impl crate::front::screen::Style, text: &str) -> Vec<Sprite> {
+    pub fn wrong_way(
+        &mut self,
+        player: usize,
+        car: &Car,
+        now: u32,
+        style: &impl crate::front::screen::Style,
+        text: &str,
+    ) -> Vec<Sprite> {
         let mut out = Vec::new();
         let Some(from) = self.wrong_way_from.get_mut(player) else { return out };
         if car.wrong_way {
@@ -312,7 +319,15 @@ impl Hud {
         let show = self.show[player];
         let split = self.players == 2;
         // A y on the screen, or on the lower player's half.
-        let at = |one: i16, upper: i16, lower: i16| if !split { one } else if player != 0 { lower } else { upper };
+        let at = |one: i16, upper: i16, lower: i16| {
+            if !split {
+                one
+            } else if player != 0 {
+                lower
+            } else {
+                upper
+            }
+        };
         let mut d = Draw { out: &mut out, colour: WHITE };
         if show & show::SPEED != 0 {
             d.colour = WHITE;
@@ -326,7 +341,13 @@ impl Hud {
         if show & show::POWER_UP != 0 && car.power_up != 0 {
             // 0x80062534: the power-up's icon, white.
             d.colour = WHITE;
-            let y = if !split { 178 } else if player == 0 { 70 } else { 178 };
+            let y = if !split {
+                178
+            } else if player == 0 {
+                70
+            } else {
+                178
+            };
             d.glyph(1, car.power_up.wrapping_add(2), 314, y);
         }
         let mut flashing = false;
@@ -563,7 +584,14 @@ pub struct ResultsText {
 /// 0x80063bc4: `s` in the race's text font from (`x`, `y`), left to
 /// right, each letter's glyph upper case and its width plus the kerning to
 /// the next, in layer 1.
-pub fn race_text(style: &impl crate::front::screen::Style, s: &str, x: i16, y: i16, colour: [u8; 3], out: &mut Vec<Sprite>) {
+pub fn race_text(
+    style: &impl crate::front::screen::Style,
+    s: &str,
+    x: i16,
+    y: i16,
+    colour: [u8; 3],
+    out: &mut Vec<Sprite>,
+) {
     let b = s.as_bytes();
     let mut at = x as i32;
     for (i, &c) in b.iter().enumerate() {
@@ -607,7 +635,12 @@ pub fn result_time(ms: u32, no_time: Option<&str>) -> String {
 /// 248, in the race's text font (0x80063bc4: left to right, each letter by
 /// its width and the kerning to the next). A player's line is green when
 /// `green` (the times' table), else every line is white.
-pub fn results_table(style: &impl crate::front::screen::Style, head: &str, lines: &[Option<ResultLine>], green: bool) -> Vec<Sprite> {
+pub fn results_table(
+    style: &impl crate::front::screen::Style,
+    head: &str,
+    lines: &[Option<ResultLine>],
+    green: bool,
+) -> Vec<Sprite> {
     let mut out = Vec::new();
     let mut text = |s: &str, x: i16, y: i16, colour: [u8; 3]| race_text(style, s, x, y, colour, &mut out);
     let cyan = half([0, 255, 255]);

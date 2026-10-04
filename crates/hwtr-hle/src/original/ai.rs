@@ -2,8 +2,8 @@
 //! 0x801315f4 and the race's settings, read into and written from the port's
 //! types.
 
-use hwtr_game::ai::{Ai, AiRand, Choice, Driver, Line};
 use super::Ram;
+use hwtr_game::ai::{Ai, AiRand, Choice, Driver, Line};
 
 pub const DRIVERS: u32 = 0x8013_15f4;
 pub const DRIVER_SIZE: u32 = 592;

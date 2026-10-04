@@ -287,7 +287,9 @@ fn main() {
             "--intro" => with_intro = true,
             "--race-frames" => race_frames = args.next().and_then(|s| s.parse().ok()),
             _ => {
-                eprintln!("usage: hwtr [--cue DISC.cue] [--track NAME] [--analog] [--shot OUT.png [--frames N] [--press SCRIPT] [--intro] [--race-frames N]]");
+                eprintln!(
+                    "usage: hwtr [--cue DISC.cue] [--track NAME] [--analog] [--shot OUT.png [--frames N] [--press SCRIPT] [--intro] [--race-frames N]]"
+                );
                 std::process::exit(2);
             }
         }
@@ -313,7 +315,8 @@ fn main() {
                 }
             }
         };
-        let intro = if race || (shot_mode && !with_intro) { None } else { Some(intro::Intro::load(&cue, spu.clone())?) };
+        let intro =
+            if race || (shot_mode && !with_intro) { None } else { Some(intro::Intro::load(&cue, spu.clone())?) };
         let cd = match &spu {
             Some(s) => cd::CdPlayer::new(&cue, s.clone()).map_err(|e| rrt::tracing::warn!("no CD music: {e}")).ok(),
             None => None,

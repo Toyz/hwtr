@@ -11,12 +11,12 @@
 
 use std::path::Path;
 
-use rrt::wgpu;
-use hwtr_game::front::{card, Files, Frame, Front};
+use hwtr_game::front::{Files, Frame, Front, card};
 use hwtr_game::hud::Font;
 use hwtr_game::pad::PadState;
 use hwtr_render::mesh::Vram;
 use hwtr_render::{Renderer, Vtx};
+use rrt::wgpu;
 
 const SCREEN: (f32, f32) = (640.0, 240.0);
 const PICTURE_AT: (u16, u16) = (640, 0);
@@ -75,7 +75,6 @@ const PREVIEW_CLUT: [(u16, u16); 2] = [(0, 480), (0, 481)];
 const DECAL_AT: (u16, u16) = (640, 256);
 const DECAL_SIZE: (u16, u16) = (192, 64);
 
-
 /// A texture page and palette as `Vtx::mode` takes them.
 fn mode(at: (u16, u16), clut: (u16, u16), depth: u32) -> u32 {
     let page = (at.0 as u32 / 64) | ((at.1 as u32 / 256) << 4) | (depth << 7);
@@ -83,7 +82,10 @@ fn mode(at: (u16, u16), clut: (u16, u16), depth: u32) -> u32 {
 }
 
 impl FrontEnd {
-    pub fn load(cue: &Path, spu: Option<std::sync::Arc<std::sync::Mutex<crate::spu::Spu>>>) -> Result<FrontEnd, String> {
+    pub fn load(
+        cue: &Path,
+        spu: Option<std::sync::Arc<std::sync::Mutex<crate::spu::Spu>>>,
+    ) -> Result<FrontEnd, String> {
         let disc = rrt::disc::Image::open(cue).map_err(|e| e.to_string())?;
         let iso = disc.iso().map_err(|e| e.to_string())?;
         let read = |p: &str| iso.find(p).and_then(|e| iso.read(&e)).map_err(|e| e.to_string());
@@ -133,15 +135,26 @@ impl FrontEnd {
             name_keys: get("ENGNAMECHM").ok(),
             password_keys: get("ENGPWDCHM").ok(),
         };
-        let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_millis() as u32);
+        let seed =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_millis() as u32);
         let mut front = Front::new(&byte, files, seed).ok_or("the front end does not load")?;
         // 0x800180ac: the music bank, by the table at 0x800bdbac.
         let k = front.rand.below(6);
-        let name_at = u32::from_le_bytes([byte(0x800b_dbac + 4 * k), byte(0x800b_dbad + 4 * k), byte(0x800b_dbae + 4 * k), byte(0x800b_dbaf + 4 * k)]);
-        let name: String = (0..16).map(|i| byte(name_at + i)).take_while(|&c| c != 0).map(|c| (c as char).to_ascii_uppercase()).collect();
+        let name_at = u32::from_le_bytes([
+            byte(0x800b_dbac + 4 * k),
+            byte(0x800b_dbad + 4 * k),
+            byte(0x800b_dbae + 4 * k),
+            byte(0x800b_dbaf + 4 * k),
+        ]);
+        let name: String = (0..16)
+            .map(|i| byte(name_at + i))
+            .take_while(|&c| c != 0)
+            .map(|c| (c as char).to_ascii_uppercase())
+            .collect();
         let music_vh = big.lookup(&format!("SCREENSBIG/{name}VH")).ok_or(format!("{name}.VH is not in SCREENS.BIG"))?;
         let music = hwtr_game::snd::Bank::from_vh(music_vh, 0).ok_or("the music bank does not parse")?;
-        let music_samples: std::sync::Arc<[u8]> = big.lookup(&format!("SCREENSBIG/{name}VB")).unwrap_or_default().into();
+        let music_samples: std::sync::Arc<[u8]> =
+            big.lookup(&format!("SCREENSBIG/{name}VB")).unwrap_or_default().into();
         rrt::tracing::info!("music: {name}");
         let view = exe.view();
         let word = |a: u32| u32::from_le_bytes(std::array::from_fn(|k| view.u8(a + k as u32).unwrap_or(0)));
@@ -169,7 +182,9 @@ impl FrontEnd {
             .map(|name| {
                 let n = name.to_uppercase();
                 let bmf = get(&format!("{n}BMF")).ok()?;
-                let model = hwtr_data::car::CarBmf::parse(bmf).ok().and_then(|b| hwtr_data::car::Model::parse(b.models[0]).ok())?;
+                let model = hwtr_data::car::CarBmf::parse(bmf)
+                    .ok()
+                    .and_then(|b| hwtr_data::car::Model::parse(b.models[0]).ok())?;
                 let tim = hwtr_data::Tim::parse(get(&format!("{n}TIM")).ok()?).ok()?;
                 Some((model, tim))
             })
@@ -221,7 +236,8 @@ impl FrontEnd {
             }
             let Some(save) = &self.front.slots[k] else { continue };
             let path = Path::new(dir).join(card::FILE_NAME);
-            let written = std::fs::create_dir_all(dir).and_then(|_| std::fs::write(&path, card::file(&self.card_header, save)));
+            let written =
+                std::fs::create_dir_all(dir).and_then(|_| std::fs::write(&path, card::file(&self.card_header, save)));
             match written {
                 Ok(()) => rrt::tracing::info!("saved to {}", path.display()),
                 Err(e) => rrt::tracing::error!("{}: {e}", path.display()),
@@ -240,7 +256,9 @@ impl FrontEnd {
         match self.front.music {
             Some(true) => {
                 let level = 127 * 2 / 5;
-                if let Some(v) = hwtr_game::snd::key_on(&self.music, &self.effects.notes, 0, 0, 60, 0, level, level, false, 0) {
+                if let Some(v) =
+                    hwtr_game::snd::key_on(&self.music, &self.effects.notes, 0, 0, 60, 0, level, level, false, 0)
+                {
                     spu.key_on(0, &self.music_samples, &v);
                 }
             }
@@ -343,7 +361,13 @@ impl FrontEnd {
                 out.extend(quad(px as f32, 0.0, sw as f32, h as f32, [u0, u1, u0, u1], [0, 0, v1, v1], colour, page));
             }
         }
-        out.extend(crate::pieces::triangles(&frame.pieces, frame.track.as_ref(), &self.scr, &self.textures, &self.tables));
+        out.extend(crate::pieces::triangles(
+            &frame.pieces,
+            frame.track.as_ref(),
+            &self.scr,
+            &self.textures,
+            &self.tables,
+        ));
         for d in &frame.cars {
             if let Some((car, model)) = &self.previews[d.player as usize & 1]
                 && *car == d.car
@@ -361,12 +385,30 @@ impl FrontEnd {
             let (u0, u1) = (0, (w - 1) as u8);
             let v0 = (h * (d.slot as u16 & 1)) as u8;
             let v1 = v0 + (h - 1) as u8;
-            out.extend(quad(d.x as f32, d.y as f32, w as f32, h as f32, [u0, u1, u0, u1], [v0, v0, v1, v1], 0xff_ffff, decal_mode));
+            out.extend(quad(
+                d.x as f32,
+                d.y as f32,
+                w as f32,
+                h as f32,
+                [u0, u1, u0, u1],
+                [v0, v0, v1, v1],
+                0xff_ffff,
+                decal_mode,
+            ));
         }
         for g in &frame.glyphs {
             let Some(glyph) = self.font.glyphs.get(g.ch as usize) else { continue };
             let colour = g.colour[0] as u32 | (g.colour[1] as u32) << 8 | (g.colour[2] as u32) << 16;
-            out.extend(quad(g.x as f32, g.y as f32, glyph.w as f32, glyph.h as f32, glyph.u, glyph.v, colour, self.font_mode));
+            out.extend(quad(
+                g.x as f32,
+                g.y as f32,
+                glyph.w as f32,
+                glyph.h as f32,
+                glyph.u,
+                glyph.v,
+                colour,
+                self.font_mode,
+            ));
         }
         out
     }

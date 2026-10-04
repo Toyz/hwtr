@@ -101,7 +101,8 @@ impl Collision {
                 // that was outside.
                 for axis in 0..3 {
                     let h = half[axis];
-                    for (bound, inside) in [(h, (|v: i32, h: i32| v < h) as fn(i32, i32) -> bool), (h.wrapping_neg(), |v, h| h < v)]
+                    for (bound, inside) in
+                        [(h, (|v: i32, h: i32| v < h) as fn(i32, i32) -> bool), (h.wrapping_neg(), |v, h| h < v)]
                     {
                         let a_in = inside(a[axis], bound);
                         if a_in == inside(b[axis], bound) {
@@ -118,7 +119,10 @@ impl Collision {
                 }
                 // How far in from each pair of faces.
                 let depth = |axis: usize| {
-                    let (lo, hi) = (if b[axis] < a[axis] { b[axis] } else { a[axis] }, if a[axis] < b[axis] { b[axis] } else { a[axis] });
+                    let (lo, hi) = (
+                        if b[axis] < a[axis] { b[axis] } else { a[axis] },
+                        if a[axis] < b[axis] { b[axis] } else { a[axis] },
+                    );
                     let h = half[axis];
                     let (near, far) = (h.wrapping_sub(lo), hi.wrapping_add(h));
                     (if far < near { far } else { near }, near, far)
@@ -141,7 +145,8 @@ impl Collision {
                     *pos = pos.wrapping_add(centre).wrapping_add(way).wrapping_sub(centre);
                 }
                 let n = f.normal;
-                let into_it = fx(n[0], body.vel[0]).wrapping_add(fx(n[1], body.vel[1])).wrapping_add(fx(n[2], body.vel[2]));
+                let into_it =
+                    fx(n[0], body.vel[0]).wrapping_add(fx(n[1], body.vel[1])).wrapping_add(fx(n[2], body.vel[2]));
                 if into_it >= 0 {
                     continue;
                 }

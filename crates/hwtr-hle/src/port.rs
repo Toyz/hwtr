@@ -14,12 +14,12 @@
 use crate::original::InMemory;
 use std::rc::Rc;
 
+use crate::original::Ram;
+use crate::original::car::{BODY, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS, wheel};
 use hwtr_cpu::{Bus, Cpu, Machine};
 use hwtr_game::body::Body;
-use crate::original::car::{BODY, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS, wheel};
 use hwtr_game::car::{Car, Tuning};
 use hwtr_game::math::Tables;
-use crate::original::Ram;
 
 /// Runs a port in place of the original: arguments in the CPU's registers,
 /// memory on the bus; returns v0.

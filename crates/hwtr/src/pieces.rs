@@ -39,7 +39,9 @@ fn sat(v: i64) -> i32 {
 
 /// The GTE's matrix product, each element shifted down 12 and saturated.
 fn mul(a: &M, b: &M) -> M {
-    std::array::from_fn(|i| std::array::from_fn(|j| sat((0..3).map(|k| a[i][k] as i64 * b[k][j] as i64).sum::<i64>() >> 12)))
+    std::array::from_fn(|i| {
+        std::array::from_fn(|j| sat((0..3).map(|k| a[i][k] as i64 * b[k][j] as i64).sum::<i64>() >> 12))
+    })
 }
 
 /// ApplyMatrixLV: a long vector through a matrix, down 12.
@@ -104,7 +106,13 @@ struct Drawn {
 const TRACK_TILT: i32 = ((-0x4_6000i64 * 71) >> 12) as i32;
 
 /// The triangles of `pieces` and the track map, back to front.
-pub fn triangles(pieces: &[PieceDraw], track: Option<&TrackDraw>, scr: &Scr, textures: &Textures, tables: &Tables) -> Vec<Vtx> {
+pub fn triangles(
+    pieces: &[PieceDraw],
+    track: Option<&TrackDraw>,
+    scr: &Scr,
+    textures: &Textures,
+    tables: &Tables,
+) -> Vec<Vtx> {
     let mut drawn = Vec::new();
     if let Some(t) = track
         && let Some(first) = scr.model(&t.model)
@@ -161,7 +169,9 @@ fn quads(o: &Object, r: &M, t: [i32; 3], textures: &Textures, out: &mut Vec<Draw
     for q in &o.quads {
         // RTPS: TR in, the rotated vertex added, down 12, saturated.
         let project = |v: [i16; 3]| -> [i32; 3] {
-            std::array::from_fn(|i| sat(((tr[i] as i64) << 12) + (0..3).map(|k| rv[i][k] as i64 * v[k] as i64).sum::<i64>() >> 12))
+            std::array::from_fn(|i| {
+                sat(((tr[i] as i64) << 12) + (0..3).map(|k| rv[i][k] as i64 * v[k] as i64).sum::<i64>() >> 12)
+            })
         };
         let ps = q.corners.map(|c| project(c.pos));
         if ps.iter().any(|p| p[2] <= 0) {
@@ -257,7 +267,8 @@ pub fn car_triangles(d: &hwtr_game::front::CarDraw, car: &PreviewCar, tables: &T
             if ps.iter().any(|p| p[2] <= 0) {
                 continue;
             }
-            let screen = ps.map(|p| (CENTRE.0 + H * p[0] as f32 / p[2] as f32, CENTRE.1 + H * p[1] as f32 / p[2] as f32));
+            let screen =
+                ps.map(|p| (CENTRE.0 + H * p[0] as f32 / p[2] as f32, CENTRE.1 + H * p[1] as f32 / p[2] as f32));
             let (a, b, c) = (screen[0], screen[1], screen[2]);
             let nclip = (b.0 - a.0) * (c.1 - a.1) - (c.0 - a.0) * (b.1 - a.1);
             if nclip > 0.0 {

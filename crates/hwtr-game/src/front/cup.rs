@@ -222,7 +222,8 @@ pub(super) fn register(r: &mut Registry<Front>) {
     });
     r.add(0x8008_fb34, |f: &mut Front, _: &mut Poster| {
         let name = f.players[0].name.clone();
-        let (a, b, c) = (f.strings.get(265).to_string(), f.strings.get(266).to_string(), f.strings.get(267).to_string());
+        let (a, b, c) =
+            (f.strings.get(265).to_string(), f.strings.get(266).to_string(), f.strings.get(267).to_string());
         f.set_text(WON, 0, &a, 160, 210, 0, 2, true, 1, [255; 3]);
         f.set_text(WON, 1, &format!("{name} {b}"), 160, 240, 0, 2, true, 1, [255; 3]);
         f.set_text(WON, 2, &c, 160, 270, 0, 2, true, 1, [255; 3]);
@@ -363,7 +364,8 @@ impl Front {
         self.set_text(CUP, 4, &track_name, 505, 280, 0, 0, true, 0, [255; 3]);
         self.set_text(CUP, 5, &cup_name, 23, 342, 0, 1, false, 1, [127; 3]);
         self.set_text(CUP, 6, &sign_in, 23, 274, 0, 1, false, 1, [127; 3]);
-        let round = format!("{} {} {} {}", self.strings.get(258), p.progress[1] + 1, self.strings.get(259), self.cup_rounds());
+        let round =
+            format!("{} {} {} {}", self.strings.get(258), p.progress[1] + 1, self.strings.get(259), self.cup_rounds());
         self.set_text(CUP, 1, &round, 410, 128, 0, 0, false, 1, [255; 3]);
         let rank = if p.progress[1] == 0 {
             self.strings.get(260).to_string()
@@ -419,7 +421,8 @@ impl Front {
         let mask = if self.cup.line < 5 { 99 | 16 } else { 99 };
         self.pad_events(0, mask, p);
         let line = self.cup.line;
-        let steps = matches!(line, 2 | 3) || (line == 5 && self.players[0].progress[1] == 0 && (self.cup_open(1) || self.cup_open(2)));
+        let steps = matches!(line, 2 | 3)
+            || (line == 5 && self.players[0].progress[1] == 0 && (self.cup_open(1) || self.cup_open(2)));
         if steps {
             self.held_repeat(0, (16, 46), (17, 47), p);
         }
@@ -487,11 +490,24 @@ impl Front {
         let file = |c: u8| self.tables.car_files.get(c as usize).cloned().flatten().unwrap_or_default();
         let cup = p0.progress[0];
         let grid = if cup == 2 { 2 } else { self.cup_rank(0) };
-        let mut entrants = vec![Entrant { name: file(p0.car), driver: Driver::PlayerOne, car_id: p0.car, player: 0, grid }];
+        let mut entrants =
+            vec![Entrant { name: file(p0.car), driver: Driver::PlayerOne, car_id: p0.car, player: 0, grid }];
         let difficulty;
         if cup == 2 {
-            entrants.push(Entrant { name: "twinmill".into(), driver: Driver::Computer, car_id: 38, player: 0, grid: 0 });
-            entrants.push(Entrant { name: "twinmil2".into(), driver: Driver::Computer, car_id: 39, player: 0, grid: 1 });
+            entrants.push(Entrant {
+                name: "twinmill".into(),
+                driver: Driver::Computer,
+                car_id: 38,
+                player: 0,
+                grid: 0,
+            });
+            entrants.push(Entrant {
+                name: "twinmil2".into(),
+                driver: Driver::Computer,
+                car_id: 39,
+                player: 0,
+                grid: 1,
+            });
             difficulty = 255;
         } else {
             difficulty = self.settings.difficulty;
@@ -513,7 +529,13 @@ impl Front {
                         c += 1;
                     }
                     free[c as usize] = false;
-                    entrants.push(Entrant { name: file(c), driver: Driver::Computer, car_id: c, player: 0, grid: self.cup_rank(k) });
+                    entrants.push(Entrant {
+                        name: file(c),
+                        driver: Driver::Computer,
+                        car_id: c,
+                        player: 0,
+                        grid: self.cup_rank(k),
+                    });
                 }
                 if self.field_fair(&entrants) {
                     break;
@@ -524,7 +546,11 @@ impl Front {
         let world = (track / 3) as usize;
         let number = track % 3 + 1;
         let cheats = if p0.cheats != 0 { p0.cheats } else { self.players[1].cheats };
-        let mut flags = 32 | ((p0.cheats >> 3) & 16) | ((self.players[1].cheats >> 3) & 16) | (((p0.cheats & 256 != 0) as u32) << 6) | (((self.players[1].cheats & 256 != 0) as u32) << 6);
+        let mut flags = 32
+            | ((p0.cheats >> 3) & 16)
+            | ((self.players[1].cheats >> 3) & 16)
+            | (((p0.cheats & 256 != 0) as u32) << 6)
+            | (((self.players[1].cheats & 256 != 0) as u32) << 6);
         if cup == 2 {
             flags |= 256;
         }
@@ -599,8 +625,30 @@ impl Front {
             };
             let place = self.cup_rank(k);
             let y = top + 25 * place as i16;
-            self.set_text(STANDINGS, place as usize, &format!("{}. {}", self.cup_ahead(k) + 1, name), 55, y, 0, 0, false, 1, [255; 3]);
-            self.set_text(STANDINGS, place as usize + 6, &self.players[0].records[k].to_string(), 295, y, 0, 0, false, 1, [255; 3]);
+            self.set_text(
+                STANDINGS,
+                place as usize,
+                &format!("{}. {}", self.cup_ahead(k) + 1, name),
+                55,
+                y,
+                0,
+                0,
+                false,
+                1,
+                [255; 3],
+            );
+            self.set_text(
+                STANDINGS,
+                place as usize + 6,
+                &self.players[0].records[k].to_string(),
+                295,
+                y,
+                0,
+                0,
+                false,
+                1,
+                [255; 3],
+            );
         }
         for k in drivers..6 {
             let y = top + 25 * k as i16;

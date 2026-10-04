@@ -45,7 +45,12 @@ impl StuntTable {
             points: std::array::from_fn(|k| word(Self::POINTS + 4 * k as u32)),
             names: std::array::from_fn(|k| {
                 let at = Self::NAMES + 14 * k as u32;
-                (byte(at), std::array::from_fn(|i| u16::from_le_bytes([byte(at + 2 + 2 * i as u32), byte(at + 3 + 2 * i as u32)])))
+                (
+                    byte(at),
+                    std::array::from_fn(|i| {
+                        u16::from_le_bytes([byte(at + 2 + 2 * i as u32), byte(at + 3 + 2 * i as u32)])
+                    }),
+                )
             }),
         }
     }

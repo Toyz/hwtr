@@ -80,10 +80,24 @@ impl Front {
                 let Some(car) = r.cars.get(k).copied() else { continue };
                 let name = self.players[k].name.clone();
                 if setup.flags & 2 != 0 {
-                    insert(&mut self.card.high_scores, track, &name, car.score, |new, old| new > old, self.strings.get(84));
+                    insert(
+                        &mut self.card.high_scores,
+                        track,
+                        &name,
+                        car.score,
+                        |new, old| new > old,
+                        self.strings.get(84),
+                    );
                 }
                 if car.laps == setup.laps {
-                    insert(&mut self.card.best_times, track, &name, car.best, |new, old| new < old, self.strings.get(84));
+                    insert(
+                        &mut self.card.best_times,
+                        track,
+                        &name,
+                        car.best,
+                        |new, old| new < old,
+                        self.strings.get(84),
+                    );
                 }
             }
         }
@@ -103,7 +117,14 @@ impl Front {
 /// 0x8009aadc, 0x8009ac64, 0x8009adec: `name` and `value` into the five
 /// lines of a table from `track` × 5: in the first empty line, or where it
 /// beats the line there (the rest moving down, the last dropping off).
-pub(super) fn insert(table: &mut [card::Score], track: usize, name: &str, value: u32, beats: impl Fn(u32, u32) -> bool, empty: &str) {
+pub(super) fn insert(
+    table: &mut [card::Score],
+    track: usize,
+    name: &str,
+    value: u32,
+    beats: impl Fn(u32, u32) -> bool,
+    empty: &str,
+) {
     let Some(lines) = table.get_mut(track * 5..track * 5 + 5) else { return };
     for i in 0..5 {
         if lines[i].name == empty {

@@ -72,18 +72,37 @@ impl Tables {
         let surface_friction = (0..FRICTION_ENTRIES as u32).map(|i| byte(FRICTION_TABLE + i)).collect();
         let stunts = crate::car::stunt::StuntTable::read(&byte);
         let views = crate::camera::Views::read(&byte);
-        let checkpoints = std::array::from_fn(|w| std::array::from_fn(|n| byte(CHECKPOINT_TABLE + 3 * w as u32 + n as u32)));
+        let checkpoints =
+            std::array::from_fn(|w| std::array::from_fn(|n| byte(CHECKPOINT_TABLE + 3 * w as u32 + n as u32)));
         let meter = crate::hud::MeterTables::read(&byte);
         let acos = (0..4097).map(|i| u16_at(ACOS_TABLE + 2 * i)).collect();
-        let rcossin = (0..4096).map(|i| (u16_at(RCOSSIN_TABLE + 4 * i) as i16, u16_at(RCOSSIN_TABLE + 4 * i + 2) as i16)).collect();
+        let rcossin = (0..4096)
+            .map(|i| (u16_at(RCOSSIN_TABLE + 4 * i) as i16, u16_at(RCOSSIN_TABLE + 4 * i + 2) as i16))
+            .collect();
         let sprite_slots = std::array::from_fn(|k| {
             let (clut, page) = (u16_at(0x800b_d0d0 + 4 * k as u32), u16_at(0x800b_d0d2 + 4 * k as u32));
             (clut, (page & 0xff9f) | ((byte(0x800b_d130 + k as u32) as u16) << 5))
         });
         let surface_rumble = (0..256).map(|i| byte(0x800b_ea7c + i)).collect();
-        let camera_ranges = std::array::from_fn(|w| std::array::from_fn(|n| u16_at(0x800b_e934 + 2 * (3 * w + n) as u32)));
-        let exhausts = (0..42u32).map(|id| std::array::from_fn(|k| byte(0x800b_e088 + 41 * id + k as u32) as i8)).collect();
-        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints, meter, acos, rcossin, sprite_slots, surface_rumble, camera_ranges, exhausts }
+        let camera_ranges =
+            std::array::from_fn(|w| std::array::from_fn(|n| u16_at(0x800b_e934 + 2 * (3 * w + n) as u32)));
+        let exhausts =
+            (0..42u32).map(|id| std::array::from_fn(|k| byte(0x800b_e088 + 41 * id + k as u32) as i8)).collect();
+        Tables {
+            cos,
+            sqrt,
+            surface_friction,
+            stunts,
+            views,
+            checkpoints,
+            meter,
+            acos,
+            rcossin,
+            sprite_slots,
+            surface_rumble,
+            camera_ranges,
+            exhausts,
+        }
     }
 
     /// The checkpoints a lap of `world` (a name from [`crate::race::WORLDS`])

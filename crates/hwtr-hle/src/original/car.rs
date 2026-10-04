@@ -6,12 +6,12 @@
 //! never sees it. Tests and the reference's shadow checks use it to hold the
 //! port to the original byte for byte.
 
-use hwtr_game::car::handling::{BLOCK_A, Handling};
-use hwtr_game::car::{Armed, AxisLock, Car, Respawn, Engine, Ground, GroundPlane, Tuning, Wheel};
 use super::body;
-use hwtr_game::body::Body;
-use hwtr_game::laps::Laps;
 use super::{InMemory, Ram};
+use hwtr_game::body::Body;
+use hwtr_game::car::handling::{BLOCK_A, Handling};
+use hwtr_game::car::{Armed, AxisLock, Car, Engine, Ground, GroundPlane, Respawn, Tuning, Wheel};
+use hwtr_game::laps::Laps;
 
 pub const CARS: u32 = 0x8012_8fcc;
 pub const CAR_SIZE: u32 = 0x930;

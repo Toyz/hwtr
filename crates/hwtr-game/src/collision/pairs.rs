@@ -77,20 +77,56 @@ fn apart(a: &Boxed, b: &Boxed, depths: &mut [i32; 16]) -> u8 {
     let f = fx;
     let tests: [(i32, i32); 15] = [
         (t[0], ha[0] + f(hb[0], w[0][0]) + f(hb[1], w[0][1]) + f(hb[2], w[0][2])),
-        (f(t[0], r[0][0]) + f(t[1], r[1][0]) + f(t[2], r[2][0]), hb[0] + f(ha[0], w[0][0]) + f(ha[1], w[1][0]) + f(ha[2], w[2][0])),
+        (
+            f(t[0], r[0][0]) + f(t[1], r[1][0]) + f(t[2], r[2][0]),
+            hb[0] + f(ha[0], w[0][0]) + f(ha[1], w[1][0]) + f(ha[2], w[2][0]),
+        ),
         (t[1], ha[1] + f(hb[0], w[1][0]) + f(hb[1], w[1][1]) + f(hb[2], w[1][2])),
-        (f(t[0], r[0][1]) + f(t[1], r[1][1]) + f(t[2], r[2][1]), hb[1] + f(ha[0], w[0][1]) + f(ha[1], w[1][1]) + f(ha[2], w[2][1])),
+        (
+            f(t[0], r[0][1]) + f(t[1], r[1][1]) + f(t[2], r[2][1]),
+            hb[1] + f(ha[0], w[0][1]) + f(ha[1], w[1][1]) + f(ha[2], w[2][1]),
+        ),
         (t[2], ha[2] + f(hb[0], w[2][0]) + f(hb[1], w[2][1]) + f(hb[2], w[2][2])),
-        (f(t[0], r[0][2]) + f(t[1], r[1][2]) + f(t[2], r[2][2]), hb[2] + f(ha[0], w[0][2]) + f(ha[1], w[1][2]) + f(ha[2], w[2][2])),
-        (f(t[2], r[1][0]) - f(t[1], r[2][0]), f(ha[1], w[2][0]) + f(ha[2], w[1][0]) + f(hb[1], w[0][2]) + f(hb[2], w[0][1])),
-        (f(t[2], r[1][1]) - f(t[1], r[2][1]), f(ha[1], w[2][1]) + f(ha[2], w[1][1]) + f(hb[0], w[0][2]) + f(hb[2], w[0][0])),
-        (f(t[2], r[1][2]) - f(t[1], r[2][2]), f(ha[1], w[2][2]) + f(ha[2], w[1][2]) + f(hb[0], w[0][1]) + f(hb[1], w[0][0])),
-        (f(t[0], r[2][0]) - f(t[2], r[0][0]), f(ha[0], w[2][0]) + f(ha[2], w[0][0]) + f(hb[1], w[1][2]) + f(hb[2], w[1][1])),
-        (f(t[0], r[2][1]) - f(t[2], r[0][1]), f(ha[0], w[2][1]) + f(ha[2], w[0][1]) + f(hb[0], w[1][2]) + f(hb[2], w[1][0])),
-        (f(t[0], r[2][2]) - f(t[2], r[0][2]), f(ha[0], w[2][2]) + f(ha[2], w[0][2]) + f(hb[0], w[1][1]) + f(hb[1], w[1][0])),
-        (f(t[1], r[0][0]) - f(t[0], r[1][0]), f(ha[0], w[1][0]) + f(ha[1], w[0][0]) + f(hb[1], w[2][2]) + f(hb[2], w[2][1])),
-        (f(t[1], r[0][1]) - f(t[0], r[1][1]), f(ha[0], w[1][1]) + f(ha[1], w[0][1]) + f(hb[0], w[2][2]) + f(hb[2], w[2][0])),
-        (f(t[1], r[0][2]) - f(t[0], r[1][2]), f(ha[0], w[1][2]) + f(ha[1], w[0][2]) + f(hb[0], w[2][1]) + f(hb[1], w[2][0])),
+        (
+            f(t[0], r[0][2]) + f(t[1], r[1][2]) + f(t[2], r[2][2]),
+            hb[2] + f(ha[0], w[0][2]) + f(ha[1], w[1][2]) + f(ha[2], w[2][2]),
+        ),
+        (
+            f(t[2], r[1][0]) - f(t[1], r[2][0]),
+            f(ha[1], w[2][0]) + f(ha[2], w[1][0]) + f(hb[1], w[0][2]) + f(hb[2], w[0][1]),
+        ),
+        (
+            f(t[2], r[1][1]) - f(t[1], r[2][1]),
+            f(ha[1], w[2][1]) + f(ha[2], w[1][1]) + f(hb[0], w[0][2]) + f(hb[2], w[0][0]),
+        ),
+        (
+            f(t[2], r[1][2]) - f(t[1], r[2][2]),
+            f(ha[1], w[2][2]) + f(ha[2], w[1][2]) + f(hb[0], w[0][1]) + f(hb[1], w[0][0]),
+        ),
+        (
+            f(t[0], r[2][0]) - f(t[2], r[0][0]),
+            f(ha[0], w[2][0]) + f(ha[2], w[0][0]) + f(hb[1], w[1][2]) + f(hb[2], w[1][1]),
+        ),
+        (
+            f(t[0], r[2][1]) - f(t[2], r[0][1]),
+            f(ha[0], w[2][1]) + f(ha[2], w[0][1]) + f(hb[0], w[1][2]) + f(hb[2], w[1][0]),
+        ),
+        (
+            f(t[0], r[2][2]) - f(t[2], r[0][2]),
+            f(ha[0], w[2][2]) + f(ha[2], w[0][2]) + f(hb[0], w[1][1]) + f(hb[1], w[1][0]),
+        ),
+        (
+            f(t[1], r[0][0]) - f(t[0], r[1][0]),
+            f(ha[0], w[1][0]) + f(ha[1], w[0][0]) + f(hb[1], w[2][2]) + f(hb[2], w[2][1]),
+        ),
+        (
+            f(t[1], r[0][1]) - f(t[0], r[1][1]),
+            f(ha[0], w[1][1]) + f(ha[1], w[0][1]) + f(hb[0], w[2][2]) + f(hb[2], w[2][0]),
+        ),
+        (
+            f(t[1], r[0][2]) - f(t[0], r[1][2]),
+            f(ha[0], w[1][2]) + f(ha[1], w[0][2]) + f(hb[0], w[2][1]) + f(hb[1], w[2][0]),
+        ),
     ];
     for (k, (dist, reach)) in tests.into_iter().enumerate() {
         let gap = dist.wrapping_abs().wrapping_sub(reach);
@@ -203,11 +239,14 @@ impl Collision {
             o.points.iter().skip(skip).copied().collect()
         };
         let (pa, pb) = (corners(&self.objects[a]), corners(&self.objects[b]));
-        let clear = self.objects[a].car.and_then(|s| cars.get(s as usize)).is_some_and(|c| {
-            self.objects[a].kind == Kind::PlayerCar && (c.all_terrain || c.handling.all_terrain)
-        });
+        let clear = self.objects[a]
+            .car
+            .and_then(|s| cars.get(s as usize))
+            .is_some_and(|c| self.objects[a].kind == Kind::PlayerCar && (c.all_terrain || c.handling.all_terrain));
         let mut axis = self.separations.get(&(ia, ib)).copied().unwrap_or(0);
-        if axis == 0 && let Some(s) = self.objects[a].car {
+        if axis == 0
+            && let Some(s) = self.objects[a].car
+        {
             let vel = cars.get(s as usize).map_or([0; 3], |c| c.body.vel);
             let mut was = self.boxed(a);
             was.centre = sub(was.centre, vel);
@@ -291,7 +330,9 @@ impl Collision {
             move_body(c, push);
         }
         let push = push.map(i32::wrapping_neg);
-        if !fixed(kb) && let Some(c) = self.objects[b].car.and_then(|s| cars.get_mut(s as usize)) {
+        if !fixed(kb)
+            && let Some(c) = self.objects[b].car.and_then(|s| cars.get_mut(s as usize))
+        {
             move_body(c, push);
         }
     }
@@ -312,13 +353,23 @@ impl Collision {
     }
 
     /// Pair `k`'s part of [`Collision::pair_impulses`].
-    pub fn pair_impulses_one(&mut self, t: &Tables, tuning: &crate::car::Tuning, cars: &mut [Car], rand: &mut Rand, k: usize) {
-        tracing::trace!("the pair's sounds and sparks (0x80035c7c), a player's rumble (0x8005fed0): not yet ported");
+    pub fn pair_impulses_one(
+        &mut self,
+        t: &Tables,
+        tuning: &crate::car::Tuning,
+        cars: &mut [Car],
+        rand: &mut Rand,
+        k: usize,
+    ) {
+        tracing::trace!("a player's rumble (0x8005fed0): not yet ported");
+        self.pair_sound(t, cars, rand, k);
         self.pair_crashes(t, cars, rand, k);
         // A steel car's object hits without moving (32), a rubber car's
         // throws the other off (64); both of a kind cancel out.
         let p = self.pairs[k];
-        let mark = |s: Option<u8>| s.and_then(|s| cars.get(s as usize)).map_or(0, |c| (c.steel as u32) << 5 | (c.rubber as u32) << 6);
+        let mark = |s: Option<u8>| {
+            s.and_then(|s| cars.get(s as usize)).map_or(0, |c| (c.steel as u32) << 5 | (c.rubber as u32) << 6)
+        };
         let (ma, mb) = (mark(self.objects[p.a].car), mark(self.objects[p.b].car));
         self.objects[p.a].flags |= ma;
         self.objects[p.b].flags |= mb;
@@ -335,9 +386,26 @@ impl Collision {
             }
         }
         // 0x8004e428: two players' cars touching make a snapshot.
-        let player = |o: usize| self.objects[o].car.and_then(|s| cars.get(s as usize)).is_some_and(|c| c.flags & 1 != 0);
+        let player =
+            |o: usize| self.objects[o].car.and_then(|s| cars.get(s as usize)).is_some_and(|c| c.flags & 1 != 0);
         if player(p.a) && player(p.b) {
             self.players_touched = true;
+        }
+    }
+
+    /// 0x80035c7c: pair `k` heard on the later car of the two, if either
+    /// is one, when the two meet faster than 10 mph; the crash's tone is
+    /// drawn there and then (0x80016a18).
+    pub fn pair_sound(&mut self, t: &Tables, cars: &[Car], rand: &mut Rand, k: usize) {
+        if self.hushed {
+            return;
+        }
+        let p = self.pairs[k];
+        let (ca, cb) = (self.objects[p.a].car, self.objects[p.b].car);
+        let Some(slot) = ca.max(cb) else { return };
+        let vel = |c: Option<u8>| c.and_then(|s| cars.get(s as usize)).map_or([0; 3], |c| c.body.vel);
+        if let Some(hit) = crash_hit(t, slot, sub(vel(ca), vel(cb)), rand) {
+            self.hits.push(hit);
         }
     }
 
@@ -398,7 +466,8 @@ impl Collision {
                 let skill = c.handling.skill.clamp(1024, 0x4000);
                 if !c.steel && skill < div_fx(0x2_7000, 0xa000) {
                     let lift = div_fx(fx((o_heft as i32) << 12, 0x10_8000), 0x6_4000);
-                    c.body.momentum[2] = c.body.momentum[2].wrapping_add(((lift as i64 * c.body.mass as i64) >> 12) as i32);
+                    c.body.momentum[2] =
+                        c.body.momentum[2].wrapping_add(((lift as i64 * c.body.mass as i64) >> 12) as i32);
                 }
             }
             self.knock(other, car_vel, rand);
@@ -508,4 +577,23 @@ fn move_body(c: &mut Car, by: Vec3) {
     let b = &mut c.body;
     b.pos = sub(add(add(b.pos, b.centre), by), b.centre);
     b.asleep = false;
+}
+
+/// 0x80035c7c's crash for car `slot`, the bodies meeting at `rel`: none
+/// at 10 mph or less; else kind 2, 3 or 4 by 20 and 50 mph, its volume,
+/// and the tone drawn for it (0x80016a18).
+pub fn crash_hit(t: &Tables, slot: u8, rel: Vec3, rand: &mut Rand) -> Option<super::world::Hit> {
+    let speed = t.length(rel);
+    let mph = div_fx(0xb_0000, 0xa000);
+    if speed <= fx(0xa000, mph) {
+        return None;
+    }
+    let (kind, volume, tone) = if speed < fx(0x1_4000, mph) {
+        (2, div_fx(speed, fx(0x1_4000, mph)), rand.below(4))
+    } else if speed < fx(0x3_2000, mph) {
+        (3, div_fx(speed, fx(0x3_2000, mph)), rand.below(2) + 4)
+    } else {
+        (4, speed / 2304, rand.below(2) + 6)
+    };
+    Some(super::world::Hit::Crash { slot, kind, volume, tone: tone as u8 })
 }

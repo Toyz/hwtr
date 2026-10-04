@@ -182,9 +182,9 @@ impl Body {
     /// `1/m + n·((I⁻¹(r×n))×r)`, in the game's mixed 64-bit steps.
     pub fn give(&self, r: Vec3, n: Vec3) -> i32 {
         let a = cross(r, n);
-        let w = self.inv_inertia_world.map(|row| {
-            (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(a[k] as i64) >> 12))
-        });
+        let w = self
+            .inv_inertia_world
+            .map(|row| (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(a[k] as i64) >> 12)));
         let by = |x: i64, y: i32| x.wrapping_mul(y as i64) >> 12;
         let turn = [
             (by(w[1], r[2]).wrapping_sub(by(w[2], r[1])) >> 8) as i32,

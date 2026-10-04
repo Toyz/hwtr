@@ -170,9 +170,15 @@ pub fn read_def_bytes(byte: &dyn Fn(u32) -> u8, addr: u32) -> Option<Def<u32>> {
         let n = |k: u32| byte(s + 16 + k) as i8;
         let (ne, nu, nx, nt) = (n(0), n(1), n(2), n(3));
         let trans_at = u32_at(s + 12);
-        let transitions =
-            (0..nt.max(0) as u32).map(|k| (u16_at(trans_at + 4 * k) as i16, u16_at(trans_at + 4 * k + 2) as i16)).collect();
-        states.push(State { enter: list(u32_at(s), ne), update: list(u32_at(s + 4), nu), exit: list(u32_at(s + 8), nx), transitions });
+        let transitions = (0..nt.max(0) as u32)
+            .map(|k| (u16_at(trans_at + 4 * k) as i16, u16_at(trans_at + 4 * k + 2) as i16))
+            .collect();
+        states.push(State {
+            enter: list(u32_at(s), ne),
+            update: list(u32_at(s + 4), nu),
+            exit: list(u32_at(s + 8), nx),
+            transitions,
+        });
     }
     Some(Def { states, initial: u16_at(addr + 4) as i16, last: u16_at(addr + 6) as i16 })
 }

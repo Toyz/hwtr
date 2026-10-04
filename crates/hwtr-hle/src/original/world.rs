@@ -1,15 +1,17 @@
 //! The original's memory as world: where it keeps it, read into and written
 //! from the port's types.
 
-use hwtr_game::collision::world::{Collision, ObjectId};
 use super::object::read_list;
-use hwtr_game::collision::object::{CollisionObject, RefSet};
-use hwtr_game::collision::scp::Scp;
-use hwtr_game::collision::pairs::Pair;
-use hwtr_game::collision::walls::Contact;
 use super::{InMemory, Ram};
+use hwtr_game::collision::object::{CollisionObject, RefSet};
+use hwtr_game::collision::pairs::Pair;
+use hwtr_game::collision::scp::Scp;
+use hwtr_game::collision::walls::Contact;
+use hwtr_game::collision::world::{Collision, ObjectId};
 use hwtr_game::laps::Course;
 
+/// The race's sounds shut (6875(gp), set at the race's end by 0x800364cc).
+pub const HUSHED: u32 = 0x800d_2623;
 pub const SCP: u32 = 0x800d_2658;
 pub const ALL: u32 = 0x800d_265c;
 pub const MOVING: u32 = 0x800d_2660;
@@ -100,6 +102,8 @@ pub fn collision(ram: &Ram) -> (Collision, Vec<u32>) {
             sparks: Vec::new(),
             prop_draws: Vec::new(),
             volume_fx: Vec::new(),
+            hits: Vec::new(),
+            hushed: ram.u8(HUSHED) == 1,
             knocked: Vec::new(),
             pairs: (0..ram.i16(PAIR_COUNT) as u16 as u32)
                 .map(|k| {
@@ -123,7 +127,6 @@ pub fn collision(ram: &Ram) -> (Collision, Vec<u32>) {
         };
         (world, addresses)
     }
-
 }
 
 /// Writes the world's objects back over the original's (the lists are

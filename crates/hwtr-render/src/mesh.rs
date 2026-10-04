@@ -154,7 +154,15 @@ pub fn object_posed(w: &World, i: usize, parent: Pose, rot: [[i16; 3]; 3], pos: 
     out
 }
 
-fn object(w: &World, i: usize, parent: Pose, out: &mut Vec<Vtx>, depth: u32, skip: &[usize], skipped: &mut Vec<(usize, Pose)>) {
+fn object(
+    w: &World,
+    i: usize,
+    parent: Pose,
+    out: &mut Vec<Vtx>,
+    depth: u32,
+    skip: &[usize],
+    skipped: &mut Vec<(usize, Pose)>,
+) {
     if depth > 64 {
         return;
     }
@@ -170,7 +178,6 @@ fn object(w: &World, i: usize, parent: Pose, out: &mut Vec<Vtx>, depth: u32, ski
         object(w, s, parent, out, depth + 1, skip, skipped);
     }
 }
-
 
 /// Object `i`'s own quads under `parent`, at its own rotation and place;
 /// its pose.
@@ -241,7 +248,14 @@ pub fn place_car_texture(vram: &mut Vram, tim: &hwtr_data::Tim, slot: usize) -> 
 /// A car model's triangles at `pos` turned by `rot`. The game draws cars at
 /// half their model's scale (inferred: at full scale the grid's cars would
 /// overlap). Faces are lit at the base colour 0x80, a texel modulation of 1.
-pub fn car_triangles(m: &hwtr_data::car::Model, clut: u16, tpage: u16, pos: glam::Vec3, rot: glam::Mat3, root_rgb: u32) -> Vec<Vtx> {
+pub fn car_triangles(
+    m: &hwtr_data::car::Model,
+    clut: u16,
+    tpage: u16,
+    pos: glam::Vec3,
+    rot: glam::Mat3,
+    root_rgb: u32,
+) -> Vec<Vtx> {
     let mut out = Vec::new();
     let root = glam::Vec3::new(m.root.pos[0] as f32, m.root.pos[1] as f32, m.root.pos[2] as f32);
     let nodes = std::iter::once((&m.root, glam::Vec3::ZERO))

@@ -1,8 +1,8 @@
 //! The original's memory as body: where it keeps it, read into and written
 //! from the port's types.
 
-use hwtr_game::body::Body;
 use super::{InMemory, Ram};
+use hwtr_game::body::Body;
 
 pub const INERTIA: u32 = 0x00;
 pub const INV_INERTIA: u32 = 0x58;

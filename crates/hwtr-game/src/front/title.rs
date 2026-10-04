@@ -86,8 +86,10 @@ impl Front {
         self.password_of = k as u8;
         let who = format!("{}:", self.players[k].name);
         let word = self.passwords.make(&self.players[k]);
-        let (first, second): (String, String) = (word.chars().take(10).collect(), word.chars().skip(10).take(10).collect());
-        let lines = ["Valid Memory Card", self.strings.get(86), self.strings.get(232), &who, &first, &second].map(str::to_string);
+        let (first, second): (String, String) =
+            (word.chars().take(10).collect(), word.chars().skip(10).take(10).collect());
+        let lines = ["Valid Memory Card", self.strings.get(86), self.strings.get(232), &who, &first, &second]
+            .map(str::to_string);
         for (i, line) in lines.iter().enumerate() {
             self.set_text(PASSWORD, i, line, 320, 155 + 26 * i as i16, 0, 0, true, 1, [255; 3]);
         }

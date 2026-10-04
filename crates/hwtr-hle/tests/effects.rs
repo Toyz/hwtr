@@ -80,13 +80,22 @@ fn effects_match_the_original() {
                     let model = codec::model(&ram, slot);
                     let root = ram.i32(model + 4) as u32;
                     let cvs = ram.i32(model + 16) as u32;
-                    let rot: hwtr_game::math::Matrix = std::array::from_fn(|r| std::array::from_fn(|c| ram.i16(root + 6 * r as u32 + 2 * c as u32)));
+                    let rot: hwtr_game::math::Matrix =
+                        std::array::from_fn(|r| std::array::from_fn(|c| ram.i16(root + 6 * r as u32 + 2 * c as u32)));
                     let at = ram.vec3(root + 0x14).map(|c| c >> 1);
                     let car = Car::read(&ram, CARS);
                     let id = ram.u8(cvs + 0x10) as u32;
                     let ex = std::array::from_fn(|k| ram.u8(effects::EXHAUSTS + 41 * id + k as u32) as i8);
                     let flags = ram.i32(cvs + 0x20) as u32;
-                    (model, effects::CarPose { at, rot, origin: car.handling.origin }, car.handling.clone(), ex, id == 8 || id == 21, flags & 0x80 != 0, ram.u8(cvs + 0x1ef) != 0)
+                    (
+                        model,
+                        effects::CarPose { at, rot, origin: car.handling.origin },
+                        car.handling.clone(),
+                        ex,
+                        id == 8 || id == 21,
+                        flags & 0x80 != 0,
+                        ram.u8(cvs + 0x1ef) != 0,
+                    )
                 };
                 ours.flame_start(slot as u8, human, shown);
                 m.call(0x8002_af60, &[slot]).unwrap();
@@ -129,8 +138,12 @@ fn effects_match_the_original() {
                             .map(|k| {
                                 let q = at + 76 * k;
                                 effects::ChunkFace {
-                                    verts: std::array::from_fn(|c| std::array::from_fn(|a| ram.i16(q + 8 * c as u32 + 2 * a as u32))),
-                                    uv: std::array::from_fn(|c| [ram.u8(q + 8 * c as u32 + 6), ram.u8(q + 8 * c as u32 + 7)]),
+                                    verts: std::array::from_fn(|c| {
+                                        std::array::from_fn(|a| ram.i16(q + 8 * c as u32 + 2 * a as u32))
+                                    }),
+                                    uv: std::array::from_fn(|c| {
+                                        [ram.u8(q + 8 * c as u32 + 6), ram.u8(q + 8 * c as u32 + 7)]
+                                    }),
                                     clut: ram.i16(q + 68) as u16,
                                     tpage: ram.i16(q + 70) as u16,
                                 }
@@ -151,7 +164,12 @@ fn effects_match_the_original() {
                 let draws = effects::PropDraws::take(&mut rand, 0, vel, flags, quads.len());
                 ours.prop_debris(&t, &draws, flags, pos, height, &quads);
                 m.call(0x8002_e27c, &[o, ARGS]).unwrap();
-                check(format!("round {round} prop debris (flags {flags:#x}, {} quads)", quads.len()), &ours, rand.seed, &mut m);
+                check(
+                    format!("round {round} prop debris (flags {flags:#x}, {} quads)", quads.len()),
+                    &ours,
+                    rand.seed,
+                    &mut m,
+                );
             }
             5 => {
                 // A wreck's smoke, embers and chunks from car 0's model.
@@ -162,10 +180,12 @@ fn effects_match_the_original() {
                     let root = ram.i32(model + 4) as u32;
                     let cvs = ram.i32(model + 16) as u32;
                     let cwh = ram.i32(cvs + 0x1e4) as u32;
-                    let rot: hwtr_game::math::Matrix = std::array::from_fn(|r| std::array::from_fn(|c| ram.i16(root + 6 * r as u32 + 2 * c as u32)));
+                    let rot: hwtr_game::math::Matrix =
+                        std::array::from_fn(|r| std::array::from_fn(|c| ram.i16(root + 6 * r as u32 + 2 * c as u32)));
                     let at = ram.vec3(root + 0x14).map(|c| c >> 1);
                     let pose = effects::CarPose { at, rot, origin: ram.vec3(cwh + 0x80) };
-                    let (verts, n, face_at) = (ram.i32(root + 0x2c) as u32, ram.i32(root + 0x34), ram.i32(root + 0x38) as u32);
+                    let (verts, n, face_at) =
+                        (ram.i32(root + 0x2c) as u32, ram.i32(root + 0x34), ram.i32(root + 0x38) as u32);
                     let (clut, tpage) = (ram.i16(root + 0x40) as u16, ram.i16(root + 0x42) as u16);
                     let faces: Vec<effects::ChunkFace> = (0..n.max(0) as u32)
                         .map(|f| {
@@ -269,7 +289,8 @@ fn effects_match_the_original() {
                     let mut ram = Ram(&mut m.bus.ram);
                     ram.set_vec3(ARGS, outer);
                     ram.set_vec3(ARGS + 16, inner);
-                    m.call(0x8002_9230, &[car as u32, wheel as u32, on as u32, surface as u32, ARGS, ARGS + 16]).unwrap();
+                    m.call(0x8002_9230, &[car as u32, wheel as u32, on as u32, surface as u32, ARGS, ARGS + 16])
+                        .unwrap();
                 }
                 check(format!("round {round} trail points"), &ours, rand.seed, &mut m);
                 ours.emit_trails(&mut rand, fps, &[true; 6]);
@@ -286,7 +307,8 @@ fn effects_match_the_original() {
                 let half = Ram(&mut m.bus.ram).vec3(obj + hwtr_hle::original::object::HALF);
                 let point = [0; 3].map(|_| rng.word() as i32 >> 6);
                 let n = t.normalize([0; 3].map(|_| (rng.word() as i32) >> 16));
-                let normal = if rng.below(2) == 0 { hwtr_game::math::column(&car.body.rot, rng.below(3) as usize) } else { n };
+                let normal =
+                    if rng.below(2) == 0 { hwtr_game::math::column(&car.body.rot, rng.below(3) as usize) } else { n };
                 let surface = rng.below(4) as u8;
                 {
                     let mut ram = Ram(&mut m.bus.ram);

@@ -67,7 +67,8 @@ fn passing_checkpoints_matches_the_original() {
             };
             // Now and then a quiet race (race flag 2).
             course.quiet = rng.below(4) == 0;
-            let number = if rng.below(3) == 0 { course.checkpoints } else { 1 + rng.below(course.checkpoints as u32) as u8 };
+            let number =
+                if rng.below(3) == 0 { course.checkpoints } else { 1 + rng.below(course.checkpoints as u32) as u8 };
             let time = ends.last().copied().unwrap_or(0) + rng.below(200_000);
             {
                 let mut ram = Ram(&mut m.bus.ram);

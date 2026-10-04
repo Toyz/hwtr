@@ -74,15 +74,18 @@ const QUAD_SIZE: usize = 76;
 impl Scr {
     pub fn parse(b: &[u8]) -> Option<Scr> {
         let (names, count) = (u32_at(b, 0)? as usize, u32_at(b, 4)? as usize);
-        let (at_objects, at_models, at_names) = (u32_at(b, 8)? as usize, u32_at(b, 12)? as usize, u32_at(b, 16)? as usize);
+        let (at_objects, at_models, at_names) =
+            (u32_at(b, 8)? as usize, u32_at(b, 12)? as usize, u32_at(b, 16)? as usize);
         let index = |off: u32| -> Option<usize> {
             let off = off as usize;
-            (off >= at_objects && (off - at_objects).is_multiple_of(OBJECT_SIZE)).then(|| (off - at_objects) / OBJECT_SIZE)
+            (off >= at_objects && (off - at_objects).is_multiple_of(OBJECT_SIZE))
+                .then(|| (off - at_objects) / OBJECT_SIZE)
         };
         let objects = (0..count)
             .map(|k| {
                 let o = at_objects + OBJECT_SIZE * k;
-                let rot = std::array::from_fn(|r| std::array::from_fn(|c| u16_at(b, o + 6 * r + 2 * c).unwrap_or(0) as i16));
+                let rot =
+                    std::array::from_fn(|r| std::array::from_fn(|c| u16_at(b, o + 6 * r + 2 * c).unwrap_or(0) as i16));
                 let pos = std::array::from_fn(|i| u32_at(b, o + 0x14 + 4 * i).unwrap_or(0) as i32);
                 let link = |at: usize| u32_at(b, o + at).filter(|&v| v != 0).and_then(index);
                 let n = u32_at(b, o + 0x28)? as usize;

@@ -125,7 +125,12 @@ impl Front {
     fn options_sliders(&mut self) {
         let knob = |v: u8| screen::world_x((fx(0x1afa, (v as i32) << 12) >> 12) + 485);
         let s = self.settings;
-        let at = [(knob(s.difficulty), 285), (knob(s.music), 395), (knob(s.volume), 470), (screen::world_x(if s.other[1] != 0 { 915 } else { 485 }), 565)];
+        let at = [
+            (knob(s.difficulty), 285),
+            (knob(s.music), 395),
+            (knob(s.volume), 470),
+            (screen::world_x(if s.other[1] != 0 { 915 } else { 485 }), 565),
+        ];
         for (p, (x, y)) in self.screens[OPTIONS].pieces.iter_mut().zip(at) {
             p.to[0] = x;
             p.to[1] = screen::world_y(y);

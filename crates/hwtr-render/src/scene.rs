@@ -3,11 +3,11 @@
 
 use std::path::Path;
 
+use hwtr_data::car::{CarBmf, Model};
+use hwtr_data::world::World;
 use rrt::glam::{self, Quat, Vec3};
 use rrt::gpu::{Gpu, Target};
 use rrt::wgpu;
-use hwtr_data::car::{CarBmf, Model};
-use hwtr_data::world::World;
 
 use crate::mesh::{self, Vram, Vtx};
 use crate::renderer::Renderer;

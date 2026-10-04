@@ -43,7 +43,8 @@ fn distance_side_and_volume_match_the_original() {
             forward: axis(&mut rng),
             up: axis(&mut rng),
         };
-        let point: [i32; 3] = std::array::from_fn(|k| listener.pos[k].wrapping_add(rng.below(2 * near) as i32 - near as i32));
+        let point: [i32; 3] =
+            std::array::from_fn(|k| listener.pos[k].wrapping_add(rng.below(2 * near) as i32 - near as i32));
         let volume = rng.below(128) as i32;
         {
             let mut ram = Ram(&mut m.bus.ram);
@@ -117,7 +118,8 @@ fn the_revs_bend_and_the_throttle_split_match_the_original() {
         .iter()
         .map(|&k| {
             let name = kinds[k as usize].bank.to_uppercase();
-            let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../work/big/DESERT1BIG/{name}VH"));
+            let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../../work/big/DESERT1BIG/{name}VH"));
             std::fs::read(path).ok().and_then(|vh| Bank::from_vh(&vh, 0))
         })
         .collect();
@@ -127,7 +129,8 @@ fn the_revs_bend_and_the_throttle_split_match_the_original() {
         let slot = rng.below(cars as u32) as usize;
         let at = SOUNDS + SOUND_SIZE * slot as u32;
         let idle = 0x3e_8000 + rng.below(0x80_0000) as i32;
-        let engine = CarEngine { kind: in_state[slot], redline: idle + 0x100_0000 + rng.below(0x200_0000) as i32, idle };
+        let engine =
+            CarEngine { kind: in_state[slot], redline: idle + 0x100_0000 + rng.below(0x200_0000) as i32, idle };
         let rpm = rng.below(0x800_0000) as i32;
         let throttle = rng.below(4097) as i32;
         let levels: [i32; 4] = std::array::from_fn(|_| rng.below(128 << 12) as i32);
@@ -169,7 +172,9 @@ fn the_revs_bend_and_the_throttle_split_match_the_original() {
                     let Some(bank) = &banks[slot] else { continue };
                     let note = ram.i16(owner + 0xe) as i32;
                     let tone = ram.i16(owner + 0x16) as usize;
-                    let Some(pitch) = snd::bend_pitch(bank, &tables, program as usize, tone, note, bend) else { continue };
+                    let Some(pitch) = snd::bend_pitch(bank, &tables, program as usize, tone, note, bend) else {
+                        continue;
+                    };
                     let got = ram.i16(SHADOW + 16 * voice as u32 + 4) as u16;
                     assert_eq!(got, pitch, "round {round}: voice {voice}'s pitch at bend {bend}");
                     pitched += 1;
@@ -205,7 +210,8 @@ fn the_mixer_matches_the_original() {
         .iter()
         .map(|&k| {
             let name = kinds[k as usize].bank.to_uppercase();
-            let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../work/big/DESERT1BIG/{name}VH"));
+            let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../../work/big/DESERT1BIG/{name}VH"));
             std::fs::read(path).ok().and_then(|vh| Bank::from_vh(&vh, 0))
         })
         .collect();
@@ -222,7 +228,12 @@ fn the_mixer_matches_the_original() {
     for round in 0..300 {
         let listener = {
             let ram = Ram(&mut m.bus.ram);
-            Listener { pos: ram.vec3(LISTENER), vel: ram.vec3(LISTENER_VEL), forward: ram.vec3(FORWARD), up: ram.vec3(UP) }
+            Listener {
+                pos: ram.vec3(LISTENER),
+                vel: ram.vec3(LISTENER_VEL),
+                forward: ram.vec3(FORWARD),
+                up: ram.vec3(UP),
+            }
         };
         let volume = Ram(&mut m.bus.ram).i32(VOLUME);
         let mut inputs = Vec::new();
@@ -242,7 +253,7 @@ fn the_mixer_matches_the_original() {
             car.throttle = ram.i32(at + 0x20);
             car.levels = std::array::from_fn(|k| ram.i32(at + 0x58 + 4 * k as u32));
             car.bend = ram.i16(at + 0x54) as u16;
-            inputs.push(engines::EngineInput { rpm: car.rpm, pedals: 0, pos, vel });
+            inputs.push(engines::EngineInput { rpm: car.rpm, pedals: 0, pos, vel, ..Default::default() });
         }
         m.call(0x8001_7928, &[]).unwrap();
         let changes = port.mixer(&t, &inputs, &listener, volume, &|_| true);

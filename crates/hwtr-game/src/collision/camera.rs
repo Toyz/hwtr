@@ -14,11 +14,7 @@ impl Collision {
     /// back. None after 100 zones.
     fn zone_of_point(&self, car: u8, point: Vec3) -> Option<u16> {
         let obj = self.objects.iter().find(|o| o.car == Some(car))?;
-        let mut zone = if obj.kind == Kind::PlayerCar {
-            *obj.point_zones.get(2)?
-        } else {
-            obj.zones.iter().next()?
-        };
+        let mut zone = if obj.kind == Kind::PlayerCar { *obj.point_zones.get(2)? } else { obj.zones.iter().next()? };
         let mut previous = None;
         for _ in 0..100 {
             let z = self.scp.zones[zone as usize];

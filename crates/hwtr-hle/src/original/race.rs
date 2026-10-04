@@ -1,8 +1,8 @@
 //! The original's memory as race: where it keeps it, read into and written
 //! from the port's types.
 
-use hwtr_game::race::{Driver, Entrant, RaceSetup};
 use super::Ram;
+use hwtr_game::race::{Driver, Entrant, RaceSetup};
 
 pub const SETUP: u32 = 0x8013_8c94;
 pub const ENTRANTS: u32 = 0x24;

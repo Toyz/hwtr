@@ -31,7 +31,12 @@ fn key_on_matches_the_original() {
         let (note, fine) = (rng.below(128) as i32, rng.below(128) as i32);
         let (left, right) = (rng.below(128) as i32, rng.below(128) as i32);
         let Some(port) = key_on(&bank, &tables, program, tone, note, fine, left, right, false, 0) else { continue };
-        let got = m.call(0x800a_67c4, &[voice, 0, program as u32, tone as u32, note as u32, fine as u32, left as u32, right as u32]).unwrap();
+        let got = m
+            .call(
+                0x800a_67c4,
+                &[voice, 0, program as u32, tone as u32, note as u32, fine as u32, left as u32, right as u32],
+            )
+            .unwrap();
         if got as i16 != voice as i16 {
             continue; // a tone libsnd turns down (none in the bank's range)
         }

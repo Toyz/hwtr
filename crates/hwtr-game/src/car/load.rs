@@ -104,7 +104,14 @@ impl Car {
         let old = std::mem::take(&mut self.wheels);
         self.fit_handling(self.options);
         for (new, old) in self.wheels.iter_mut().zip(old) {
-            *new = Wheel { mount: new.mount, diameter: new.diameter, rear: new.rear, steers: new.steers, driven: new.driven, ..old };
+            *new = Wheel {
+                mount: new.mount,
+                diameter: new.diameter,
+                rear: new.rear,
+                steers: new.steers,
+                driven: new.driven,
+                ..old
+            };
         }
     }
 

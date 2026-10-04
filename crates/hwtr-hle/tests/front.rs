@@ -89,10 +89,12 @@ fn main_menu_lays_out_as_the_original() {
     // The labels, from the screen table read out of the executable.
     let view = exe.view();
     let byte = |a: u32| view.u8(a).unwrap_or(0);
-    let strings = std::fs::read(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../work/big/SCREENSBIG/ENGLISHHWT"))
-        .ok()
-        .and_then(|b| hwtr_game::front::strings::Strings::parse(&b))
-        .expect("ENGLISH.HWT");
+    let strings = std::fs::read(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../work/big/SCREENSBIG/ENGLISHHWT"),
+    )
+    .ok()
+    .and_then(|b| hwtr_game::front::strings::Strings::parse(&b))
+    .expect("ENGLISH.HWT");
     let mut screens = hwtr_game::front::screen::read_screens(&byte, &strings);
     let menu = &mut screens[4];
     menu.boot(&font);
@@ -120,10 +122,12 @@ fn new_records_match_the_card_layout() {
     m.call(0x8008_8544, &[SETTINGS]).unwrap();
     m.call(0x8008_8474, &[PLAYER, 0]).unwrap();
     let ram = Ram(&mut m.bus.ram);
-    let strings = std::fs::read(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../work/big/SCREENSBIG/ENGLISHHWT"))
-        .ok()
-        .and_then(|b| hwtr_game::front::strings::Strings::parse(&b))
-        .expect("ENGLISH.HWT");
+    let strings = std::fs::read(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../work/big/SCREENSBIG/ENGLISHHWT"),
+    )
+    .ok()
+    .and_then(|b| hwtr_game::front::strings::Strings::parse(&b))
+    .expect("ENGLISH.HWT");
     let settings = hwtr_game::front::Settings::new(ram.u8(0x8013_6a38));
     let mut save = hwtr_game::front::card::Save::new(ram.i32(SETTINGS) as u32, strings.get(84), settings);
     let mut player = hwtr_game::front::Profile::new(&strings, 0);

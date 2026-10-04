@@ -3,8 +3,8 @@
 
 mod common;
 
-use hwtr_hle::original::InMemory;
 use hwtr_game::collision::Scp;
+use hwtr_hle::original::InMemory;
 use hwtr_hle::original::Ram;
 
 /// Where the game keeps its pointer to the loaded SCP.
@@ -41,8 +41,8 @@ fn zone_at_matches_the_original() {
 }
 
 use hwtr_game::car::Car;
-use hwtr_hle::original::car::{CAR_COUNT, CAR_SIZE, CARS};
 use hwtr_game::collision::Collision;
+use hwtr_hle::original::car::{CAR_COUNT, CAR_SIZE, CARS};
 
 const STATES: [&str; 4] = ["desert1-race", "desert1-drive", "desert1-speed", "desert1-air"];
 
@@ -210,8 +210,8 @@ fn ground_matches_the_original() {
                 // And now and then gravity turns, so not every road is a
                 // floor.
                 if rng.below(5) == 0 {
-                    car.body.gravity_dir = [[0, 0, -0x1000], [0, 0, 0x1000], [0x1000, 0, 0], [0, -0xb50, -0xb50]]
-                        [rng.below(4) as usize];
+                    car.body.gravity_dir =
+                        [[0, 0, -0x1000], [0, 0, 0x1000], [0x1000, 0, 0], [0, -0xb50, -0xb50]][rng.below(4) as usize];
                 }
                 car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
             }
@@ -405,7 +405,7 @@ fn fences_match_the_original() {
 
 #[test]
 fn pairs_match_the_original() {
-    use hwtr_hle::original::world::{PAIRS, PAIR_COUNT, CONTACT_SIZE};
+    use hwtr_hle::original::world::{CONTACT_SIZE, PAIR_COUNT, PAIRS};
     let Some(exe) = common::exe() else { return };
     let mut rng = common::Rng(0x9a12_0000_0000_0001);
     let (mut pairs, mut wrecks, mut cached, mut debris) = (0, 0, 0, 0);
@@ -462,7 +462,14 @@ fn pairs_match_the_original() {
                 assert_eq!(original.depths, world.depths, "{at}: depths");
                 assert_eq!(original.objects, world.objects, "{at}: objects");
                 assert_eq!(original_cars, cars, "{at}: cars after the push");
-                cached += world.pairs.iter().filter(|p| world.separations.contains_key(&(world.objects[p.b].id, world.objects[p.a].id)) || world.separations.contains_key(&(world.objects[p.a].id, world.objects[p.b].id))).count();
+                cached += world
+                    .pairs
+                    .iter()
+                    .filter(|p| {
+                        world.separations.contains_key(&(world.objects[p.b].id, world.objects[p.a].id))
+                            || world.separations.contains_key(&(world.objects[p.a].id, world.objects[p.b].id))
+                    })
+                    .count();
                 // Each pair's crash checks and impulse, by both.
                 let mut rand = hwtr_game::rand::Rand { seed: m.bus.read_u32(hwtr_hle::original::rand::SEED) };
                 let mut world = original;
@@ -487,7 +494,8 @@ fn pairs_match_the_original() {
                     let first = new(world.objects[p.a].car).or(new(world.objects[p.b].car));
                     for (c, o) in cars.iter().zip(&crashed) {
                         assert_eq!(o.wrecked, c.wrecked, "{at}: pair {k} crash");
-                        let comparable = !c.wrecked || before[c.slot as usize] || (first == Some(c.slot) && c.flags & 1 == 0);
+                        let comparable =
+                            !c.wrecked || before[c.slot as usize] || (first == Some(c.slot) && c.flags & 1 == 0);
                         if comparable {
                             assert_eq!(o, c, "{at}: pair {k} crash");
                         }

@@ -14,10 +14,10 @@ use hwtr_hle::original::InMemory;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use hwtr_hle::original::car::{CAR_SIZE, CARS};
 use hwtr_game::car::{Car, handling};
-use hwtr_hle::original::Ram;
 use hwtr_hle::Hle;
+use hwtr_hle::original::Ram;
+use hwtr_hle::original::car::{CAR_SIZE, CARS};
 use hwtr_hle::script::Script;
 
 const CARS_LOAD: u32 = 0x8003_beec;

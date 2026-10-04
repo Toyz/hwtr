@@ -2,10 +2,10 @@
 
 mod common;
 
-use hwtr_hle::original::InMemory;
-use hwtr_hle::original::pad::{MAPPING, PAD_BUFFER};
 use hwtr_game::pad::{Mapping, PadKind, PadReader, PadState};
+use hwtr_hle::original::InMemory;
 use hwtr_hle::original::Ram;
+use hwtr_hle::original::pad::{MAPPING, PAD_BUFFER};
 
 #[test]
 fn reads_match_the_original() {

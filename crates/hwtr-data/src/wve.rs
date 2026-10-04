@@ -112,14 +112,16 @@ impl<'a> Wve<'a> {
 
 /// The scan order of a block's coefficients.
 const ZIGZAG: [usize; 64] = [
-    0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57,
-    50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63,
+    0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21,
+    28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54,
+    47, 55, 62, 63,
 ];
 
 /// The MDEC's quantiser table (MPEG-1's intra matrix), in raster order.
 const QUANT: [i32; 64] = [
-    8, 16, 19, 22, 26, 27, 29, 34, 16, 16, 22, 24, 27, 29, 34, 37, 19, 22, 26, 27, 29, 34, 34, 38, 22, 22, 26, 27, 29, 34, 37, 40, 22, 26,
-    27, 29, 32, 35, 40, 48, 26, 27, 29, 32, 35, 40, 48, 58, 26, 27, 29, 34, 38, 46, 56, 69, 27, 29, 35, 38, 46, 56, 69, 83,
+    8, 16, 19, 22, 26, 27, 29, 34, 16, 16, 22, 24, 27, 29, 34, 37, 19, 22, 26, 27, 29, 34, 34, 38, 22, 22, 26, 27, 29,
+    34, 37, 40, 22, 26, 27, 29, 32, 35, 40, 48, 26, 27, 29, 32, 35, 40, 48, 58, 26, 27, 29, 34, 38, 46, 56, 69, 27, 29,
+    35, 38, 46, 56, 69, 83,
 ];
 
 /// The bitstream's bits: halfwords little-endian, each high bit first.
@@ -293,7 +295,8 @@ pub fn decode(p: &Picture, codes: &Codes) -> Option<Vec<u8>> {
         for my in 0..h.div_ceil(16) {
             let cr = idct(&block(&mut bits, codes, qscale)?);
             let cb = idct(&block(&mut bits, codes, qscale)?);
-            let ys: Vec<[f32; 64]> = (0..4).map(|_| block(&mut bits, codes, qscale).map(|b| idct(&b))).collect::<Option<_>>()?;
+            let ys: Vec<[f32; 64]> =
+                (0..4).map(|_| block(&mut bits, codes, qscale).map(|b| idct(&b))).collect::<Option<_>>()?;
             for y in 0..16 {
                 for x in 0..16 {
                     let (px, py) = (mx * 16 + x, my * 16 + y);
@@ -350,11 +353,17 @@ mod tests {
                 return;
             };
             let Some(slus) = movie("SLUS_009.64") else { return };
-            let byte = |a: u32| a.checked_sub(0x8010_0000).and_then(|o| slus.get(o as usize + 0x800)).copied().unwrap_or(0);
+            let byte =
+                |a: u32| a.checked_sub(0x8010_0000).and_then(|o| slus.get(o as usize + 0x800)).copied().unwrap_or(0);
             let w = Wve::parse(&b).expect("chunks");
             let codes = Codes::new(&byte, &w.values).expect("the codes");
             for p in &w.pictures {
-                assert!(decode(p, &codes).is_some(), "{name} picture {} does not decode: {:?}", p.number, decode_reach(p, &codes));
+                assert!(
+                    decode(p, &codes).is_some(),
+                    "{name} picture {} does not decode: {:?}",
+                    p.number,
+                    decode_reach(p, &codes)
+                );
             }
             let seconds = w.sound().len() as f32 / 2.0 / RATE as f32;
             let video = w.pictures.len() as f32 / FPS as f32;

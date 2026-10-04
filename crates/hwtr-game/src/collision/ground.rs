@@ -79,7 +79,8 @@ impl Collision {
                     let along = div_fx(b, a.wrapping_add(b));
                     let first = zone.param as usize;
                     let (near, far) = (self.scp.sections[first].edges[1], self.scp.sections[first + 1].edges[1]);
-                    let mix = |x: Vec3, y: Vec3| [0, 1, 2].map(|i| fx(x[i], along).wrapping_add(fx(y[i], 0x1000 - along)));
+                    let mix =
+                        |x: Vec3, y: Vec3| [0, 1, 2].map(|i| fx(x[i], along).wrapping_add(fx(y[i], 0x1000 - along)));
                     let p = mix(near.pos(), far.pos());
                     let up = mix(near.up(), far.up());
                     let v = sub(up, p);

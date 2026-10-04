@@ -95,17 +95,14 @@ const STICK_CURVE: Curve = [(0, 0), (50, 30), (100, 45), (175, 80), (220, 145), 
 
 /// 0x8001d9ec: `x` on `curve`, 0 past its last point.
 fn on_curve(curve: &Curve, x: u8) -> u8 {
-    curve
-        .windows(2)
-        .find(|w| w[0].0 <= x && x <= w[1].0)
-        .map_or(0, |w| {
-            let ((x0, y0), (x1, y1)) = (w[0], w[1]);
-            // 0x8001d970, the division by zero as the R3000A leaves it.
-            let rise = (x as i32 - x0 as i32) * (y1 as i32 - y0 as i32);
-            let run = x1 as i32 - x0 as i32;
-            let step = if run == 0 { if rise >= 0 { -1 } else { 1 } } else { rise / run };
-            (y0 as i32 + step).clamp(0, 255) as u8
-        })
+    curve.windows(2).find(|w| w[0].0 <= x && x <= w[1].0).map_or(0, |w| {
+        let ((x0, y0), (x1, y1)) = (w[0], w[1]);
+        // 0x8001d970, the division by zero as the R3000A leaves it.
+        let rise = (x as i32 - x0 as i32) * (y1 as i32 - y0 as i32);
+        let run = x1 as i32 - x0 as i32;
+        let step = if run == 0 { if rise >= 0 { -1 } else { 1 } } else { rise / run };
+        (y0 as i32 + step).clamp(0, 255) as u8
+    })
 }
 
 /// One port's levels as the reads leave them (0x8011b2b8, 0x62 bytes a

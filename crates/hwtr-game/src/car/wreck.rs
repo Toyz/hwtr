@@ -43,13 +43,13 @@ impl Car {
         let rot = body.rot;
         let inertia = mul_64_16(&mul_16_64(&rot, &body.inertia), &transpose(&rot));
         let spin = body.spin;
-        body.ang_momentum = inertia.map(|row| {
-            (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(spin[k] as i64) >> 12))
-        });
+        body.ang_momentum =
+            inertia.map(|row| (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(spin[k] as i64) >> 12)));
         // 0x80029e10 (mode 0): the wreck's smoke, embers and chunks, their
         // random numbers drawn now.
         let human = self.flags & 3 != 0;
-        self.wreck_draws.0 = Some(crate::effects::WreckDraws::take(rand, self.slot, fx_vel, human, self.model_faces as usize));
+        self.wreck_draws.0 =
+            Some(crate::effects::WreckDraws::take(rand, self.slot, fx_vel, human, self.model_faces as usize));
         self.flags_8 &= !2;
         if self.flags & 1 != 0 {
             if rand.below(2) != 0 {

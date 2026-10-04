@@ -25,13 +25,13 @@ use std::rc::Rc;
 use hwtr_game::body::Body;
 
 use hwtr_game::car::Car;
-use hwtr_hle::original::car::{CAR_COUNT, CAR_SIZE, CARS};
 use hwtr_game::collision::world::Step;
-use hwtr_hle::original::world::STEP;
 use hwtr_game::rand::Rand;
-use hwtr_hle::original::rand::SEED;
-use hwtr_hle::original::Ram;
 use hwtr_hle::Hle;
+use hwtr_hle::original::Ram;
+use hwtr_hle::original::car::{CAR_COUNT, CAR_SIZE, CARS};
+use hwtr_hle::original::rand::SEED;
+use hwtr_hle::original::world::STEP;
 use hwtr_hle::script::Script;
 
 fn cars(ram: &mut [u8]) -> Vec<Car> {
@@ -204,7 +204,12 @@ fn main() {
                         nf.impulse(&tables, c.point, c.normal, 0x800, 0);
                         tracing::warn!(
                             "  momentum change: original {:?}, port {:?}, port without friction {:?}; normal {:?}, vel {:?}, spin {:?}",
-                            d(exit), d(&b), d(&nf), c.normal, entry.vel, entry.spin
+                            d(exit),
+                            d(&b),
+                            d(&nf),
+                            c.normal,
+                            entry.vel,
+                            entry.spin
                         );
                     }
                 }

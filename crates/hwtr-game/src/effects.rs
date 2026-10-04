@@ -347,10 +347,14 @@ impl Default for Effects {
 
 /// Puff templates (0x800be774 type 0, 0x800be794 type 1, 0x800be754 type
 /// 16, 0x800be7b4 type 19): corner offsets in the camera's plane, texels.
-const PUFF_0: [([i16; 2], [u8; 2]); 4] = [([16, -16], [0xbf, 0]), ([-16, -16], [0x80, 0]), ([-16, 16], [0x80, 0x3f]), ([16, 16], [0xbf, 0x3f])];
-const PUFF_1: [([i16; 2], [u8; 2]); 4] = [([16, -16], [0xff, 0]), ([-16, -16], [0xc0, 0]), ([-16, 16], [0xc0, 0x3f]), ([16, 16], [0xff, 0x3f])];
-const PUFF_16: [([i16; 2], [u8; 2]); 4] = [([8, 0], [0x1f, 0x20]), ([-8, 0], [0, 0x20]), ([-8, 16], [0, 0x3f]), ([8, 16], [0x1f, 0x3f])];
-const PUFF_19: [([i16; 2], [u8; 2]); 4] = [([8, 0], [0x5f, 0x40]), ([-8, 0], [0x40, 0x40]), ([-8, 16], [0x40, 0x5f]), ([8, 16], [0x5f, 0x5f])];
+const PUFF_0: [([i16; 2], [u8; 2]); 4] =
+    [([16, -16], [0xbf, 0]), ([-16, -16], [0x80, 0]), ([-16, 16], [0x80, 0x3f]), ([16, 16], [0xbf, 0x3f])];
+const PUFF_1: [([i16; 2], [u8; 2]); 4] =
+    [([16, -16], [0xff, 0]), ([-16, -16], [0xc0, 0]), ([-16, 16], [0xc0, 0x3f]), ([16, 16], [0xff, 0x3f])];
+const PUFF_16: [([i16; 2], [u8; 2]); 4] =
+    [([8, 0], [0x1f, 0x20]), ([-8, 0], [0, 0x20]), ([-8, 16], [0, 0x3f]), ([8, 16], [0x1f, 0x3f])];
+const PUFF_19: [([i16; 2], [u8; 2]); 4] =
+    [([8, 0], [0x5f, 0x40]), ([-8, 0], [0x40, 0x40]), ([-8, 16], [0x40, 0x5f]), ([8, 16], [0x5f, 0x5f])];
 /// The skid quads' texels (0x800be7d4) and the sparks' (0x800be7f4).
 const SKID_UV: [[u8; 2]; 4] = [[0x3f, 0x1f], [0x3f, 0], [0, 0], [0, 0x1f]];
 const SPARK_UV: [[u8; 2]; 4] = [[0x5f, 0], [0x40, 0], [0x40, 0x1f], [0x5f, 0x1f]];
@@ -415,7 +419,10 @@ impl Effects {
     /// 0x8002af60: a turbo lights car `slot`'s boost flame (a player's car
     /// that is shown).
     pub fn flame_start(&mut self, slot: u8, human: bool, shown: bool) {
-        if human && shown && let Some(f) = self.flames.get_mut(slot as usize) {
+        if human
+            && shown
+            && let Some(f) = self.flames.get_mut(slot as usize)
+        {
             *f = Flame { on: true, start: self.frame_count, count: 0 };
         }
     }
@@ -466,7 +473,18 @@ impl Effects {
     /// handling `h`, car number `car_id`, and the exhaust table), while the
     /// car's colour pulses.
     #[allow(clippy::too_many_arguments)]
-    pub fn draw_flame(&mut self, t: &crate::math::Tables, rand: &mut Rand, slot: u8, pose: &CarPose, h: &crate::car::handling::Handling, exhaust: [i8; 3], special: bool, paused: bool, now: u32) -> Vec<EffectQuad> {
+    pub fn draw_flame(
+        &mut self,
+        t: &crate::math::Tables,
+        rand: &mut Rand,
+        slot: u8,
+        pose: &CarPose,
+        h: &crate::car::handling::Handling,
+        exhaust: [i8; 3],
+        special: bool,
+        paused: bool,
+        now: u32,
+    ) -> Vec<EffectQuad> {
         let s = slot as usize;
         let mut out = Vec::new();
         if s >= 6 || !self.flames[s].on || self.wrecked[s] {
@@ -713,7 +731,14 @@ impl Effects {
     /// plus a random push as strong as that, falling 2 units a frame², and
     /// its random turning; fifteen random numbers. Every chunk's colour
     /// is reset.
-    fn chunk_init(&mut self, t: &crate::math::Tables, pos: Vec3, vel: Vec3, i: usize, rands: &mut impl Iterator<Item = u32>) {
+    fn chunk_init(
+        &mut self,
+        t: &crate::math::Tables,
+        pos: Vec3,
+        vel: Vec3,
+        i: usize,
+        rands: &mut impl Iterator<Item = u32>,
+    ) {
         let mut next = || rands.next().unwrap_or(0);
         self.chunk_colour = [176; 3];
         let d = vel.map(|c| div_fx(c, 0xe000));
@@ -781,7 +806,9 @@ impl Effects {
         }
         self.columns_spawn(centre, draws.vel, 1, draws.slot, &mut rands);
         self.set_charred(draws.slot, true);
-        if draws.human && let Some(f) = self.flash.get_mut(draws.slot as usize) {
+        if draws.human
+            && let Some(f) = self.flash.get_mut(draws.slot as usize)
+        {
             *f = 160;
         }
         self.embers_spawn(t, centre, &mut rands);
@@ -810,7 +837,15 @@ impl Effects {
     /// a ring of ten puffs of dust around its foot (flag 1), and unless
     /// flag 0x20 its quads (`quads`, up to 48) thrown off as chunks that
     /// last 180 frames.
-    pub fn prop_debris(&mut self, t: &crate::math::Tables, draws: &PropDraws, flags: u32, pos: Vec3, height: i32, quads: &[ChunkFace]) {
+    pub fn prop_debris(
+        &mut self,
+        t: &crate::math::Tables,
+        draws: &PropDraws,
+        flags: u32,
+        pos: Vec3,
+        height: i32,
+        quads: &[ChunkFace],
+    ) {
         let mut rands = draws.rands.iter().copied();
         if flags & 2 != 0 {
             let p = [pos[0], pos[1], pos[2].wrapping_sub(height >> 1).wrapping_add(0x6_4000)];
@@ -826,7 +861,8 @@ impl Effects {
                     pos[1].wrapping_add(fx(((r2 << 12) as i32).wrapping_add(0x3_2000), sign)),
                     pos[2].wrapping_sub(0x6_4000),
                 ];
-                let (frame0, surface) = if flags & 0x20 != 0 { ((rands.next().unwrap_or(0) % 100) as u8, 2) } else { (80, 6) };
+                let (frame0, surface) =
+                    if flags & 0x20 != 0 { ((rands.next().unwrap_or(0) % 100) as u8, 2) } else { (80, 6) };
                 let (a, b) = (rands.next().unwrap_or(0), rands.next().unwrap_or(0));
                 self.dust_with(a, b, p, frame0, surface, None);
             }
@@ -969,7 +1005,16 @@ impl Effects {
 
     /// 0x80029230: car `car`'s wheel `wheel` this frame: skidding (`on`)
     /// on ground of kind `surface`, its trail's edge points.
-    pub fn trail_push(&mut self, car: usize, wheel: usize, wheels: usize, on: bool, surface: u8, outer: Vec3, inner: Vec3) {
+    pub fn trail_push(
+        &mut self,
+        car: usize,
+        wheel: usize,
+        wheels: usize,
+        on: bool,
+        surface: u8,
+        outer: Vec3,
+        inner: Vec3,
+    ) {
         let (Some(row), true) = (self.trails.get_mut(car), wheel < 6) else { return };
         let t = &mut row[wheel];
         t.surface = surface;
@@ -1018,7 +1063,9 @@ impl Effects {
         let near = fx(0xc_8000, 0xc000);
         for car in cars.iter_mut() {
             let centre = crate::math::add(car.body.pos, car.body.centre);
-            let seen = eyes.iter().any(|e| (0..3).map(|k| centre[k].wrapping_sub(e[k]).wrapping_abs()).max().unwrap_or(0) < near);
+            let seen = eyes
+                .iter()
+                .any(|e| (0..3).map(|k| centre[k].wrapping_sub(e[k]).wrapping_abs()).max().unwrap_or(0) < near);
             if seen {
                 let wheels = car.wheels.len();
                 for (k, w) in car.wheels.iter().enumerate() {
@@ -1062,13 +1109,16 @@ impl Effects {
             for i in p.slots() {
                 let buf = p.records[i].buf;
                 let r = &mut p.records[i];
-                if r.flags & 1 == 0 && r.flags & 8 != 0
+                if r.flags & 1 == 0
+                    && r.flags & 8 != 0
                     && let Some(c) = p.chunks.get(buf)
                 {
                     let a = crate::math::quat_to_matrix(crate::math::quat_from_axis_angle(t, c.angle, c.axis));
                     let b = crate::math::quat_to_matrix(c.base);
                     orient = std::array::from_fn(|row| {
-                        std::array::from_fn(|col| (0..3).fold(0i32, |s, k| s.wrapping_add(fx(a[row][k] as i32, b[k][col] as i32))) as i16)
+                        std::array::from_fn(|col| {
+                            (0..3).fold(0i32, |s, k| s.wrapping_add(fx(a[row][k] as i32, b[k][col] as i32))) as i16
+                        })
                     });
                 }
                 if r.flags & 0x1000 != 0 {
@@ -1102,7 +1152,8 @@ impl Effects {
                     offs[3][0] = offs[3][0].wrapping_add(grow);
                     offs[3][1] = offs[3][1].wrapping_add(grow);
                     let corners = offs.map(|[x, y]| {
-                        let (x, y) = (((x as i32) << 12).wrapping_add(accel[0]), ((y as i32) << 12).wrapping_add(accel[1]));
+                        let (x, y) =
+                            (((x as i32) << 12).wrapping_add(accel[0]), ((y as i32) << 12).wrapping_add(accel[1]));
                         [0, 1, 2].map(|c| r.pos[c].wrapping_add(fx(right[c], x)).wrapping_add(fx(down[c], y)))
                     });
                     out.push(EffectQuad {
@@ -1120,7 +1171,14 @@ impl Effects {
                     if r.flags & 0x800 != 0 {
                         tpage = (tpage & 0xff9f) | 0x20;
                     }
-                    out.push(EffectQuad { corners, uv: SKID_UV, clut, tpage, colour: r.colour.map(|c| c as u8), semi: true });
+                    out.push(EffectQuad {
+                        corners,
+                        uv: SKID_UV,
+                        clut,
+                        tpage,
+                        colour: r.colour.map(|c| c as u8),
+                        semi: true,
+                    });
                 } else if r.flags & 0x20 != 0 {
                     let v = p.vel.as_ref().map_or([0; 3], |v| v[buf]).map(|c| c >> 12);
                     let rel = [[2, 0, 0], [0, 0, 0], v, [v[0].wrapping_add(2), v[1], v[2]]];
@@ -1140,11 +1198,16 @@ impl Effects {
                     }
                     let corners = c.verts.map(|v| {
                         let v = v.map(|x| (x as i32) << 12);
-                        [0, 1, 2].map(|i| {
-                            (0..3).fold(r.pos[i], |s, k| s.wrapping_add(fx(orient[i][k] as i32, v[k])))
-                        })
+                        [0, 1, 2].map(|i| (0..3).fold(r.pos[i], |s, k| s.wrapping_add(fx(orient[i][k] as i32, v[k]))))
                     });
-                    out.push(EffectQuad { corners, uv: c.uv, clut: r.clut, tpage: r.tpage, colour: self.chunk_colour, semi: r.semi });
+                    out.push(EffectQuad {
+                        corners,
+                        uv: c.uv,
+                        clut: r.clut,
+                        tpage: r.tpage,
+                        colour: self.chunk_colour,
+                        semi: r.semi,
+                    });
                 }
             }
         }
@@ -1156,8 +1219,17 @@ impl Effects {
     /// growing 4 units a step from the sheet's ten smoke frames, steps
     /// every second frame, sheds grey smoke in its last two steps, and
     /// stops at its end frame.
-    pub fn draw_columns(&mut self, t: &crate::math::Tables, rand: &mut Rand, cam: &Matrix, fps: i32, paused: bool, poses: &[CarPose]) -> Vec<EffectQuad> {
-        const OFFSETS: [[i32; 2]; 5] = [[0, -0xa000], [0x4_b000, 0xa000], [-0x4_b000, 0xf000], [0x3_2000, 0x4_1000], [-0x3_2000, 0x4_1000]];
+    pub fn draw_columns(
+        &mut self,
+        t: &crate::math::Tables,
+        rand: &mut Rand,
+        cam: &Matrix,
+        fps: i32,
+        paused: bool,
+        poses: &[CarPose],
+    ) -> Vec<EffectQuad> {
+        const OFFSETS: [[i32; 2]; 5] =
+            [[0, -0xa000], [0x4_b000, 0xa000], [-0x4_b000, 0xf000], [0x3_2000, 0x4_1000], [-0x3_2000, 0x4_1000]];
         const U: [u8; 10] = [0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0];
         let right = column(cam, 0);
         let down = column(cam, 2).map(i32::wrapping_neg);
@@ -1171,7 +1243,9 @@ impl Effects {
             if !paused {
                 if c.kind == 0 {
                     c.pos = [0, 1, 2].map(|k| c.pos[k].wrapping_add(c.vel[k] >> 3));
-                } else if c.kind == 1 && let Some(p) = poses.get(c.slot as usize) {
+                } else if c.kind == 1
+                    && let Some(p) = poses.get(c.slot as usize)
+                {
                     c.pos = p.centre();
                 }
             }
@@ -1181,13 +1255,23 @@ impl Effects {
             let offs = [[size, 0], [0, 0], [0, size], [size, size]];
             let us = [0xbfu8, 0x80, 0x80, 0xbf].map(|u| U[st as usize % 10].wrapping_add(u.wrapping_sub(128)));
             let vs = [0u8, 0, 0x3f, 0x3f].map(|v| if st < 6 { v } else { v + 64 });
-            let shift = [OFFSETS[i][0].wrapping_add(c.jitter[0]).wrapping_sub(hx), OFFSETS[i][1].wrapping_add(c.jitter[1]).wrapping_sub(hy)];
+            let shift = [
+                OFFSETS[i][0].wrapping_add(c.jitter[0]).wrapping_sub(hx),
+                OFFSETS[i][1].wrapping_add(c.jitter[1]).wrapping_sub(hy),
+            ];
             let corners = offs.map(|[x, y]| {
                 let (x, y) = (((x as i32) << 12).wrapping_add(shift[0]), ((y as i32) << 12).wrapping_add(shift[1]));
                 [0, 1, 2].map(|k| c.pos[k].wrapping_add(fx(right[k], x)).wrapping_add(fx(down[k], y)))
             });
             let (clut, tpage) = sheet(t, c.frame as usize);
-            out.push(EffectQuad { corners, uv: std::array::from_fn(|k| [us[k], vs[k]]), clut, tpage, colour: [128; 3], semi: true });
+            out.push(EffectQuad {
+                corners,
+                uv: std::array::from_fn(|k| [us[k], vs[k]]),
+                clut,
+                tpage,
+                colour: [128; 3],
+                semi: true,
+            });
             if !paused {
                 c.ticks = c.ticks.wrapping_add(1);
                 if c.per != 0 && (c.ticks as i16) % (c.per as i16) == 0 {
@@ -1220,7 +1304,15 @@ impl Effects {
 /// fifteenth of the car's sliding speed, plus an inch a frame up, from a
 /// random point of the box's face the contact is on (its rotation `rot`,
 /// half size `half`), or the contact point; jittered 5 units either way.
-pub fn contact_spark(rand: &mut Rand, t: &crate::math::Tables, body: &crate::body::Body, half: Vec3, point: Vec3, normal: Vec3, surface: u8) -> Option<Spark> {
+pub fn contact_spark(
+    rand: &mut Rand,
+    t: &crate::math::Tables,
+    body: &crate::body::Body,
+    half: Vec3,
+    point: Vec3,
+    normal: Vec3,
+    surface: u8,
+) -> Option<Spark> {
     if surface == 1 {
         return None;
     }
@@ -1231,12 +1323,20 @@ pub fn contact_spark(rand: &mut Rand, t: &crate::math::Tables, body: &crate::bod
     let n = normal;
     let d = crate::math::dot(v, n);
     v = [0, 1, 2].map(|k| v[k].wrapping_sub(fx(n[k], d)));
-    v = [v[0].wrapping_add(fx(0xa000, n[0])), v[1].wrapping_add(fx(0xa000, n[1])), v[2].wrapping_add(fx(0x3_c000, n[2]))];
+    v = [
+        v[0].wrapping_add(fx(0xa000, n[0])),
+        v[1].wrapping_add(fx(0xa000, n[1])),
+        v[2].wrapping_add(fx(0x3_c000, n[2])),
+    ];
     let r = body.rot.map(|row| row.map(|c| c as i32));
     let along = |j: usize| fx(r[0][j], n[0]).wrapping_add(fx(r[1][j], n[1])).wrapping_add(fx(r[2][j], n[2]));
     let (ns, nf, nu) = (along(0), along(1), along(2));
     let mut jitter = |extent: i32| fx(((rand.below(2000) << 12) as i32) / 1000 - 4096, extent);
-    let to_world = |l: Vec3| [0, 1, 2].map(|i| fx(r[i][0], l[0]).wrapping_add(fx(r[i][1], l[1])).wrapping_add(fx(r[i][2], l[2])).wrapping_add(body.pos[i]));
+    let to_world = |l: Vec3| {
+        [0, 1, 2].map(|i| {
+            fx(r[i][0], l[0]).wrapping_add(fx(r[i][1], l[1])).wrapping_add(fx(r[i][2], l[2])).wrapping_add(body.pos[i])
+        })
+    };
     let mut w = if ns.wrapping_abs() >= 3687 {
         let x = if ns > 0 { half[0].wrapping_neg() } else { half[0] };
         let y = jitter(half[1]);

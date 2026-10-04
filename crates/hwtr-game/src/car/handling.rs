@@ -102,7 +102,6 @@ impl Reader<'_> {
     }
 }
 
-
 impl Handling {
     /// Block A, as it lies in the CWH (after the magic).
     pub fn from_bytes(b: &[u8; BLOCK_A]) -> Handling {
@@ -167,7 +166,6 @@ impl Handling {
         h.all_terrain = h.flags & 1 != 0;
         h
     }
-
 
     pub fn axle(&self, rear: bool) -> &Axle {
         if rear { &self.rear } else { &self.front }

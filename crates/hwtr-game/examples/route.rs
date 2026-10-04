@@ -11,7 +11,10 @@ fn main() {
             let Some((op, len)) = hwtr_game::ai::Op::decode(&line.stream, at) else { break };
             match &op {
                 hwtr_game::ai::Op::Branch(c) => {
-                    println!("{at}: branch {:?}", c.iter().map(|(ch, to)| (format!("{:#x}", ch.mask), *to)).collect::<Vec<_>>());
+                    println!(
+                        "{at}: branch {:?}",
+                        c.iter().map(|(ch, to)| (format!("{:#x}", ch.mask), *to)).collect::<Vec<_>>()
+                    );
                     stack.extend(c.iter().map(|(_, to)| *to));
                     break;
                 }
