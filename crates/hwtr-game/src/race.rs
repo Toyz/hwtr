@@ -67,6 +67,11 @@ pub struct RaceSetup {
 }
 use crate::car::{Car, Controls, EngineSpec, Handling, Tuning};
 use crate::camera::{Camera, Surroundings};
+use crate::car::Respawn;
+use crate::car::stunt::Award;
+use crate::car::update::Drive;
+use crate::line::BestLine;
+use crate::math::div_fx;
 use crate::collision::world::Step;
 use crate::collision::{Collision, Scp};
 use crate::rand::Rand;
@@ -93,6 +98,10 @@ pub struct Race {
     pub clock: u32,
     /// One camera a player.
     pub cameras: Vec<Camera>,
+    /// The track's best line, where reset cars are put back.
+    pub line: BestLine,
+    /// The last stunt landed by each car, for the HUD.
+    pub stunts: Vec<Option<Award>>,
 }
 
 /// How many of the views a player cycles through (the fifth, the side view,
@@ -122,7 +131,90 @@ impl Race {
             cars.push(car);
         }
         let cameras = cars.iter().map(|c| Camera::new(c.slot, &tables.views.one)).collect();
-        Race { setup, tables, tuning, cars, collision, rand: Rand::default(), time: 0, clock: 0, cameras }
+        let stunts = vec![None; cars.len()];
+        Race {
+            setup,
+            tables,
+            tuning,
+            cars,
+            collision,
+            rand: Rand::default(),
+            time: 0,
+            clock: 0,
+            cameras,
+            line: BestLine::default(),
+            stunts,
+        }
+    }
+
+    /// 0x80041384: puts car `slot` back on the road: player one's at the
+    /// first clear point of the best line from where it was along the lap
+    /// (when the line has one and it has a heading), others at their saved
+    /// respawn point; still, unwrecked, its timers and forces cleared, its
+    /// object in the respawn zone, a free turbo if it had none, and two
+    /// seconds' grace from other cars.
+    pub fn reset_car(&mut self, slot: usize) {
+        let others: Vec<_> = self
+            .cars
+            .iter()
+            .enumerate()
+            .filter(|&(k, _)| k != slot)
+            .map(|(_, c)| crate::math::add(c.body.pos, c.body.centre))
+            .collect();
+        let t = &self.tables;
+        let car = &mut self.cars[slot];
+        if car.flags & 1 != 0
+            && let Some(point) = self.line.free_point(car.lap_distance as u32, &others)
+        {
+            let forward = point.heading;
+            let right = crate::math::cross(forward, [0, 0, 0x1000]);
+            if div_fx(0x1000, 10 << 12) < t.length(right) {
+                let right = t.normalize(right);
+                let up = crate::math::cross(right, forward);
+                let mut rot = [[0i16; 3]; 3];
+                for (i, row) in rot.iter_mut().enumerate() {
+                    *row = [right[i] as i16, forward[i] as i16, up[i] as i16];
+                }
+                car.respawn = Respawn { pos: point.pos, rot, zone: Some(point.zone) };
+            }
+        }
+        let body = &mut car.body;
+        body.pos = car.respawn.pos;
+        body.rot = car.respawn.rot;
+        body.asleep = false;
+        body.sleep_count = 0;
+        car.wrecked = false;
+        car.wreck_ms = 0;
+        car.flags &= !0x3800;
+        tracing::trace!("car {slot}: the wreck's debris cleared, the reset's effects, not yet ported");
+        body.ang_momentum = [0; 3];
+        body.torque = [0; 3];
+        body.momentum = [0; 3];
+        body.vel = [0; 3];
+        body.spin = [0; 3];
+        body.force = [0; 3];
+        if let Some(zone) = car.respawn.zone {
+            self.collision.move_to_zone(slot as u8, zone, car);
+        }
+        car.airborne = false;
+        if car.flags & 1 != 0
+            && let Some(camera) = self.cameras.iter_mut().find(|c| c.car as usize == slot)
+        {
+            camera.snap = true;
+        }
+        car.righting = [0; 3];
+        if car.turbos == 0 {
+            car.add_turbos(1);
+        }
+        tracing::trace!("car {slot}: its power-ups ended, not yet ported");
+        car.reset_grace_ms = 2000;
+        if let Some(obj) = self.collision.objects.iter_mut().find(|o| o.car == Some(slot as u8)) {
+            obj.flags |= 1;
+        }
+        for wheel in &mut car.wheels {
+            wheel.on_ground = false;
+        }
+        car.air_lock.active = false;
     }
 
     /// One step of `STEP_MS`, with each player's controls (in car order).
@@ -131,9 +223,7 @@ impl Race {
         for (car, c) in self.cars.iter_mut().zip(controls) {
             car.apply_controls(c, &self.tuning);
         }
-        for car in &mut self.cars {
-            car.update(&self.tables, &self.tuning, dt);
-        }
+        self.cars_update(dt);
         let mut step =
             Step { tuning: &self.tuning, rand: &mut self.rand, time: self.time, clock: self.clock };
         self.collision.update(&self.tables, &mut self.cars, &mut step);
@@ -154,5 +244,44 @@ impl Race {
             }
         }
         self.time = self.time.wrapping_add(STEP_MS as u32);
+    }
+
+    /// `cars_update` (0x8004064c): each car's timers, then its update by its
+    /// state (players' cars under full physics; computer cars not yet).
+    fn cars_update(&mut self, dt: i32) {
+        for slot in 0..self.cars.len() {
+            if self.cars[slot].run_timers(STEP_MS as u32)
+                && let Some(obj) = self.collision.objects.iter_mut().find(|o| o.car == Some(slot as u8))
+            {
+                obj.flags &= !1;
+            }
+            if self.cars[slot].state != 2 {
+                tracing::trace!("car {slot}: state {} not yet ported", self.cars[slot].state);
+                continue;
+            }
+            if self.cars[slot].wants_reset() {
+                self.reset_car(slot);
+                self.cars[slot].reset_requested = false;
+            }
+            let zone = self
+                .collision
+                .objects
+                .iter()
+                .find(|o| o.car == Some(slot as u8))
+                .map_or((None, false), |o| (o.zones.iter().next(), o.zones.entries.len() == 1));
+            let mut drive = Drive {
+                tables: &self.tables,
+                tuning: &self.tuning,
+                rand: &mut self.rand,
+                time: self.time,
+                dt,
+                scoring: self.setup.flags & 2 != 0,
+                endless_turbo: false,
+            };
+            let stepped = self.cars[slot].update(&mut drive, zone);
+            if stepped.stunt.is_some() {
+                self.stunts[slot] = stepped.stunt;
+            }
+        }
     }
 }

@@ -132,13 +132,34 @@ fn main() {
         let (o, n) = (&original[0], &mut native[0]);
         (n.steer, n.accel, n.brake, n.stick, n.handbrake) = (o.steer, o.accel, o.brake, o.stick, o.handbrake);
         (n.reset_held, n.turbo_held) = (o.reset_held, o.turbo_held);
-        n.update(&tables, &tuning, dt);
-        world.contacts.clear();
-        world.step = world.step.wrapping_add(1);
-        world.update_points(&mut native);
+        // cars_update for the player's car: its timers, then car_update
+        // (a reset needs the whole race, and is only reported).
+        n.run_timers(25);
+        if n.wants_reset() {
+            tracing::warn!("frame {f}: a reset (not checked here)");
+        }
+        let zone = world
+            .objects
+            .iter()
+            .find(|o| o.car == Some(0))
+            .map_or((None, false), |o| (o.zones.iter().next(), o.zones.entries.len() == 1));
         // The step's clocks, both as the frame begins (the vertical blank
         // advances the system clock at its end).
         let mut rand = Rand { seed };
+        let scoring = Ram(&mut hle.m.bus.ram).u8(0x800d_2640) != 0;
+        let mut drive = hwtr_game::car::update::Drive {
+            tables: &tables,
+            tuning: &tuning,
+            rand: &mut rand,
+            time,
+            dt,
+            scoring,
+            endless_turbo: false,
+        };
+        native[0].update(&mut drive, zone);
+        world.contacts.clear();
+        world.step = world.step.wrapping_add(1);
+        world.update_points(&mut native);
         let mut step = Step { tuning: &tuning, rand: &mut rand, time, clock };
         world.stages(&tables, &mut native, &mut step);
         let at_impulse = native[0].body.clone();

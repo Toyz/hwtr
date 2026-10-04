@@ -129,7 +129,7 @@ impl Car {
         car.state = if player { 2 } else { 1 };
         let range = if player { tuning.player_skill } else { tuning.computer_skill };
         car.handling.skill = skill(car.handling.skill, setup.difficulty, range);
-        car.respawn_zone = None;
+        car.respawn.zone = None;
         car
     }
 }

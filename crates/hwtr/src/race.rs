@@ -90,7 +90,8 @@ impl Race {
             cars: vec![Entrant { name: name.into(), driver: Driver::PlayerOne, car_id: 0, player: 0, grid: 0 }],
             difficulty: 128,
         };
-        let race = hwtr_game::race::Race::new(setup, scp, &[parts], Tables::from_exe(&exe), tuning);
+        let mut race = hwtr_game::race::Race::new(setup, scp, &[parts], Tables::from_exe(&exe), tuning);
+        race.line = hwtr_game::line::BestLine::parse(get(&format!("{t}BLD"))?).ok_or("the best line does not parse")?;
         tracing::info!("race on {t}: {} car(s) ported", race.cars.len());
         Ok(Race {
             scene,

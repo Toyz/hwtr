@@ -12,6 +12,7 @@ pub mod righting;
 pub mod wreck;
 pub mod impact;
 pub mod stunt;
+pub mod update;
 mod load;
 
 pub use controls::Controls;
@@ -19,7 +20,7 @@ pub use controls::Controls;
 pub use handling::{Axle, EngineSpec, Handling};
 
 use crate::body::Body;
-use crate::math::{Tables, Vec3, add, apply_matrix_lv, column, cross, div, div_fx, divdi3, dot, fx, sub};
+use crate::math::{Matrix, Tables, Vec3, add, apply_matrix_lv, column, cross, div, div_fx, divdi3, dot, fx, sub};
 
 /// 1 and ½, 4.12.
 const ONE: i32 = 0x1000;
@@ -36,6 +37,15 @@ const SIXTY: i32 = 0x3_c000;
 const AIR: i32 = 0x94_9000 / 1000;
 /// The surface that drags a car along the ground.
 const DRAGGING_SURFACE: u8 = 6;
+
+/// Where a car is put back on the road.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Respawn {
+    pub pos: Vec3,
+    pub rot: Matrix,
+    /// The zone it is in; None until one is saved.
+    pub zone: Option<u16>,
+}
 
 /// The stick axes armed for turning the car in the air.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -337,11 +347,27 @@ pub struct Car {
     pub state: u8,
     /// Wrecked (0x8004619c), until put back on the road.
     pub wrecked: bool,
-    /// Which way the camera shows a player's wreck, chosen at random.
-    pub wreck_view: bool,
+    /// Player one's wreck has a line to play (decided at random as it
+    /// wrecks, played half a second on).
+    pub wreck_line: bool,
+    /// Milliseconds since it wrecked; at 3000 it is put back on the road.
+    pub wreck_ms: u32,
+    /// Asked to be put back on the road at its next update.
+    pub reset_requested: bool,
+    /// Milliseconds left after a reset during which it passes through other
+    /// cars.
+    pub reset_grace_ms: u32,
     /// The reset (action 9, R1) and the turbo (action 10, R2) held.
     pub reset_held: bool,
     pub turbo_held: bool,
+    /// The turbo button last step.
+    pub turbo_before: bool,
+    /// A power-up (0x80065520) makes its brakes bite: braking while
+    /// rolling forward takes a tenth of its momentum each step.
+    pub strong_brakes: bool,
+    /// Milliseconds it has been stuck (pressing on, steering hard, slow,
+    /// touching something).
+    pub stuck_ms: u32,
     /// The race is over for it (its laps run, 0x8006137c): it drives
     /// itself, the controls ignored.
     pub finished: bool,
@@ -369,9 +395,9 @@ pub struct Car {
     pub contact_ms: u32,
     /// The race clock at its last contact.
     pub contact_time: u32,
-    /// The zone the car is put back in after a reset (saved by
-    /// `car_update` while it drives well).
-    pub respawn_zone: Option<u16>,
+    /// Where a reset puts the car back (saved by `car_update` while it
+    /// drives well, or found on the best line).
+    pub respawn: Respawn,
     /// Turbos in hand, at most 10 (0x8003c850 adds, a boost spends one).
     pub turbos: u8,
     /// Set once the turbo has been used, or the ten-turbos hint played.
@@ -797,28 +823,3 @@ impl Car {
     }
 }
 
-impl Car {
-    /// The part of `car_update` (0x8003fbe4) ported so far, for a car under
-    /// full physics: its forces, air control when no wheel touches the
-    /// ground, the step's motion, the rotation kept orthonormal, the wheels'
-    /// spin; a pedal wakes it.
-    pub fn update(&mut self, t: &Tables, tuning: &Tuning, dt: i32) {
-        if !self.body.asleep {
-            self.physics(t, tuning);
-        }
-        if self.grounded == 0 {
-            self.air_control();
-        } else {
-            self.air_armed = Armed::default();
-            self.air_lock.active = false;
-        }
-        self.body.integrate(t, dt);
-        if !self.body.asleep {
-            self.body.rot = t.orthonormalize(&self.body.rot);
-            self.spin_wheels();
-        }
-        if self.accel != 0 || self.brake != 0 {
-            self.body.asleep = false;
-        }
-    }
-}

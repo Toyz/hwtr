@@ -7,7 +7,7 @@
 //! port to the original byte for byte.
 
 use hwtr_game::car::handling::{BLOCK_A, Handling};
-use hwtr_game::car::{Armed, AxisLock, Car, Engine, Ground, GroundPlane, Tuning, Wheel};
+use hwtr_game::car::{Armed, AxisLock, Car, Respawn, Engine, Ground, GroundPlane, Tuning, Wheel};
 use super::body;
 use hwtr_game::body::Body;
 use super::{InMemory, Ram};
@@ -98,6 +98,14 @@ pub const AIRBORNE: u32 = 0x628;
 pub const CONTACT_CLOCK: u32 = 0x61c;
 pub const CONTACT_MS: u32 = 0x620;
 pub const CONTACT_TIME: u32 = 0x920;
+pub const RESPAWN_POS: u32 = 0x79c;
+pub const RESPAWN_ROT: u32 = 0x7ac;
+pub const RESET_REQUESTED: u32 = 0x869;
+pub const RESET_GRACE: u32 = 0x924;
+pub const WRECK_MS: u32 = 0x630;
+pub const TURBO_BEFORE: u32 = 0x29;
+pub const STRONG_BRAKES: u32 = 0x864;
+pub const STUCK_MS: u32 = 0x91c;
 pub const RESPAWN_ZONE: u32 = 0x7cc;
 pub const TURBOS: u32 = 0x874;
 pub const AIR_CONTROL: u32 = 0x86a;
@@ -281,9 +289,15 @@ impl InMemory for Car {
             all_terrain: ram.flag(at + ALL_TERRAIN),
             state: ram.u8(at + STATE),
             wrecked: ram.flag(at + WRECKED),
-            wreck_view: ram.flag(at + WRECK_VIEW),
+            wreck_line: ram.flag(at + WRECK_VIEW),
+            wreck_ms: ram.i32(at + WRECK_MS) as u32,
+            reset_requested: ram.flag(at + RESET_REQUESTED),
+            reset_grace_ms: ram.i32(at + RESET_GRACE) as u32,
             reset_held: ram.flag(at + RESET_HELD),
             turbo_held: ram.flag(at + TURBO_HELD),
+            turbo_before: ram.flag(at + TURBO_BEFORE),
+            strong_brakes: ram.flag(at + STRONG_BRAKES),
+            stuck_ms: ram.i32(at + STUCK_MS) as u32,
             finished: ram.flag(at + FINISHED),
             lap_distance: ram.i32(at + LAP_DISTANCE),
             ground: Ground {
@@ -311,7 +325,11 @@ impl InMemory for Car {
             contact_clock: ram.i32(at + CONTACT_CLOCK) as u32,
             contact_ms: ram.i32(at + CONTACT_MS) as u32,
             contact_time: ram.i32(at + CONTACT_TIME) as u32,
-            respawn_zone: u16::try_from(ram.i32(at + RESPAWN_ZONE)).ok(),
+            respawn: Respawn {
+                pos: ram.vec3(at + RESPAWN_POS),
+                rot: ram.matrix(at + RESPAWN_ROT),
+                zone: u16::try_from(ram.i32(at + RESPAWN_ZONE)).ok(),
+            },
             turbos: ram.u8(at + TURBOS),
             air_control: ram.flag(at + AIR_CONTROL),
             air_armed: Armed { along: ram.u8(at + AIR_ARMED) & 1 != 0, across: ram.u8(at + AIR_ARMED) & 2 != 0 },
@@ -359,9 +377,15 @@ impl InMemory for Car {
         ram.set_flag(at + ALL_TERRAIN, self.all_terrain);
         ram.set_u8(at + STATE, self.state);
         ram.set_flag(at + WRECKED, self.wrecked);
-        ram.set_flag(at + WRECK_VIEW, self.wreck_view);
+        ram.set_flag(at + WRECK_VIEW, self.wreck_line);
+        ram.set_i32(at + WRECK_MS, self.wreck_ms as i32);
+        ram.set_flag(at + RESET_REQUESTED, self.reset_requested);
+        ram.set_i32(at + RESET_GRACE, self.reset_grace_ms as i32);
         ram.set_flag(at + RESET_HELD, self.reset_held);
         ram.set_flag(at + TURBO_HELD, self.turbo_held);
+        ram.set_flag(at + TURBO_BEFORE, self.turbo_before);
+        ram.set_flag(at + STRONG_BRAKES, self.strong_brakes);
+        ram.set_i32(at + STUCK_MS, self.stuck_ms as i32);
         ram.set_flag(at + FINISHED, self.finished);
         ram.set_i32(at + LAP_DISTANCE, self.lap_distance);
         let g = &self.ground;
@@ -387,7 +411,9 @@ impl InMemory for Car {
         ram.set_i32(at + CONTACT_CLOCK, self.contact_clock as i32);
         ram.set_i32(at + CONTACT_MS, self.contact_ms as i32);
         ram.set_i32(at + CONTACT_TIME, self.contact_time as i32);
-        ram.set_i32(at + RESPAWN_ZONE, self.respawn_zone.map_or(-1, i32::from));
+        ram.set_vec3(at + RESPAWN_POS, self.respawn.pos);
+        ram.set_matrix(at + RESPAWN_ROT, &self.respawn.rot);
+        ram.set_i32(at + RESPAWN_ZONE, self.respawn.zone.map_or(-1, i32::from));
         ram.set_u8(at + TURBOS, self.turbos);
         ram.set_flag(at + AIR_CONTROL, self.air_control);
         let others = ram.u8(at + AIR_ARMED) & !3;

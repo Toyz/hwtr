@@ -131,3 +131,22 @@ impl Collision {
         }
     }
 }
+
+impl Collision {
+    /// 0x8004c5f4: puts all of car `slot`'s object's points in `zone`
+    /// (leaving their old zones), then applies the zone as at the start.
+    pub fn move_to_zone(&mut self, slot: u8, zone: u16, car: &mut Car) {
+        let Some(id) = self.objects.iter().position(|o| o.car == Some(slot)) else { return };
+        for k in 0..self.objects[id].point_zones.len() {
+            let old = self.objects[id].point_zones[k];
+            self.members[old as usize].remove(id);
+            self.objects[id].zones.remove(old);
+        }
+        for k in 0..self.objects[id].point_zones.len() {
+            self.objects[id].point_zones[k] = zone;
+            self.members[zone as usize].add(id);
+            self.objects[id].zones.add(zone);
+        }
+        self.zone_effects(car, zone, true);
+    }
+}

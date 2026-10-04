@@ -10,7 +10,7 @@ impl Car {
     /// wall) stops it and turns its spin about; then it loses half its
     /// speed, is thrown up at 10 to 19 mph, and spins up to 12 radians a
     /// second faster about each axis, its angular momentum following from
-    /// its inertia. A player's wreck also picks a camera view.
+    /// its inertia. Player one's wreck may get a line, at random.
     ///
     /// Not yet ported: the wheels flying off as debris (0x8007c9b0, a
     /// player's car, which draws random numbers before the throw), the
@@ -47,7 +47,7 @@ impl Car {
         self.flags_8 &= !2;
         if self.flags & 1 != 0 {
             if rand.below(2) != 0 {
-                self.wreck_view = true;
+                self.wreck_line = true;
             }
             tracing::trace!("car {}: the wreck's sound, rumble and HUD, not yet ported", self.slot);
         }
