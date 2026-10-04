@@ -65,6 +65,8 @@ pub struct RaceSetup {
     pub checkpoints: u8,
     /// Bit 2: cars at a third of their size; bit 5: wheels at half.
     pub options: u32,
+    /// A race against the clock (flag 4): its limit, ms.
+    pub time_limit: u32,
     pub cars: Vec<Entrant>,
     /// 0 to 255.
     pub difficulty: u8,
@@ -74,6 +76,7 @@ use crate::camera::{Camera, Surroundings};
 use crate::car::Respawn;
 use crate::car::stunt::Award;
 use crate::car::update::Drive;
+use crate::hud::Hud;
 use crate::laps::{Course, LapEvent, Laps};
 use crate::line::BestLine;
 use crate::math::div_fx;
@@ -188,6 +191,9 @@ pub struct Race {
     pub over: bool,
     /// What happened since the host last took them.
     pub events: Vec<RaceEvent>,
+    /// The HUD, and the cars by place (0x800d264c).
+    pub hud: Hud,
+    pub order: Vec<u8>,
 }
 
 /// How many of the views a player cycles through (the fifth, the side view,
@@ -210,23 +216,32 @@ impl Race {
         collision.course = course;
         let mut cars = Vec::new();
         for (slot, entrant) in setup.cars.iter().enumerate() {
-            if !entrant.driver.is_player() {
-                continue;
+            let Some((h, spec)) = handling.get(slot) else { break };
+            let grid = collision.scp.grid[entrant.grid as usize % collision.scp.grid.len()];
+            let mut car = Car::load(slot as u8, entrant, &setup, (h, spec), grid, &tuning);
+            if entrant.driver.is_player() {
+                collision.add_car(&tables, &mut car);
+            } else {
+                // Computer cars wait on the grid until their driving is
+                // ported: no collision object, but their zone's effects (the
+                // lap distance their place counts from).
+                tracing::trace!("car {slot}: computer cars (0x80040494, 0x8007c6fc) not yet ported");
+                let zone = collision.scp.zone_at(crate::math::add(car.body.pos, car.body.centre));
+                collision.zone_effects(&mut car, zone, None);
             }
-            let (h, spec) = &handling[slot];
-            let grid = collision.scp.grid[entrant.grid as usize];
-            let mut car = Car::load(cars.len() as u8, entrant, &setup, (h, spec), grid, &tuning);
-            collision.add_car(&tables, &mut car);
             cars.push(car);
         }
         // The cameras fly over the track first (0x8003ac30); the countdown
         // starts when the flyby ends (0x8003abec).
-        let mut cameras: Vec<Camera> = cars.iter().map(|c| Camera::new(c.slot, &tables.views.one)).collect();
+        let mut cameras: Vec<Camera> =
+            cars.iter().filter(|c| c.flags & 3 != 0).map(|c| Camera::new(c.slot, &tables.views.one)).collect();
         for camera in &mut cameras {
             camera.flyby = true;
         }
         let countdown_from = (collision.scp.flyby.len() as u32).saturating_sub(1) * 200;
         let stunts = vec![None; cars.len()];
+        let hud = Hud::new(&setup, tables.meter.clone());
+        let order = (0..cars.len() as u8).collect();
         Race {
             setup,
             tables,
@@ -249,6 +264,8 @@ impl Race {
             standings: Vec::new(),
             over: false,
             events: Vec::new(),
+            hud,
+            order,
         }
     }
 
@@ -343,7 +360,15 @@ impl Race {
                 let laps = self.collision.lap_events.iter().filter(|(slot, _)| {
                     self.cars.get(*slot as usize).is_some_and(|c| c.flags & 1 != 0) && !self.collision.course.quiet
                 });
-                self.events.extend(laps.map(|&(car, event)| RaceEvent::Lap { car, event }));
+                let laps: Vec<_> = laps.copied().collect();
+                for (car, event) in laps {
+                    if let LapEvent::Lap { time, best } = event
+                        && let Some(player) = self.cameras.iter().position(|c| c.car == car)
+                    {
+                        self.hud.lap_done(player, time, best, self.time);
+                    }
+                    self.events.push(RaceEvent::Lap { car, event });
+                }
                 tracing::trace!("the race's effects and debris (0x8006b754, 0x8007c894): not yet ported");
             }
             let around = Surroundings {
@@ -531,10 +556,45 @@ impl Race {
                 scoring: self.setup.flags & 2 != 0,
                 endless_turbo: false,
             };
+            let before = self.cars[slot].turbos;
             let stepped = self.cars[slot].update(&mut drive, zone);
-            if stepped.stunt.is_some() {
-                self.stunts[slot] = stepped.stunt;
+            if let Some(award) = stepped.stunt {
+                if let Some(player) = self.cameras.iter().position(|c| c.car as usize == slot) {
+                    self.hud.turbos_given(player, before, award.turbos, self.time);
+                }
+                self.stunts[slot] = Some(award);
             }
+        }
+        tracing::trace!("the computer cars' driving (0x80078ed8, 0x8007937c): not yet ported");
+        self.rank();
+        tracing::trace!("the players' 0x8005c9b4: not yet ported");
+    }
+
+    /// 0x800408cc: the cars' places: more laps run first, then the lesser
+    /// lap distance, the order kept between steps.
+    fn rank(&mut self) {
+        let key = |c: &Car| (c.lap_distance as u32).wrapping_add((127u32.wrapping_sub(c.laps.done as u32)) << 24);
+        let n = self.order.len();
+        for i in 0..n.saturating_sub(1) {
+            for j in i + 1..n {
+                let (a, b) = (self.order[i] as usize, self.order[j] as usize);
+                if key(&self.cars[b]) < key(&self.cars[a]) {
+                    self.order.swap(i, j);
+                }
+            }
+        }
+        for (place, &slot) in self.order.iter().enumerate() {
+            self.cars[slot as usize].laps.place = place as u8;
+        }
+    }
+
+    /// What player `player`'s HUD draws now: the race HUD while the player
+    /// races (the results' screen is not yet ported).
+    pub fn hud(&mut self, player: usize) -> Vec<crate::hud::Sprite> {
+        let Some(slot) = self.cameras.get(player).map(|c| c.car as usize) else { return Vec::new() };
+        match self.cars.get(slot) {
+            Some(car) if self.phase == Phase::Racing && !car.laps.finished => self.hud.draw(player, car, self.time),
+            _ => Vec::new(),
         }
     }
 }

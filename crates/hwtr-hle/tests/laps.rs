@@ -39,7 +39,7 @@ fn passing_checkpoints_matches_the_original() {
     for name in STATES {
         let Some(mut m) = common::state(&exe, name) else { return };
         let start = m.bus.ram.clone();
-        let course = course(&Ram(&mut m.bus.ram));
+        let mut course = course(&Ram(&mut m.bus.ram));
         assert!(course.checkpoints > 1 && course.laps > 0, "{name}: {course:?}");
         for round in 0..600 {
             m.bus.ram.copy_from_slice(&start);
@@ -63,13 +63,17 @@ fn passing_checkpoints_matches_the_original() {
                 ends: ends.clone(),
                 best: if rng.below(3) == 0 { 0 } else { rng.below(200_000) },
                 finished: rng.below(20) == 0,
+                place: 0,
             };
+            // Now and then a quiet race (race flag 2).
+            course.quiet = rng.below(4) == 0;
             let number = if rng.below(3) == 0 { course.checkpoints } else { 1 + rng.below(course.checkpoints as u32) as u8 };
             let time = ends.last().copied().unwrap_or(0) + rng.below(200_000);
             {
                 let mut ram = Ram(&mut m.bus.ram);
                 car.write(&mut ram, CARS);
                 ram.set_i32(TIME, time as i32);
+                ram.set_u8(hwtr_hle::original::world::QUIET, course.quiet as u8);
             }
             let mut car = Car::read(&Ram(&mut m.bus.ram), CARS);
             let event = car.laps.pass(&course, number, time);

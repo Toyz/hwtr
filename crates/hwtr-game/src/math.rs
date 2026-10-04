@@ -35,6 +35,8 @@ pub struct Tables {
     /// order) and number (0x800c5c64, which the front end copies into the
     /// race it sets up).
     pub checkpoints: [[u8; 3]; 4],
+    /// The HUD's turbo meter.
+    pub meter: crate::hud::MeterTables,
 }
 
 const CHECKPOINT_TABLE: u32 = 0x800c_5c64;
@@ -54,7 +56,8 @@ impl Tables {
         let stunts = crate::car::stunt::StuntTable::read(&byte);
         let views = crate::camera::Views::read(&byte);
         let checkpoints = std::array::from_fn(|w| std::array::from_fn(|n| byte(CHECKPOINT_TABLE + 3 * w as u32 + n as u32)));
-        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints }
+        let meter = crate::hud::MeterTables::read(&byte);
+        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints, meter }
     }
 
     /// The checkpoints a lap of `world` (a name from [`crate::race::WORLDS`])

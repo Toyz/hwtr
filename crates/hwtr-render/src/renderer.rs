@@ -20,6 +20,7 @@ struct In {
     @location(1) colour: u32,
     @location(2) uv: u32,
     @location(3) mode: u32,
+    @location(4) window: u32,
 }
 
 struct Out {
@@ -27,6 +28,7 @@ struct Out {
     @location(0) colour: vec3f,
     @location(1) uv: vec2f,
     @location(2) @interpolate(flat) mode: u32,
+    @location(3) @interpolate(flat) window: u32,
 }
 
 @vertex
@@ -36,6 +38,7 @@ fn vs(v: In) -> Out {
     o.colour = vec3f(f32(v.colour & 255u), f32((v.colour >> 8u) & 255u), f32((v.colour >> 16u) & 255u));
     o.uv = vec2f(f32(v.uv & 255u), f32((v.uv >> 8u) & 255u));
     o.mode = v.mode;
+    o.window = v.window;
     return o;
 }
 
@@ -52,8 +55,8 @@ fn fs(i: Out) -> @location(0) vec4f {
     let depth = (tpage >> 7u) & 3u;
     let cx = (clut & 63u) * 16u;
     let cy = clut >> 6u;
-    let u = u32(clamp(i.uv.x, 0.0, 255.0));
-    let v = u32(clamp(i.uv.y, 0.0, 255.0));
+    let u = clamp(u32(clamp(i.uv.x, 0.0, 255.0)), i.window & 255u, (i.window >> 16u) & 255u);
+    let v = clamp(u32(clamp(i.uv.y, 0.0, 255.0)), (i.window >> 8u) & 255u, i.window >> 24u);
     var c: u32;
     if depth == 0u {
         let idx = (word(bx + u / 4u, by + v) >> ((u % 4u) * 4u)) & 15u;
@@ -77,6 +80,14 @@ pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
     group: wgpu::BindGroup,
     camera: wgpu::Buffer,
+    /// The HUD over the world, in the screen's pixels, replaced each frame
+    /// by `set_overlay`.
+    overlay_pipeline: wgpu::RenderPipeline,
+    overlay_group: wgpu::BindGroup,
+    overlay_camera: wgpu::Buffer,
+    overlay: GrowBuffer,
+    overlay_count: u32,
+    overlay_staging: Staging,
     /// What does not move (the track), uploaded once.
     vertices: wgpu::Buffer,
     count: u32,
@@ -91,6 +102,23 @@ pub struct Renderer {
 }
 
 pub const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// The race's screen, in pixels.
+pub const SCREEN: (f32, f32) = (384.0, 240.0);
+
+/// From the PlayStation screen's pixels to a 4:3 box in the middle of a
+/// target of `size`, as a television shows it.
+pub fn overlay_matrix(size: (u32, u32)) -> glam::Mat4 {
+    let (w, h) = (size.0.max(1) as f32, size.1.max(1) as f32);
+    let (bw, bh) = if w * 3.0 > h * 4.0 { (h * 4.0 / 3.0, h) } else { (w, w * 3.0 / 4.0) };
+    let (sx, sy) = (bw / w, bh / h);
+    glam::Mat4::from_cols_array(&[
+        2.0 * sx / SCREEN.0, 0.0, 0.0, 0.0,
+        0.0, -2.0 * sy / SCREEN.1, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        -sx, sy, 0.0, 1.0,
+    ])
+}
 
 impl Renderer {
     pub fn new(
@@ -151,6 +179,20 @@ impl Renderer {
             ],
         });
         let view = vram_tex.create_view(&Default::default());
+        let overlay_camera = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("overlay camera"),
+            size: 64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let overlay_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("overlay"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: overlay_camera.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view) },
+            ],
+        });
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("world"),
             layout: &layout,
@@ -164,44 +206,9 @@ impl Renderer {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
-        let attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Uint32, 2 => Uint32, 3 => Uint32];
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("world"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: <Vtx as Pack>::SIZE as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &attrs,
-                })],
-            },
-            // The game draws a face only when it is front-facing; the
-            // triangles are wound counter-clockwise for front.
-            primitive: wgpu::PrimitiveState {
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let pipeline = make_pipeline(device, &pipeline_layout, &shader, format, true);
+        // The HUD: drawn over everything, both faces.
+        let overlay_pipeline = make_pipeline(device, &pipeline_layout, &shader, format, false);
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("triangles"),
             contents: Staging::new().pack(tris),
@@ -211,6 +218,12 @@ impl Renderer {
             pipeline,
             group,
             camera,
+            overlay_pipeline,
+            overlay_group,
+            overlay_camera,
+            overlay: GrowBuffer::new("overlay", wgpu::BufferUsages::VERTEX),
+            overlay_count: 0,
+            overlay_staging: Staging::new(),
             vertices,
             count: tris.len() as u32,
             moving: GrowBuffer::new("moving", wgpu::BufferUsages::VERTEX),
@@ -227,6 +240,12 @@ impl Renderer {
         self.moving_count = tris.len() as u32;
     }
 
+    /// The overlay's triangles, in the PlayStation screen's pixels.
+    pub fn set_overlay(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, tris: &[Vtx]) {
+        self.overlay.write(device, queue, self.overlay_staging.pack(tris));
+        self.overlay_count = tris.len() as u32;
+    }
+
     /// Draws into `target` with the camera's view-projection matrix.
     pub fn draw(
         &mut self,
@@ -239,6 +258,9 @@ impl Renderer {
         let depth_view = self.depth.view(device, size.0, size.1).clone();
         let bytes: Vec<u8> = mvp.to_cols_array().iter().flat_map(|f| f.to_le_bytes()).collect();
         queue.write_buffer(&self.camera, 0, &bytes);
+        let overlay = overlay_matrix(size);
+        let bytes: Vec<u8> = overlay.to_cols_array().iter().flat_map(|f| f.to_le_bytes()).collect();
+        queue.write_buffer(&self.overlay_camera, 0, &bytes);
         let mut encoder = device.create_command_encoder(&Default::default());
         {
             let c = self.clear.map(|v| v as f64 / 255.0);
@@ -272,7 +294,64 @@ impl Renderer {
                 pass.set_vertex_buffer(0, slice);
                 pass.draw(0..self.moving_count, 0..1);
             }
+            if let Some(slice) = self.overlay.slice()
+                && self.overlay_count > 0
+            {
+                pass.set_pipeline(&self.overlay_pipeline);
+                pass.set_bind_group(0, &self.overlay_group, &[]);
+                pass.set_vertex_buffer(0, slice);
+                pass.draw(0..self.overlay_count, 0..1);
+            }
         }
         encoder.finish()
     }
+}
+
+/// The pipeline for the world (depth-tested, back faces culled) or for the
+/// overlay (neither).
+fn make_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    format: wgpu::TextureFormat,
+    world: bool,
+) -> wgpu::RenderPipeline {
+    let attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Uint32, 2 => Uint32, 3 => Uint32, 4 => Uint32];
+device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(if world { "world" } else { "overlay" }),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: <Vtx as Pack>::SIZE as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &attrs,
+            })],
+        },
+        // The game draws a face only when it is front-facing; the
+        // triangles are wound counter-clockwise for front.
+        primitive: wgpu::PrimitiveState {
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: world.then_some(wgpu::Face::Back),
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH,
+            depth_write_enabled: Some(world),
+            depth_compare: Some(if world { wgpu::CompareFunction::Less } else { wgpu::CompareFunction::Always }),
+            stencil: Default::default(),
+            bias: Default::default(),
+        }),
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
 }

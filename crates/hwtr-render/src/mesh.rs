@@ -44,16 +44,35 @@ pub struct Vtx {
     pub uv: u32,
     /// clut | tpage << 16
     pub mode: u32,
+    /// The texels the polygon may read: u from, v from, u to, v to (each a
+    /// byte, inclusive).
+    pub window: u32,
+}
+
+impl Vtx {
+    /// The whole texture page.
+    pub const WHOLE: u32 = 0xffff_0000;
+
+    /// The texels of a sprite whose corners have `u` and `v`: the
+    /// PlayStation never reaches its far edges, so neither may sampling.
+    pub fn window_of(u: [u8; 4], v: [u8; 4]) -> u32 {
+        let span = |c: [u8; 4]| {
+            let (lo, hi) = (*c.iter().min().unwrap(), *c.iter().max().unwrap());
+            (lo as u32, if hi > lo { hi as u32 - 1 } else { hi as u32 })
+        };
+        let ((u0, u1), (v0, v1)) = (span(u), span(v));
+        u0 | v0 << 8 | u1 << 16 | v1 << 24
+    }
 }
 
 impl Pack for Vtx {
     /// Each field little-endian, in order, matching the layout the pipeline
     /// declares.
-    const SIZE: usize = 24;
+    const SIZE: usize = 28;
 
     fn pack(&self, out: &mut Vec<u8>) {
         self.pos.pack(out);
-        [self.colour, self.uv, self.mode].pack(out);
+        [self.colour, self.uv, self.mode, self.window].pack(out);
     }
 }
 
@@ -82,6 +101,7 @@ pub fn world_triangles(w: &World) -> Vec<Vtx> {
                 colour: rgb(cell.colours[p.c[i] as usize]),
                 uv: uv(p.uv[i]),
                 mode: p.clut as u32 | (p.tpage as u32) << 16,
+                window: Vtx::WHOLE,
             };
             let mut tri = vec![corner(0), corner(1), corner(3)];
             if !p.is_triangle() {
@@ -129,6 +149,7 @@ fn object(w: &World, i: usize, parent: (glam::Mat3, glam::Vec3), out: &mut Vec<V
                 colour: rgb(q.colour[k]),
                 uv: uv(q.uv[k]),
                 mode: q.clut as u32 | (q.tpage as u32) << 16,
+                window: Vtx::WHOLE,
             }
         };
         out.extend([corner(0), corner(1), corner(3), corner(1), corner(2), corner(3)]);
@@ -191,6 +212,7 @@ pub fn car_triangles(m: &hwtr_data::car::Model, clut: u16, tpage: u16, pos: glam
                     colour: 0x80_80_80,
                     uv: uv(f.uv[k]),
                     mode: clut as u32 | (tpage as u32) << 16,
+                    window: Vtx::WHOLE,
                 }
             };
             out.extend([corner(0), corner(1), corner(3)]);

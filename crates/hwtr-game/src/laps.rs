@@ -12,7 +12,7 @@ pub struct Course {
     /// Laps to run, and checkpoints a lap (the last is the finish line).
     pub laps: u8,
     pub checkpoints: u8,
-    /// Race flag 2: no checkpoint sounds.
+    /// Race flag 2: no checkpoint sounds, and no laps counted.
     pub quiet: bool,
     /// Race flag 4: the laps never run out.
     pub endless: bool,
@@ -84,6 +84,8 @@ pub struct Laps {
     pub best: u32,
     /// Its laps are all run: it drives on by itself.
     pub finished: bool,
+    /// Its place in the race, from 0 (0x800408cc).
+    pub place: u8,
 }
 
 impl Laps {
@@ -122,6 +124,12 @@ impl Laps {
             return Some(LapEvent::Checkpoint);
         }
         if at as u32 != last {
+            return None;
+        }
+        if course.quiet {
+            // No laps are counted: the line only starts the checkpoints again.
+            self.passed_count = 0;
+            self.passed = [false; 10];
             return None;
         }
         // The lap before the first ends at the race's start (the clock

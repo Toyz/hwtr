@@ -87,6 +87,7 @@ pub const LAP_ENDS: u32 = 0x5b8;
 pub const BEST_LAP: u32 = 0x5d8;
 pub const LAPS_DONE: u32 = 0x5e0;
 pub const PASSED_COUNT: u32 = 0x5e1;
+pub const PLACE: u32 = 0x5e2;
 pub const LAP_DISTANCE: u32 = 0x5dc;
 /// The ground: the floor (found +0x8b2, origin +0x8b4, normal +0x8c4, d
 /// +0x8d4) and the nearest surface (found +0x8f0, normal +0x8f4, d +0x904).
@@ -505,6 +506,7 @@ fn laps(ram: &Ram, at: u32) -> Laps {
         ends: if done == 0 && ends == [0] { Vec::new() } else { ends },
         best: ram.i32(at + BEST_LAP) as u32,
         finished: ram.flag(at + FINISHED),
+        place: ram.u8(at + PLACE),
     }
 }
 
@@ -520,4 +522,5 @@ fn write_laps(ram: &mut Ram, at: u32, laps: &Laps) {
     }
     ram.set_i32(at + BEST_LAP, laps.best as i32);
     ram.set_flag(at + FINISHED, laps.finished);
+    ram.set_u8(at + PLACE, laps.place);
 }

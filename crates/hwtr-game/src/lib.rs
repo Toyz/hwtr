@@ -12,6 +12,7 @@ pub mod camera;
 pub mod car;
 pub mod collision;
 pub mod fsm;
+pub mod hud;
 pub mod laps;
 pub mod line;
 pub mod math;
