@@ -45,8 +45,11 @@ pub struct Race {
     race: hwtr_game::race::Race,
     renderer: Option<(Renderer, wgpu::TextureFormat)>,
     camera: Chase,
-    /// Time not yet stepped.
-    pending: Duration,
+    /// How far the race's clock runs ahead of the real one, milliseconds
+    /// (race_frame, 0x80033ed8, steps while it is behind).
+    ahead: i64,
+    /// Milliseconds since the pad was last read.
+    since_read: u32,
     /// Player one's controller, read once a frame as the game reads it.
     reader: PadReader,
     mapping: Mapping,
@@ -102,22 +105,27 @@ impl Race {
             race,
             renderer: None,
             camera: Chase::default(),
-            pending: Duration::ZERO,
+            ahead: 0,
+            since_read: 0,
             reader: PadReader::default(),
             mapping: Mapping::default(),
         })
     }
 
-    /// One display frame of `elapsed`: the pad is read, then drives the
-    /// player's car for as many race steps as have come due.
+    /// One display frame of `elapsed`, as race_frame (0x80033ed8) runs it:
+    /// race steps of 25 ms until the race's clock passes the real one (a
+    /// frame counting for at most 50 ms), each reading the pad first (the
+    /// time since the last read going to the first) and driving the
+    /// player's car with it.
     pub fn frame(&mut self, pad: &Pad, elapsed: Duration) {
-        let step = Duration::from_millis(STEP_MS as u64);
-        self.pending = (self.pending + elapsed).min(step * 8);
-        self.reader.read(&pad_state(pad), &self.mapping, elapsed.as_millis().min(u32::MAX as u128) as u32);
-        let c = self.reader.controls();
-        while self.pending >= step {
-            self.race.step(&[c]);
-            self.pending -= step;
+        let ms = elapsed.as_millis().min(u32::MAX as u128) as u32;
+        self.since_read = self.since_read.saturating_add(ms);
+        self.ahead -= ms.min(50) as i64;
+        let state = pad_state(pad);
+        while self.ahead < 0 {
+            self.reader.read(&state, &self.mapping, std::mem::take(&mut self.since_read));
+            self.race.step(&[self.reader.controls()]);
+            self.ahead += STEP_MS as i64;
         }
     }
 
