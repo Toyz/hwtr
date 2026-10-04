@@ -43,6 +43,7 @@ impl Collision {
             radius: t.length(margin),
             zones: RefSet::default(),
             stamp: 0,
+            contact_point: [0; 3],
             car: Some(car.slot),
         };
         let id = self.objects.len();

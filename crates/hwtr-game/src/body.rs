@@ -5,7 +5,7 @@
 //! callers (0x8006b754, 0x8007c894).
 
 use crate::math::{
-    Matrix, Matrix64, Tables, Vec3, add, column, div_fx, divdi3, dot, fx, mul_16_64, mul_64_16, sub, transpose,
+    Matrix, Matrix64, Tables, Vec3, add, column, cross, div_fx, divdi3, dot, fx, mul_16_64, mul_64_16, sub, transpose,
 };
 
 /// The fastest a body moves, inches a second (about 131 mph).
@@ -140,6 +140,61 @@ impl Body {
         }
     }
 
+    /// The angular velocity from the angular momentum, `I⁻¹ L` in world
+    /// axes.
+    fn spin_of_momentum(&self) -> Vec3 {
+        let l = self.ang_momentum;
+        self.inv_inertia_world.map(|row| {
+            let s = (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(l[k]) >> 20));
+            (s >> 8) as i32
+        })
+    }
+
+    /// 0x8006dc08: a collision impulse at the world point `at` against a
+    /// surface with unit normal `n` (out of it), returning its size along
+    /// the normal. Only a point moving into the surface is pushed; `bounce`
+    /// is the share of its inward speed taken away (one and the restitution),
+    /// and the impulse along the surface opposes its sliding, `friction`
+    /// times the normal impulse.
+    pub fn impulse(&mut self, t: &Tables, at: Vec3, n: Vec3, bounce: i32, friction: i32) -> i32 {
+        let r = sub(at, self.pos);
+        let vel = add(self.vel, cross(self.spin, r));
+        let inward = dot(n, vel);
+        if inward > 0 {
+            return 0;
+        }
+        // How the point gives along n per unit impulse: 1/m + n·((I⁻¹(r×n))×r).
+        let a = cross(r, n);
+        let w = self.inv_inertia_world.map(|row| {
+            (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(a[k] as i64) >> 12))
+        });
+        let by = |x: i64, y: i32| x.wrapping_mul(y as i64) >> 12;
+        let turn = [
+            (by(w[1], r[2]).wrapping_sub(by(w[2], r[1])) >> 8) as i32,
+            (by(w[2], r[0]).wrapping_sub(by(w[0], r[2])) >> 8) as i32,
+            (by(w[0], r[1]).wrapping_sub(by(w[1], r[0])) >> 8) as i32,
+        ];
+        let give = self.inv_mass.wrapping_add(dot(n, turn));
+        let size = div_fx(fx(bounce.wrapping_neg(), inward), give);
+        let normal = n.map(|c| fx(c, size));
+        let sliding = sub(vel, n.map(|c| fx(c, inward)));
+        let along = if sliding.iter().all(|c| c.wrapping_abs() <= 0x1000) {
+            [0; 3]
+        } else {
+            let k = fx(size.wrapping_neg(), friction);
+            t.normalize(sliding).map(|c| fx(c, k))
+        };
+        let p = add(normal, along);
+        self.momentum = add(p, self.momentum);
+        let torque = cross(r, p);
+        for (l, c) in self.ang_momentum.iter_mut().zip(torque) {
+            *l = l.wrapping_add((c as i64) << 8);
+        }
+        self.vel = self.momentum.map(|c| fx(c, self.inv_mass));
+        self.spin = self.spin_of_momentum();
+        size
+    }
+
     /// 0x8006c504: one step of `dt` seconds. Gravity joins the force sum;
     /// the momentum takes the force, and the velocity follows through the
     /// inverse mass, its length held to [`MAX_SPEED`]; the position moves.
@@ -170,11 +225,7 @@ impl Body {
         }
         let rot = self.rot;
         self.inv_inertia_world = mul_64_16(&mul_16_64(&rot, &self.inv_inertia), &transpose(&rot));
-        let l = self.ang_momentum;
-        self.spin = self.inv_inertia_world.map(|row| {
-            let s = (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(l[k]) >> 20));
-            (s >> 8) as i32
-        });
+        self.spin = self.spin_of_momentum();
         self.spin_rate = t.length(self.spin);
         let max = fx(0x4000, 0x3244);
         if self.spin_rate > max {

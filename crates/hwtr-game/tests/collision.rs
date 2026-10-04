@@ -290,3 +290,59 @@ fn walls_match_the_original() {
     eprintln!("pushed {pushed}, contacts {contacts}, through {through}");
     assert!(pushed > 0 && contacts > 0 && through > 0, "pushed {pushed}, contacts {contacts}, through {through}");
 }
+
+#[test]
+fn contact_impulses_match_the_original() {
+    use hwtr_game::collision::world::layout::{CONTACT_COUNT, CONTACT_SIZE, CONTACTS};
+    let Some(exe) = common::exe() else { return };
+    let t = hwtr_game::math::Tables::from_exe(&exe);
+    let (mut pushed, mut sliding) = (0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { continue };
+        let (mut world, _) = Collision::read(&Ram(&mut m.bus.ram));
+        let mut cars = cars_from(&mut m.bus.ram);
+        let mut rng = common::Rng(0x1a9c_0000_0000_000f);
+        for step in 0..60 {
+            for (k, car) in cars.iter_mut().enumerate() {
+                let mut push = [0; 3].map(|_| (rng.word() as i32) >> (11 + rng.below(8)));
+                push[2] = (rng.word() as i32) >> (12 + rng.below(6));
+                car.body.pos = hwtr_game::math::add(car.body.pos, push);
+                car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (8 + rng.below(8)));
+                car.body.momentum = car.body.vel.map(|c| c.wrapping_mul(8));
+                car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (16 + rng.below(6)));
+                car.body.asleep = 0;
+                car.flags &= !0x3800;
+                car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
+            }
+            world.update_points(&mut cars);
+            world.track_zones(&cars);
+            world.wheels(&t, &mut cars);
+            world.ground(&t, &mut cars);
+            world.contacts.clear();
+            Ram(&mut m.bus.ram).set_i16(CONTACT_COUNT, 0);
+            world.walls(&t, &mut cars);
+            for addr in [0x8004_e47c, 0x8005_15e0, 0x8005_1bc0, 0x8005_36b4, 0x8005_4964] {
+                m.call(addr, &[]).unwrap();
+            }
+            // The original's loop, impulse by impulse, with the friction the
+            // port works out.
+            let mut port = cars.clone();
+            for (k, c) in world.contacts.iter().enumerate() {
+                let slot = world.objects[c.object].car.unwrap() as usize;
+                let table = t.surface_friction[c.surface as usize] as i32;
+                let friction = hwtr_game::math::div_fx(table << 12, 400 << 12);
+                let size = port[slot].body.impulse(&t, c.point, c.normal, 0x800, friction);
+                let original = m.call(0x8006_dc08, &[CONTACTS + k as u32 * CONTACT_SIZE, friction as u32]).unwrap();
+                assert_eq!(original as i32, size, "{name} step {step}: contact {k} impulse");
+                let after = cars_from(&mut m.bus.ram);
+                assert_eq!(after[slot].body, port[slot].body, "{name} step {step}: contact {k} body");
+                pushed += (size != 0) as u32;
+                sliding += (friction != 0 && size != 0) as u32;
+            }
+            let (w, _) = Collision::read(&Ram(&mut m.bus.ram));
+            world = w;
+            cars = cars_from(&mut m.bus.ram);
+        }
+    }
+    assert!(pushed > 0 && sliding > 0, "pushed {pushed}, sliding {sliding}");
+}

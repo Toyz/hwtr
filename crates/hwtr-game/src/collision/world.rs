@@ -240,7 +240,8 @@ pub mod layout {
 impl Collision {
     /// The part of `collision_update` (0x8004de6c) ported so far: the
     /// points, the zones, the players' wheels, the ground under each car, the
-    /// walls, and the effects of the zones cars' lead points entered.
+    /// walls and the impulses of their contacts, and the effects of the zones
+    /// cars' lead points entered.
     pub fn update(&mut self, t: &crate::math::Tables, cars: &mut [Car]) {
         self.contacts.clear();
         self.step = self.step.wrapping_add(1);
@@ -249,6 +250,7 @@ impl Collision {
         self.wheels(t, cars);
         self.ground(t, cars);
         self.walls(t, cars);
+        self.contact_impulses(t, cars);
         for id in self.cars.iter().collect::<Vec<_>>() {
             if self.objects[id].flags & ZONE_CHANGED == 0 {
                 continue;

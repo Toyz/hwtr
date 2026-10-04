@@ -92,8 +92,9 @@ pub struct CollisionObject {
     pub radius: i32,
     /// The zones its points are in.
     pub zones: RefSet<u16>,
-    /// The collision step it was last processed in.
+    /// The collision step it last touched the track in, and where.
     pub stamp: u32,
+    pub contact_point: Vec3,
     /// The car it belongs to, by slot.
     pub car: Option<u8>,
 }
@@ -118,6 +119,7 @@ pub mod layout {
     pub const CAR: u32 = 0x68;
     pub const ZONES: u32 = 0x74;
     pub const STAMP: u32 = 0x78;
+    pub const CONTACT_POINT: u32 = 0x7c;
     /// A car's pointer to its collision object.
     pub const CAR_OBJECT: u32 = 0x908;
 
@@ -154,6 +156,7 @@ pub mod layout {
                 radius: ram.i32(o + RADIUS),
                 zones: RefSet { entries: list.entries.into_iter().map(|(z, c)| (z as u16, c)).collect() },
                 stamp: ram.i32(o + STAMP) as u32,
+                contact_point: ram.vec3(o + CONTACT_POINT),
                 car,
             }
         }
@@ -181,6 +184,7 @@ pub mod layout {
             ram.set_i32(o + RADIUS, self.radius);
             ram.set_u8(o + KIND, self.kind.byte());
             ram.set_i32(o + STAMP, self.stamp as i32);
+            ram.set_vec3(o + CONTACT_POINT, self.contact_point);
         }
     }
 }
