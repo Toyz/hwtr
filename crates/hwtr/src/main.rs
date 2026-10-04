@@ -7,15 +7,18 @@
 //! What it does so far: the boot screens from the disc (Start or Cross steps
 //! through them), then the race scene: the track and the cars on the start
 //! grid, drawn natively, with a camera behind the player's car (the right
-//! stick turns it, Select goes back). The cars stand still until the
-//! collision with the track is ported; their physics already is.
+//! stick turns it, Select goes back). The player's car drives on the ported
+//! physics and wheel collision (left stick or d-pad steers, Cross or R2
+//! accelerates, Square or L2 brakes, Circle or R1 the handbrake); the other
+//! cars wait until computer cars are ported, and there are no walls yet.
 //!
 //! ```text
-//! hwtr [--cue DISC.cue] [--track NAME] [--shot OUT.png]
+//! hwtr [--cue DISC.cue] [--track NAME] [--shot OUT.png [--steps N]]
 //! ```
 //!
 //! `--track` goes straight to a race on that track (DESERT1 by default);
-//! `--shot` renders that race's first frame offscreen as PNG and exits.
+//! `--shot` renders that race offscreen as PNG and exits, after `--steps`
+//! race steps (25 ms each) with the accelerator held.
 
 mod present;
 mod race;
@@ -105,7 +108,7 @@ impl App {
                 self.set_title();
                 return;
             }
-            race.frame(&pad);
+            race.frame(&pad, FRAME);
         } else if pressed & (buttons::CROSS | buttons::START) != 0 {
             if self.screen + 1 == self.screens.len() {
                 self.start_race();
@@ -292,14 +295,15 @@ fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
     let mut args = std::env::args().skip(1);
-    let (mut cue, mut track, mut shot) = (None, None, None);
+    let (mut cue, mut track, mut shot, mut steps) = (None, None, None, 0u32);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--cue" => cue = args.next().map(PathBuf::from),
             "--track" => track = args.next(),
             "--shot" => shot = args.next().map(PathBuf::from),
+            "--steps" => steps = args.next().and_then(|s| s.parse().ok()).unwrap_or(0),
             _ => {
-                eprintln!("usage: hwtr [--cue DISC.cue] [--track NAME] [--shot OUT.png]");
+                eprintln!("usage: hwtr [--cue DISC.cue] [--track NAME] [--shot OUT.png [--steps N]]");
                 std::process::exit(2);
             }
         }
@@ -316,13 +320,14 @@ fn main() {
     let track = track.unwrap_or_else(|| "DESERT1".into()).to_uppercase();
     if let Some(out) = shot {
         let (w, h) = (1280, 960);
-        let written = Race::load(&cue, &track).and_then(|race| race.shot(w, h)).and_then(|rgba| {
-            std::fs::write(&out, hwtr_data::png::encode(w as usize, h as usize, &rgba)).map_err(|e| e.to_string())
+        let written = Race::load(&cue, &track).and_then(|mut race| race.shot(w, h, steps)).and_then(|(rgba, pos)| {
+            std::fs::write(&out, hwtr_data::png::encode(w as usize, h as usize, &rgba)).map_err(|e| e.to_string())?;
+            Ok(pos)
         });
-        if let Err(e) = written {
-            fail(e);
+        match written {
+            Ok(pos) => tracing::info!("-> {} (after {steps} steps the car is at {pos:?})", out.display()),
+            Err(e) => fail(e),
         }
-        tracing::info!("-> {}", out.display());
         return;
     }
     let screens = screens(&cue).unwrap_or_else(|e| fail(e));

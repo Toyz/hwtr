@@ -7,9 +7,12 @@
 //! `docs/engine/car-object.md`; where the original keeps all this is in
 //! [`layout`].
 
+mod controls;
 pub mod handling;
 pub mod layout;
 mod load;
+
+pub use controls::Controls;
 
 pub use handling::{Axle, EngineSpec, Handling};
 
@@ -183,6 +186,10 @@ pub struct Tuning {
     /// percent: for computer cars and for players' (low, high).
     pub computer_skill: [u8; 2],
     pub player_skill: [u8; 2],
+    /// Above this speed (mph) the steering is reduced, from the first
+    /// percentage at that speed toward the second at top speed.
+    pub steer_mph: u8,
+    pub steer_percent: [u8; 2],
 }
 
 impl Tuning {
@@ -224,6 +231,9 @@ pub struct Car {
     /// Bit 0: player one's, bit 1: player two's; bits 7, 8 and 9 choose a
     /// [`TuningSet`].
     pub flags: i32,
+    /// Bit 0: the zone's flag 0x10; bit 1: its flag 0x8 (or the race's
+    /// flag 0x80). Meanings not yet known.
+    pub flags_8: i32,
     /// Which player drives it.
     pub player: u8,
     /// Steering angle, radians; negative steers right.
@@ -266,6 +276,15 @@ pub struct Car {
     pub state: u8,
     /// Non-zero: out of the race's collision (meaning not yet known).
     pub unknown_62c: u8,
+    /// Set by the controls from actions 9 and 10; meanings not yet known.
+    pub unknown_25: u8,
+    pub unknown_26: u8,
+    pub unknown_27: u8,
+    /// Non-zero: the car drives itself (the controls are ignored).
+    pub unknown_5e3: u8,
+    /// The distance along the lap of the zone the car is in, from the
+    /// zone's distance (tenths).
+    pub lap_distance: i32,
     /// Set as the car is loaded; meanings not yet known.
     pub unknown_618: i32,
     pub unknown_624: i32,
@@ -682,6 +701,32 @@ impl Car {
         self.body.apply_force(sub(centre, arm), push.map(i32::wrapping_neg));
         if self.air_lock.active == 0 || self.air_lock.axis != axis {
             self.air_lock = AxisLock { active: 1, axis, dir: col(axis as usize) };
+        }
+    }
+}
+
+impl Car {
+    /// The part of `car_update` (0x8003fbe4) ported so far, for a car under
+    /// full physics: its forces, air control when no wheel touches the
+    /// ground, the step's motion, the rotation kept orthonormal, the wheels'
+    /// spin; a pedal wakes it.
+    pub fn update(&mut self, t: &Tables, tuning: &Tuning, dt: i32) {
+        if self.body.asleep == 0 {
+            self.physics(t, tuning);
+        }
+        if self.grounded == 0 {
+            self.air_control();
+        } else {
+            self.air_armed = 0;
+            self.air_lock.active = 0;
+        }
+        self.body.integrate(t, dt);
+        if self.body.asleep == 0 {
+            self.body.rot = t.orthonormalize(&self.body.rot);
+            self.spin_wheels();
+        }
+        if self.accel != 0 || self.brake != 0 {
+            self.body.asleep = 0;
         }
     }
 }

@@ -105,3 +105,59 @@ pub mod layout {
         }
     }
 }
+
+use crate::car::{Car, Controls, EngineSpec, Handling, Tuning};
+use crate::collision::{Collision, Scp};
+use crate::math::Tables;
+
+/// One race step: the game logic runs at 40 steps a second (`race_frame`,
+/// 0x80033ed8), whatever the display does.
+pub const STEP_MS: i32 = 25;
+
+/// A race in progress: what is ported of it so far. The players' cars
+/// drive on the track; computer cars, walls, laps and the rest follow.
+pub struct Race {
+    pub setup: RaceSetup,
+    pub tables: Tables,
+    pub tuning: Tuning,
+    pub cars: Vec<Car>,
+    pub collision: Collision,
+}
+
+impl Race {
+    /// Starts the race `setup` on the track `scp`, with each car's handling
+    /// (in the setup's order). Only the players' cars are built so far.
+    pub fn new(
+        setup: RaceSetup,
+        scp: Scp,
+        handling: &[(Handling, EngineSpec)],
+        tables: Tables,
+        tuning: Tuning,
+    ) -> Race {
+        let mut collision = Collision::new(scp);
+        let mut cars = Vec::new();
+        for (slot, entrant) in setup.cars.iter().enumerate() {
+            if !entrant.driver.is_player() {
+                continue;
+            }
+            let (h, spec) = &handling[slot];
+            let grid = collision.scp.grid[entrant.grid as usize];
+            let mut car = Car::load(cars.len() as u8, entrant, &setup, (h, spec), grid, &tuning);
+            collision.add_car(&tables, &mut car);
+            cars.push(car);
+        }
+        Race { setup, tables, tuning, cars, collision }
+    }
+
+    /// One step of `STEP_MS`, with each player's controls (in car order).
+    pub fn step(&mut self, controls: &[Controls]) {
+        let dt = (STEP_MS << 12) / 1000;
+        for (car, c) in self.cars.iter_mut().zip(controls) {
+            car.apply_controls(c, &self.tuning);
+        }
+        for car in &mut self.cars {
+            car.update(&self.tables, &self.tuning, dt);
+        }
+        self.collision.update(&self.tables, &mut self.cars);
+    }
+}

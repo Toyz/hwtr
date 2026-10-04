@@ -17,6 +17,7 @@ pub const CAR_COUNT: u32 = 0x800d_263c;
 
 pub const SLOT: u32 = 0x0;
 pub const FLAGS: u32 = 0x4;
+pub const FLAGS_8: u32 = 0x8;
 pub const PLAYER: u32 = 0xc;
 pub const STEER: u32 = 0x10;
 pub const ACCEL: u32 = 0x14;
@@ -74,6 +75,11 @@ pub const EXTENSION: u32 = 0x794;
 pub const UNKNOWN_865: u32 = 0x865;
 pub const STATE: u32 = 0x891;
 pub const UNKNOWN_62C: u32 = 0x62c;
+pub const UNKNOWN_25: u32 = 0x25;
+pub const UNKNOWN_26: u32 = 0x26;
+pub const UNKNOWN_27: u32 = 0x27;
+pub const UNKNOWN_5E3: u32 = 0x5e3;
+pub const LAP_DISTANCE: u32 = 0x5dc;
 pub const UNKNOWN_618: u32 = 0x618;
 pub const UNKNOWN_624: u32 = 0x624;
 pub const UNKNOWN_628: u32 = 0x628;
@@ -137,6 +143,8 @@ pub mod tuning {
     pub const SETS: u32 = 33;
     pub const SURFACE_DRAG: u32 = 51;
     pub const COMPUTER_SKILL: u32 = 14;
+    pub const STEER_MPH: u32 = 8;
+    pub const STEER_PERCENT: [u32; 2] = [0x3a, 9];
     pub const PLAYER_SKILL: u32 = 16;
 }
 
@@ -231,19 +239,28 @@ impl Engine {
 }
 
 impl Tuning {
-    pub fn read(ram: &Ram) -> Tuning {
+    /// TUNING.PRM, the 256 bytes the game loads to 0x80136a18.
+    pub fn from_prm(b: &[u8]) -> Tuning {
         use tuning::*;
+        let at = |k: u32| b.get(k as usize).copied().unwrap_or(0);
         let set = |k: u32| {
-            let at = TUNING + SETS + 3 * k;
-            TuningSet { downforce_front: ram.u8(at), downforce_rear: ram.u8(at + 1), grip_front: ram.u8(at + 2) }
+            let o = SETS + 3 * k;
+            TuningSet { downforce_front: at(o), downforce_rear: at(o + 1), grip_front: at(o + 2) }
         };
         Tuning {
-            downforce_mph: ram.u8(TUNING + DOWNFORCE_MPH),
+            downforce_mph: at(DOWNFORCE_MPH),
             sets: [set(0), set(1), set(2)],
-            surface_drag: ram.u8(TUNING + SURFACE_DRAG),
-            computer_skill: [ram.u8(TUNING + COMPUTER_SKILL), ram.u8(TUNING + COMPUTER_SKILL + 1)],
-            player_skill: [ram.u8(TUNING + PLAYER_SKILL), ram.u8(TUNING + PLAYER_SKILL + 1)],
+            surface_drag: at(SURFACE_DRAG),
+            computer_skill: [at(COMPUTER_SKILL), at(COMPUTER_SKILL + 1)],
+            player_skill: [at(PLAYER_SKILL), at(PLAYER_SKILL + 1)],
+            steer_mph: at(STEER_MPH),
+            steer_percent: STEER_PERCENT.map(at),
         }
+    }
+
+    pub fn read(ram: &Ram) -> Tuning {
+        let bytes: Vec<u8> = (0..256).map(|k| ram.u8(TUNING + k)).collect();
+        Tuning::from_prm(&bytes)
     }
 }
 
@@ -255,6 +272,7 @@ impl Car {
         Car {
             slot: ram.u8(at + SLOT),
             flags: ram.i32(at + FLAGS),
+            flags_8: ram.i32(at + FLAGS_8),
             player: ram.u8(at + PLAYER),
             steer: ram.i32(at + STEER),
             accel: ram.i32(at + ACCEL),
@@ -280,6 +298,11 @@ impl Car {
             unknown_865: ram.u8(at + UNKNOWN_865),
             state: ram.u8(at + STATE),
             unknown_62c: ram.u8(at + UNKNOWN_62C),
+            unknown_25: ram.u8(at + UNKNOWN_25),
+            unknown_26: ram.u8(at + UNKNOWN_26),
+            unknown_27: ram.u8(at + UNKNOWN_27),
+            unknown_5e3: ram.u8(at + UNKNOWN_5E3),
+            lap_distance: ram.i32(at + LAP_DISTANCE),
             unknown_618: ram.i32(at + UNKNOWN_618),
             unknown_624: ram.i32(at + UNKNOWN_624),
             unknown_628: ram.u8(at + UNKNOWN_628),
@@ -299,6 +322,7 @@ impl Car {
     pub fn write(&self, ram: &mut Ram, at: u32) {
         ram.set_u8(at + SLOT, self.slot);
         ram.set_i32(at + FLAGS, self.flags);
+        ram.set_i32(at + FLAGS_8, self.flags_8);
         ram.set_u8(at + PLAYER, self.player);
         ram.set_i32(at + STEER, self.steer);
         ram.set_i32(at + ACCEL, self.accel);
@@ -331,6 +355,11 @@ impl Car {
         ram.set_u8(at + UNKNOWN_865, self.unknown_865);
         ram.set_u8(at + STATE, self.state);
         ram.set_u8(at + UNKNOWN_62C, self.unknown_62c);
+        ram.set_u8(at + UNKNOWN_25, self.unknown_25);
+        ram.set_u8(at + UNKNOWN_26, self.unknown_26);
+        ram.set_u8(at + UNKNOWN_27, self.unknown_27);
+        ram.set_u8(at + UNKNOWN_5E3, self.unknown_5e3);
+        ram.set_i32(at + LAP_DISTANCE, self.lap_distance);
         ram.set_i32(at + UNKNOWN_618, self.unknown_618);
         ram.set_i32(at + UNKNOWN_624, self.unknown_624);
         ram.set_u8(at + UNKNOWN_628, self.unknown_628);

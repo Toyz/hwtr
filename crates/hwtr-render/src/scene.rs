@@ -43,14 +43,17 @@ pub struct SceneCar {
 
 impl SceneCar {
     pub fn triangles(&self) -> Vec<Vtx> {
-        mesh::car_triangles(&self.model, self.clut, self.tpage, self.pos, self.rot)
+        mesh::car_triangles(&self.model, self.clut, self.tpage, self.pos, glam::Mat3::from_quat(self.rot))
     }
 }
 
 pub struct Scene {
+    /// The track's name and number ("DESERT1"), whose archive the scene
+    /// came from.
+    pub track: String,
     pub vram: Vram,
     /// The track's triangles.
-    pub track: Vec<Vtx>,
+    pub track_tris: Vec<Vtx>,
     /// The cars on the start grid, in grid order.
     pub cars: Vec<SceneCar>,
     /// Somewhere to look from: above the first grid place, or above the
@@ -122,7 +125,7 @@ impl Scene {
             let (clut, tpage) = mesh::place_car_texture(&mut vram, &tim, slot);
             scene_cars.push(SceneCar { model, clut, tpage, pos, rot });
         }
-        Ok(Scene { vram, track: track_tris, cars: scene_cars, start, background: world.background })
+        Ok(Scene { track: t, vram, track_tris, cars: scene_cars, start, background: world.background })
     }
 
     /// Every car's triangles.
@@ -132,14 +135,19 @@ impl Scene {
 
     /// A renderer for this scene's track; the cars go in with `set_moving`.
     pub fn renderer(&self, device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Renderer {
-        let mut renderer = Renderer::new(device, queue, format, &self.vram, &self.track);
+        let mut renderer = Renderer::new(device, queue, format, &self.vram, &self.track_tris);
         renderer.clear = self.background;
         renderer
     }
 
-    /// Renders one frame offscreen with the view-projection `mvp` and
-    /// returns it as RGBA.
+    /// Renders one frame offscreen with the view-projection `mvp`, the cars
+    /// where the scene has them, and returns it as RGBA.
     pub fn shot(&self, width: u32, height: u32, mvp: glam::Mat4) -> Result<Vec<u8>, String> {
+        self.shot_with(width, height, mvp, &self.car_triangles())
+    }
+
+    /// The same with `moving` (the cars, wherever they are) instead.
+    pub fn shot_with(&self, width: u32, height: u32, mvp: glam::Mat4, moving: &[Vtx]) -> Result<Vec<u8>, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
@@ -152,7 +160,7 @@ impl Scene {
             pollster::block_on(adapter.request_device(&Default::default())).map_err(|e| e.to_string())?;
         let format = wgpu::TextureFormat::Rgba8Unorm;
         let mut renderer = self.renderer(&device, &queue, format);
-        renderer.set_moving(&device, &queue, &self.car_triangles());
+        renderer.set_moving(&device, &queue, moving);
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("shot"),
