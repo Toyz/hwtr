@@ -439,6 +439,7 @@ impl Race {
         for (at, number) in COUNTDOWN {
             if self.time >= self.countdown_from.wrapping_add(at) && self.called.is_none_or(|n| n > number) {
                 self.called = Some(number);
+                self.hud.countdown.call(number);
                 self.events.push(RaceEvent::Count(number));
                 return;
             }
@@ -453,6 +454,7 @@ impl Race {
     fn go(&mut self) {
         tracing::trace!("the replay's snapshots (0x8007feb0): not yet ported");
         self.events.push(RaceEvent::Go);
+        self.hud.countdown.call(0);
         self.before_start = self.time;
         self.time = 0;
         for car in &mut self.cars {

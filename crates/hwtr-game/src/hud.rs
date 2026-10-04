@@ -129,6 +129,74 @@ impl MeterTables {
     }
 }
 
+/// The countdown's number on screen: from the effects sheet (SFX.GLM), a
+/// 64-texel square drawn `size` pixels across, centred.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CountSprite {
+    /// 3, 2, 1, or 0 for GO.
+    pub number: u8,
+    pub x: i16,
+    pub y: i16,
+    pub size: i16,
+    /// Its texels' top left in the page.
+    pub u: u8,
+    pub v: u8,
+}
+
+/// Each number's texels in the effects sheet (0x800bdd08), GO first.
+pub const COUNT_UV: [(u8, u8); 4] = [(192, 96), (96, 64), (160, 64), (128, 96)];
+/// The effects sheet's sprite slot a number uses (slots 20 to 23).
+pub const COUNT_SLOT: usize = 20;
+
+/// The countdown's numbers (0x800d2510 to 0x800d2512, 0x800d250c): the one
+/// called, the one last finished shrinking, the end after GO, and the size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Countdown {
+    called: Option<u8>,
+    shown: Option<u8>,
+    over: bool,
+    size: u16,
+}
+
+impl Default for Countdown {
+    /// 0x8001dab0.
+    fn default() -> Countdown {
+        Countdown { called: None, shown: None, over: false, size: 140 }
+    }
+}
+
+impl Countdown {
+    /// 0x8001e054: the countdown calls `number` (0 for GO).
+    pub fn call(&mut self, number: u8) {
+        self.called = Some(number);
+    }
+
+    /// 0x8001e060, once a game frame: the number called shrinks from 140
+    /// pixels by 8 a frame, centred on the screen (on the upper half's
+    /// height for two players); once gone, it is done, and after GO the
+    /// countdown is over.
+    pub fn frame(&mut self, players: u8) -> Option<CountSprite> {
+        let number = self.called?;
+        if self.called == self.shown || self.over {
+            return None;
+        }
+        self.size = self.size.wrapping_sub(8);
+        if self.size >= 141 {
+            self.shown = self.called;
+            if number == 0 {
+                self.over = true;
+            }
+            self.size = 140;
+            return None;
+        }
+        let size = self.size as i16;
+        let (w, h) = (384i16, 240i16);
+        let tall = if players >= 2 { h / 2 - 1 } else { h };
+        let (u, v) = COUNT_UV[number as usize % 4];
+        Some(CountSprite { number, x: w / 2 - size / 2, y: tall / 2 - size / 2, size, u, v })
+    }
+}
+
 /// The HUD for the race's players.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hud {
@@ -146,6 +214,7 @@ pub struct Hud {
     meters: [Meter; 2],
     /// Sounds the HUD asks for.
     pub sounds: Vec<u16>,
+    pub countdown: Countdown,
 }
 
 /// The sound of a full turbo meter.
@@ -186,6 +255,7 @@ impl Hud {
             flashes: [None; 2],
             meters: [Meter::default(); 2],
             sounds: Vec::new(),
+            countdown: Countdown::default(),
         }
     }
 

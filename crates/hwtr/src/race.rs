@@ -81,6 +81,12 @@ pub struct Race {
     /// logic is untouched).
     before: Option<Shown>,
     between: f32,
+    /// The countdown's number, stepped once a game frame (a thirtieth of a
+    /// second, the race's usual rate on the console: two vertical blanks
+    /// a frame; the original's follows its drawing), and the time toward
+    /// the next step.
+    count: Option<hwtr_game::hud::CountSprite>,
+    count_ms: u32,
     /// Player one's controller, read once a frame as the game reads it.
     reader: PadReader,
     mapping: Mapping,
@@ -184,6 +190,8 @@ impl Race {
             carry_us: 0,
             before: None,
             between: 1.0,
+            count: None,
+            count_ms: 0,
             reader: PadReader::default(),
             mapping: Mapping::default(),
             analog: false,
@@ -212,6 +220,11 @@ impl Race {
         self.between = (1.0 - self.ahead as f32 / STEP_MS as f32).clamp(0.0, 1.0);
         let buttons = Buttons { accept: state.holds(&self.mapping, ACCEPT), start: state.holds(&self.mapping, START) };
         self.race.frame(buttons);
+        self.count_ms += ms;
+        while self.count_ms >= 33 {
+            self.count_ms -= 33;
+            self.count = self.race.hud.countdown.frame(self.race.hud.players);
+        }
         for event in self.race.events.drain(..) {
             tracing::info!("{event:?} at {} ms", self.race.time);
         }
@@ -276,7 +289,8 @@ impl Race {
         let shown = self.drawn();
         let tris = self.car_triangles(&shown);
         let hud = self.race.hud(0);
-        let overlay = self.overlay(&hud);
+        let mut overlay = self.overlay(&hud);
+        overlay.extend(self.count.map(|c| self.count_quad(&c)).unwrap_or_default());
         let mvp = camera_matrix(shown.eye, Mat3::from_quat(shown.look), shown.fov, size.0 as f32 / size.1 as f32);
         let (renderer, _) = self.renderer.as_mut().unwrap();
         renderer.set_moving(device, queue, &tris);
@@ -303,6 +317,25 @@ impl Race {
             out.extend([c[0], c[1], c[2], c[1], c[3], c[2]]);
         }
         out
+    }
+
+    /// The countdown's number over everything (ordering-table slot 1).
+    fn count_quad(&self, c: &hwtr_game::hud::CountSprite) -> Vec<hwtr_render::Vtx> {
+        let (clut, page) = self.race.tables.sprite_slots[hwtr_game::hud::COUNT_SLOT + c.number as usize % 4];
+        let mode = clut as u32 | (page as u32) << 16;
+        let (x, y, s) = (c.x as f32, c.y as f32, c.size as f32);
+        let (u, v) = (c.u, c.v);
+        let us = [u, u + 63, u, u + 63];
+        let vs = [v, v, v + 63, v + 63];
+        let corner = |k: usize, px: f32, py: f32| hwtr_render::Vtx {
+            pos: [px, py, 0.0],
+            colour: 0x80_80_80,
+            uv: us[k] as u32 | (vs[k] as u32) << 8,
+            mode,
+            window: hwtr_render::Vtx::window_of(us, vs),
+        };
+        let q = [corner(0, x, y), corner(1, x + s, y), corner(2, x, y + s), corner(3, x + s, y + s)];
+        vec![q[0], q[1], q[2], q[1], q[3], q[2]]
     }
 
     /// Where the player's car is drawn, in world units.

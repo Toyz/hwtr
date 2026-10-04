@@ -41,6 +41,9 @@ pub struct Tables {
     /// of 4096ths of a turn (rcossin_tbl, 0x800c90f4).
     pub acos: Vec<u16>,
     pub rcossin: Vec<(i16, i16)>,
+    /// The effects sheet's 24 sprite slots: each one's palette and texture
+    /// page, with its blend bits (0x800bd0d0, 0x800bd130).
+    pub sprite_slots: [(u16, u16); 24],
 }
 
 const CHECKPOINT_TABLE: u32 = 0x800c_5c64;
@@ -65,7 +68,11 @@ impl Tables {
         let meter = crate::hud::MeterTables::read(&byte);
         let acos = (0..4097).map(|i| u16_at(ACOS_TABLE + 2 * i)).collect();
         let rcossin = (0..4096).map(|i| (u16_at(RCOSSIN_TABLE + 4 * i) as i16, u16_at(RCOSSIN_TABLE + 4 * i + 2) as i16)).collect();
-        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints, meter, acos, rcossin }
+        let sprite_slots = std::array::from_fn(|k| {
+            let (clut, page) = (u16_at(0x800b_d0d0 + 4 * k as u32), u16_at(0x800b_d0d2 + 4 * k as u32));
+            (clut, (page & 0xff9f) | ((byte(0x800b_d130 + k as u32) as u16) << 5))
+        });
+        Tables { cos, sqrt, surface_friction, stunts, views, checkpoints, meter, acos, rcossin, sprite_slots }
     }
 
     /// The checkpoints a lap of `world` (a name from [`crate::race::WORLDS`])
