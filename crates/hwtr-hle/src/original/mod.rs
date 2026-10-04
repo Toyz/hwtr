@@ -7,6 +7,7 @@ pub mod ai;
 pub mod body;
 pub mod camera;
 pub mod car;
+pub mod effects;
 pub mod object;
 pub mod pad;
 pub mod race;

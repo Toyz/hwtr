@@ -80,6 +80,8 @@ pub struct Race {
     /// its own rate, so what is drawn is eased between steps (the game's
     /// logic is untouched).
     before: Option<Shown>,
+    /// The effects' quads for this frame.
+    effects: Vec<hwtr_game::effects::EffectQuad>,
     between: f32,
     /// The countdown's number, stepped once a game frame (a thirtieth of a
     /// second, the race's usual rate on the console: two vertical blanks
@@ -478,6 +480,7 @@ impl Race {
             since_read: 0,
             carry_us: 0,
             before: None,
+            effects: Vec::new(),
             between: 1.0,
             count: None,
             count_ms: 0,
@@ -533,6 +536,7 @@ impl Race {
         self.between = (1.0 - self.ahead as f32 / STEP_MS as f32).clamp(0.0, 1.0);
         let buttons = Buttons { accept: state.holds(&self.mapping, ACCEPT), start: state.holds(&self.mapping, START) };
         self.race.frame(buttons);
+        self.effects = self.race.effects_frame(ms);
         self.count_ms += ms;
         while self.count_ms >= 33 {
             self.count_ms -= 33;
@@ -648,7 +652,12 @@ impl Race {
 
     fn car_triangles(&self, shown: &Shown) -> Vec<hwtr_render::Vtx> {
         let mut tris = Vec::new();
-        for (look, &(pos, rot)) in self.scene.cars.iter().zip(&shown.cars) {
+        for (k, (look, &(pos, rot))) in self.scene.cars.iter().zip(&shown.cars).enumerate() {
+            // 0x80068540: not the car the camera rides, nor during a
+            // reset's blink.
+            if !self.race.car_shown(k) {
+                continue;
+            }
             tris.extend(hwtr_render::mesh::car_triangles(&look.model, look.clut, look.tpage, pos, Mat3::from_quat(rot)));
         }
         tris
@@ -668,6 +677,8 @@ impl Race {
         let shown = self.drawn();
         let mut tris = self.car_triangles(&shown);
         tris.extend(self.apart_triangles());
+        let semi = self.effect_triangles();
+        tris.extend(semi.iter().copied());
         let hud = match &self.race.paused {
             Some(p) => p.sprites.clone(),
             None => self.race.hud(0),
@@ -677,6 +688,8 @@ impl Race {
         let mvp = camera_matrix(shown.eye, Mat3::from_quat(shown.look), shown.fov, size.0 as f32 / size.1 as f32);
         let (renderer, _) = self.renderer.as_mut().unwrap();
         renderer.set_moving(device, queue, &tris);
+        let semi: Vec<_> = semi.into_iter().filter(|v| v.mode >> 31 == 1).collect();
+        renderer.set_semi(device, queue, &semi);
         renderer.set_overlay(device, queue, &overlay);
         renderer.draw(device, queue, target, size, mvp)
     }
@@ -701,6 +714,29 @@ impl Race {
                 }
             };
             out.extend(hwtr_render::mesh::object_posed(&self.scene.world, object, parent, rot, pos));
+        }
+        out
+    }
+
+    /// The effects' quads, both faces; a semi-transparent one's mode has
+    /// bit 31.
+    fn effect_triangles(&self) -> Vec<hwtr_render::Vtx> {
+        let mut out = Vec::new();
+        for q in &self.effects {
+            let mode = q.clut as u32 | (q.tpage as u32) << 16 | (q.semi as u32) << 31;
+            let colour = q.colour[0] as u32 | (q.colour[1] as u32) << 8 | (q.colour[2] as u32) << 16;
+            let us = q.uv.map(|t| t[0]);
+            let vs = q.uv.map(|t| t[1]);
+            let window = hwtr_render::Vtx::window_of(us, vs);
+            let corner = |k: usize| hwtr_render::Vtx {
+                pos: world(q.corners[k]).to_array(),
+                colour,
+                uv: q.uv[k][0] as u32 | (q.uv[k][1] as u32) << 8,
+                mode,
+                window,
+            };
+            out.extend([corner(0), corner(1), corner(3), corner(1), corner(2), corner(3)]);
+            out.extend([corner(0), corner(3), corner(1), corner(1), corner(3), corner(2)]);
         }
         out
     }

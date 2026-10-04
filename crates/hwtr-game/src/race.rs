@@ -266,6 +266,8 @@ pub struct Race {
     pub results_text: crate::hud::ResultsText,
     /// The world's trackside cameras, which the attract race cuts to.
     pub camera_spots: Vec<crate::camera::Spot>,
+    /// Dust, smoke, skid marks, sparks and debris.
+    pub effects: crate::effects::Effects,
 }
 
 /// How many of the views a player cycles through (the fifth, the side view,
@@ -377,6 +379,7 @@ impl Race {
             snapshots: Default::default(),
             results_text: Default::default(),
             camera_spots: Vec::new(),
+            effects: Default::default(),
         }
     }
 
@@ -483,6 +486,7 @@ impl Race {
         }
         self.power_ups.drop_all(car);
         car.reset_grace_ms = 2000;
+        car.just_reset = true;
         if let Some(obj) = self.collision.objects.iter_mut().find(|o| o.car == Some(slot as u8)) {
             obj.flags |= 1;
         }
@@ -511,6 +515,9 @@ impl Race {
                 let mut step =
                     Step { tuning: &self.tuning, rand: &mut self.rand, time: self.time, clock: self.clock };
                 self.collision.update(&self.tables, &mut self.cars, &mut step);
+                for s in std::mem::take(&mut self.collision.sparks) {
+                    self.effects.spark(s);
+                }
                 if self.collision.players_touched {
                     self.snapshots.take(self.time, &self.cars, &self.cameras, None);
                 }
@@ -839,6 +846,35 @@ impl Race {
     /// No players' cameras: the demo's views (0x800d2632).
     fn demo_views(&self) -> bool {
         self.hud.players == 0
+    }
+
+    /// 0x80068540: whether car `slot` is drawn in the first view: not by
+    /// a camera riding on it, and not every other tenth of a second of the
+    /// grace after a reset.
+    pub fn car_shown(&self, slot: usize) -> bool {
+        let Some(car) = self.cars.get(slot) else { return false };
+        let ridden = self.cameras.first().is_some_and(|c| c.car as usize == slot && c.mode == Some(crate::camera::ViewMode::Mounted));
+        !ridden && (car.reset_grace_ms / 100) & 1 == 0
+    }
+
+    /// A frame drawn of `frame_ms`: the effects run (0x8002f354, 0x8002b888,
+    /// the draws 0x8002f618) and give their quads; then, unless paused,
+    /// the cars' trail points for the next (0x80068874).
+    pub fn effects_frame(&mut self, frame_ms: u32) -> Vec<crate::effects::EffectQuad> {
+        let paused = self.paused.is_some();
+        let fps = crate::effects::fps(frame_ms);
+        self.effects.update(paused);
+        let shown: Vec<bool> = (0..self.cars.len()).map(|k| self.car_shown(k)).collect();
+        self.effects.emit_trails(&mut self.rand, fps, &shown);
+        let cam = self.cameras.first().map_or([[4096, 0, 0], [0, 4096, 0], [0, 0, 4096]], |c| c.rot);
+        let quads = self.effects.draw(&self.tables, &cam, fps, paused);
+        tracing::trace!("effects: {} quads", quads.len());
+        self.effects.frame_done(paused);
+        if !paused {
+            let eyes: Vec<_> = self.cameras.iter().map(|c| c.pos).collect();
+            self.effects.car_pose(&mut self.cars, &eyes);
+        }
+        quads
     }
 
     /// The countdown's number showing, if any.

@@ -13,6 +13,7 @@ pub mod camera;
 pub mod car;
 pub mod cd;
 pub mod collision;
+pub mod effects;
 pub mod engines;
 pub mod front;
 pub mod fsm;

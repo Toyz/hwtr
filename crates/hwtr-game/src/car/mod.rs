@@ -398,6 +398,9 @@ pub struct Car {
     /// whether that is over half a second (+0x86c: the HUD says so).
     pub wrong_way_ms: u32,
     pub wrong_way: bool,
+    /// Put back on the road since the last frame drawn (+0x928): no skid
+    /// marks this frame.
+    pub just_reset: bool,
     /// Its checkpoints and laps; once they are run it drives itself, the
     /// controls ignored.
     pub laps: crate::laps::Laps,

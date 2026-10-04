@@ -39,6 +39,8 @@ pub struct Collision {
     pub knocked: Vec<(u16, Vec3)>,
     /// Two players' cars touched this step (a snapshot for the results).
     pub players_touched: bool,
+    /// The sparks thrown this step, for the effects.
+    pub sparks: Vec<crate::effects::Spark>,
     /// This step's contacts between objects (0x8012c96c, count 0x800d2676).
     pub pairs: Vec<super::pairs::Pair>,
     /// The axis each pair of objects was last found apart along, by their
@@ -196,6 +198,7 @@ impl Collision {
         self.pairs.clear();
         self.lap_events.clear();
         self.players_touched = false;
+        self.sparks.clear();
         self.step = self.step.wrapping_add(1);
         self.update_points(cars);
         self.find_pairs(t, cars);

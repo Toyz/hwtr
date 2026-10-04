@@ -59,6 +59,7 @@ impl Collision {
             let Some(slot) = obj.car else { continue };
             let car = &mut cars[slot as usize];
             let first = obj.stamp != self.step;
+            let (kind, half) = (obj.kind, obj.half);
             if first {
                 tracing::trace!("contact sound for car {slot}: not yet ported");
             }
@@ -82,6 +83,13 @@ impl Collision {
             obj.contact_point = c.point;
             let friction = contact_friction(t, c.surface, obj.kind == Kind::ComputerCar && !was_wrecked);
             car.body.impulse(t, c.point, c.normal, BOUNCE, friction);
+            // 0x8002e9f8: a player's car's first contact of the step throws
+            // a spark.
+            if first && kind == Kind::PlayerCar
+                && let Some(s) = crate::effects::contact_spark(step.rand, t, &car.body, half, c.point, c.normal, c.surface)
+            {
+                self.sparks.push(s);
+            }
         }
     }
 

@@ -1,7 +1,10 @@
 //! Draws triangles with the PlayStation's texturing: the texture page and
 //! CLUT of each polygon select texels and colours out of a copy of VRAM, the
 //! colour 0x0000 is transparent, and the texel is modulated by the vertex
-//! colour with 128 as 1.0.
+//! colour with 128 as 1.0. A semi-transparent polygon (bit 31 of its mode)
+//! blends its texels that have the top bit set by its page's mode (0 half
+//! and half, 1 added, 2 subtracted, 3 a quarter added) and draws the rest
+//! as any other.
 
 use rrt::gpu::{DepthBuffer, GrowBuffer};
 use rrt::kit::{Pack, Staging};
@@ -46,9 +49,8 @@ fn word(x: u32, y: u32) -> u32 {
     return textureLoad(vram, vec2u(x & 1023u, y & 511u), 0).r;
 }
 
-@fragment
-fn fs(i: Out) -> @location(0) vec4f {
-    let tpage = i.mode >> 16u;
+fn texel(i: Out) -> u32 {
+    let tpage = (i.mode >> 16u) & 0x7fffu;
     let clut = i.mode & 0xffffu;
     let bx = (tpage & 15u) * 64u;
     let by = ((tpage >> 4u) & 1u) * 256u;
@@ -67,12 +69,31 @@ fn fs(i: Out) -> @location(0) vec4f {
     } else {
         c = word(bx + u, by + v);
     }
-    if c == 0u {
-        discard;
-    }
+    return c;
+}
+
+fn shade(i: Out, c: u32) -> vec4f {
     let t = vec3f(f32(c & 31u), f32((c >> 5u) & 31u), f32((c >> 10u) & 31u)) * 8.0;
     let rgb = clamp(t * i.colour / 128.0, vec3f(0.0), vec3f(255.0)) / 255.0;
     return vec4f(rgb, 1.0);
+}
+
+@fragment
+fn fs(i: Out) -> @location(0) vec4f {
+    let c = texel(i);
+    if c == 0u || ((i.mode >> 31u) == 1u && (c & 0x8000u) != 0u) {
+        discard;
+    }
+    return shade(i, c);
+}
+
+@fragment
+fn fs_semi(i: Out) -> @location(0) vec4f {
+    let c = texel(i);
+    if (c & 0x8000u) == 0u {
+        discard;
+    }
+    return shade(i, c);
 }
 "#;
 
@@ -97,6 +118,12 @@ pub struct Renderer {
     moving_count: u32,
     /// Where the moving triangles are packed each frame.
     staging: Staging,
+    /// The semi-transparent triangles, by blend mode, each frame; one
+    /// pipeline a mode.
+    semi_pipelines: [wgpu::RenderPipeline; 4],
+    semi: GrowBuffer,
+    semi_ranges: [(u32, u32); 4],
+    semi_staging: Staging,
     depth: DepthBuffer,
     pub clear: [u8; 3],
     /// The PlayStation screen the overlay is in, in pixels: the race's
@@ -209,9 +236,10 @@ impl Renderer {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
-        let pipeline = make_pipeline(device, &pipeline_layout, &shader, format, true);
+        let pipeline = make_pipeline(device, &pipeline_layout, &shader, format, true, None);
         // The HUD: drawn over everything, both faces.
-        let overlay_pipeline = make_pipeline(device, &pipeline_layout, &shader, format, false);
+        let overlay_pipeline = make_pipeline(device, &pipeline_layout, &shader, format, false, None);
+        let semi_pipelines = std::array::from_fn(|abr| make_pipeline(device, &pipeline_layout, &shader, format, true, Some(abr as u8)));
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("triangles"),
             contents: Staging::new().pack(tris),
@@ -232,6 +260,10 @@ impl Renderer {
             moving: GrowBuffer::new("moving", wgpu::BufferUsages::VERTEX),
             moving_count: 0,
             staging: Staging::new(),
+            semi_pipelines,
+            semi: GrowBuffer::new("semi", wgpu::BufferUsages::VERTEX),
+            semi_ranges: [(0, 0); 4],
+            semi_staging: Staging::new(),
             depth: DepthBuffer::new(DEPTH),
             clear: [0, 0, 0],
             screen: SCREEN,
@@ -242,6 +274,21 @@ impl Renderer {
     pub fn set_moving(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, tris: &[Vtx]) {
         self.moving.write(device, queue, self.staging.pack(tris));
         self.moving_count = tris.len() as u32;
+    }
+
+    /// The semi-transparent triangles' blended texels, drawn after the
+    /// opaque ones (give them to `set_moving` too, for their other texels).
+    pub fn set_semi(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, tris: &[Vtx]) {
+        let abr = |v: &Vtx| ((v.mode >> 21) & 3) as usize;
+        let mut sorted = Vec::with_capacity(tris.len());
+        for k in 0..4 {
+            let from = sorted.len() as u32;
+            for t in tris.as_chunks::<3>().0.iter().filter(|t| abr(&t[0]) == k) {
+                sorted.extend_from_slice(t);
+            }
+            self.semi_ranges[k] = (from, sorted.len() as u32);
+        }
+        self.semi.write(device, queue, self.semi_staging.pack(&sorted));
     }
 
     /// The overlay's triangles, in the PlayStation screen's pixels.
@@ -300,6 +347,18 @@ impl Renderer {
                 pass.set_vertex_buffer(0, slice);
                 pass.draw(0..self.moving_count, 0..1);
             }
+            if let Some(slice) = self.semi.slice() {
+                pass.set_vertex_buffer(0, slice);
+                for (k, &(from, to)) in self.semi_ranges.iter().enumerate() {
+                    if from == to {
+                        continue;
+                    }
+                    pass.set_pipeline(&self.semi_pipelines[k]);
+                    pass.set_bind_group(0, &self.group, &[]);
+                    pass.set_blend_constant(wgpu::Color { r: BLEND[k], g: BLEND[k], b: BLEND[k], a: BLEND[k] });
+                    pass.draw(from..to, 0..1);
+                }
+            }
             if let Some(slice) = self.overlay.slice()
                 && self.overlay_count > 0
             {
@@ -313,18 +372,37 @@ impl Renderer {
     }
 }
 
+/// The blend constant each semi-transparent mode uses (its share of the new
+/// colour: half, or a quarter; the others ignore it).
+const BLEND: [f64; 4] = [0.5, 1.0, 1.0, 0.25];
+
+/// A semi-transparent mode as a blend: half old and half new, old plus new,
+/// old less new, old plus a quarter of new.
+fn blend_of(abr: u8) -> wgpu::BlendState {
+    use wgpu::{BlendComponent as C, BlendFactor as F, BlendOperation as O};
+    let colour = match abr {
+        0 => C { src_factor: F::Constant, dst_factor: F::OneMinusConstant, operation: O::Add },
+        1 => C { src_factor: F::One, dst_factor: F::One, operation: O::Add },
+        2 => C { src_factor: F::One, dst_factor: F::One, operation: O::ReverseSubtract },
+        _ => C { src_factor: F::Constant, dst_factor: F::One, operation: O::Add },
+    };
+    wgpu::BlendState { color: colour, alpha: C::REPLACE }
+}
+
 /// The pipeline for the world (depth-tested, back faces culled) or for the
-/// overlay (neither).
+/// overlay (neither); or, with a semi-transparent mode, for the world's
+/// blended texels (depth-tested but not written, both faces).
 fn make_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::PipelineLayout,
     shader: &wgpu::ShaderModule,
     format: wgpu::TextureFormat,
     world: bool,
+    semi: Option<u8>,
 ) -> wgpu::RenderPipeline {
     let attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Uint32, 2 => Uint32, 3 => Uint32, 4 => Uint32];
 device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some(if world { "world" } else { "overlay" }),
+        label: Some(if semi.is_some() { "semi" } else if world { "world" } else { "overlay" }),
         layout: Some(layout),
         vertex: wgpu::VertexState {
             module: shader,
@@ -340,22 +418,32 @@ device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         // triangles are wound counter-clockwise for front.
         primitive: wgpu::PrimitiveState {
             front_face: wgpu::FrontFace::Ccw,
-            cull_mode: world.then_some(wgpu::Face::Back),
+            cull_mode: (world && semi.is_none()).then_some(wgpu::Face::Back),
             ..Default::default()
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH,
-            depth_write_enabled: Some(world),
-            depth_compare: Some(if world { wgpu::CompareFunction::Less } else { wgpu::CompareFunction::Always }),
+            depth_write_enabled: Some(world && semi.is_none()),
+            depth_compare: Some(match (world, semi) {
+                (true, None) => wgpu::CompareFunction::Less,
+                (true, Some(_)) => wgpu::CompareFunction::LessEqual,
+                _ => wgpu::CompareFunction::Always,
+            }),
             stencil: Default::default(),
-            bias: Default::default(),
+            // The game sorts by depth rather than testing it, so marks on
+            // the ground show; here they are pulled a little forward.
+            bias: if semi.is_some() {
+                wgpu::DepthBiasState { constant: -4, slope_scale: -2.0, clamp: 0.0 }
+            } else {
+                Default::default()
+            },
         }),
         multisample: Default::default(),
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some("fs"),
+            entry_point: Some(if semi.is_some() { "fs_semi" } else { "fs" }),
             compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+            targets: &[Some(wgpu::ColorTargetState { format, blend: semi.map(blend_of), write_mask: wgpu::ColorWrites::ALL })],
         }),
         multiview_mask: None,
         cache: None,

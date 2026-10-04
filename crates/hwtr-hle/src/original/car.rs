@@ -122,6 +122,7 @@ pub const RACE_OPTIONS: u32 = 0x8013_8cb0;
 pub const STUCK_MS: u32 = 0x91c;
 pub const WRONG_WAY: u32 = 0x86c;
 pub const WRONG_WAY_MS: u32 = 0x870;
+pub const JUST_RESET: u32 = 0x928;
 pub const RESPAWN_ZONE: u32 = 0x7cc;
 pub const TURBOS: u32 = 0x874;
 pub const AIR_CONTROL: u32 = 0x86a;
@@ -327,6 +328,7 @@ impl InMemory for Car {
             stuck_ms: ram.i32(at + STUCK_MS) as u32,
             wrong_way_ms: ram.i32(at + WRONG_WAY_MS) as u32,
             wrong_way: ram.flag(at + WRONG_WAY),
+            just_reset: ram.flag(at + JUST_RESET),
             laps: laps(ram, at),
             lap_distance: ram.i32(at + LAP_DISTANCE),
             ground: Ground {
@@ -421,6 +423,7 @@ impl InMemory for Car {
         ram.set_i32(at + STUCK_MS, self.stuck_ms as i32);
         ram.set_i32(at + WRONG_WAY_MS, self.wrong_way_ms as i32);
         ram.set_flag(at + WRONG_WAY, self.wrong_way);
+        ram.set_flag(at + JUST_RESET, self.just_reset);
         write_laps(ram, at, &self.laps);
         ram.set_i32(at + LAP_DISTANCE, self.lap_distance);
         let g = &self.ground;
