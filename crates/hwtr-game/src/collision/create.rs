@@ -223,8 +223,12 @@ impl Collision {
             _ => None,
         };
         bit(0x10, 1, &mut car.flags_8);
-        // The race's flag 0x80 (0x800d2678) also sets bit 1; not yet ported.
-        bit(0x8, 2, &mut car.flags_8);
+        // The headlights' bit, also under the race's option 0x80.
+        if f & 0x8 != 0 || self.options & 0x80 != 0 {
+            car.flags_8 |= 2;
+        } else {
+            car.flags_8 &= !2;
+        }
         car.flags &= !0x1c;
         match f & 0x9000 {
             0x9000 => car.flags |= 16,

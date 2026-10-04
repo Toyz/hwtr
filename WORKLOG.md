@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-58 entries: audio 6, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 4, format 7, input 8, physics 11, race 9, render 17, test 14, tooling 13, ui 10, video 1.
+59 entries: audio 6, bug 1, build 2, content 5, decomp 7, design 2, disc 1, engine 4, format 7, input 8, physics 11, race 10, render 17, test 14, tooling 13, ui 10, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -70,3 +70,4 @@ The [reference](docs/README.md) says what is true now.
 | 56 | [Cars drawn in the original's order, and a wreck's smoke](worklog/0056-cars-drawn-in-the-original-s-order-and-a-wreck-s-smoke.md) | 2026-10-04 | render |
 | 57 | [Trigger zones start the track's objects](worklog/0057-trigger-zones-start-the-track-s-objects.md) | 2026-10-04 | engine |
 | 58 | [Car lights: exhaust glows, headlights, tail lights, tunnel darkening](worklog/0058-car-lights-exhaust-glows-headlights-tail-lights-tunnel.md) | 2026-10-04 | render |
+| 59 | [Race option 0x80 keeps the headlights up](worklog/0059-race-option-0x80-keeps-the-headlights-up.md) | 2026-10-04 | race |

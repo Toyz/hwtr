@@ -12,6 +12,8 @@ use hwtr_game::laps::Course;
 
 /// The race's sounds shut (6875(gp), set at the race's end by 0x800364cc).
 pub const HUSHED: u32 = 0x800d_2623;
+/// The race's options (collision_load copies the setup's +0x1c).
+pub const OPTIONS: u32 = 0x800d_2678;
 pub const SCP: u32 = 0x800d_2658;
 pub const ALL: u32 = 0x800d_265c;
 pub const MOVING: u32 = 0x800d_2660;
@@ -105,6 +107,7 @@ pub fn collision(ram: &Ram) -> (Collision, Vec<u32>) {
             hits: Vec::new(),
             triggers_hit: Vec::new(),
             hushed: ram.u8(HUSHED) == 1,
+            options: ram.i32(OPTIONS) as u32,
             knocked: Vec::new(),
             pairs: (0..ram.i16(PAIR_COUNT) as u16 as u32)
                 .map(|k| {

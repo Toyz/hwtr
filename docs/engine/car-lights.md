@@ -3,7 +3,7 @@ title: The car's lights (exhaust glows, headlights, tail lights, darkening)
 status: solid
 discs: US
 covers: US CCCPSX.EXE:0x80029fb0 car_draw_glows, 0x8002a81c car_draw_beams, 0x8002ad48 car_fade_light, 0x8002bb0c car_aim_lights, 0x8002bad0 car_set_glow, 0x80021f60 car_upload_lamp_clut, 0x800291b4 car_light_mask, 0x80028fb0 car_effect_matrix, 0x80010678 quad_list_draw, 0x80022cd0 fxp_parse
-worklog: 58
+worklog: 58, 59
 ---
 
 # The car's lights
@@ -41,8 +41,10 @@ For every car, shown or not, after its pose:
   car (car +0x62c) has none.
 - **Light targets (+0xc4, 0x8002bb0c).** Only for a player's car (cvs
   +0x1ee) that is not wrecked (cvs +0x28 = 1). The input is the car's word
-  +0x8, whose bits the zone it is in sets (1 from zone flag 0x10, 2 from
-  0x8) along with the brake (4):
+  +0x8, whose bits the zone it is in sets along with the brake (4). Bit 1
+  comes from zone flag 0x10. Bit 2 comes from zone flag 0x8, or on any zone
+  when the race's options (its cheats: 0x800d2678, which collision_load
+  copies from the setup's +0x1c) have 0x80 (0x8005c3a4):
   - With bit 1, the body heads for 48 and the headlights for 112.
   - With bit 2, the headlights head for 112 and are shown (+0x20 bit 0x20).
   - Bit 4 is the brake lights.

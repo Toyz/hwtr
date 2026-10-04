@@ -51,6 +51,9 @@ pub struct Collision {
     /// The race's sounds are shut (set when the race ends, by 0x800364cc):
     /// no hit is heard, and none draws its random number.
     pub hushed: bool,
+    /// The race's options, its cheats (0x800d2678, collision_load from the
+    /// setup's +0x1c): 0x80 shows the players' headlights everywhere.
+    pub options: u32,
     /// This step's contacts between objects (0x8012c96c, count 0x800d2676).
     pub pairs: Vec<super::pairs::Pair>,
     /// The axis each pair of objects was last found apart along, by their

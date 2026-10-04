@@ -110,6 +110,8 @@ fn zone_effects_match_the_original() {
             let zone = zones[rng.below(zones.len() as u32) as usize];
             let driven = rng.below(4) != 0;
             let time = rng.below(600_000);
+            // The race's options, its cheats: 0x80 shows the headlights.
+            world.options = [0, 0x80, 0x7f, 0xff][rng.below(4) as usize];
             let mut car = Car::read(&Ram(&mut m.bus.ram), CARS);
             car.laps.passed_count = rng.below(world.course.checkpoints as u32) as u8;
             car.laps.passed = std::array::from_fn(|k| k < car.laps.passed_count as usize);
@@ -117,6 +119,7 @@ fn zone_effects_match_the_original() {
                 let mut ram = Ram(&mut m.bus.ram);
                 car.write(&mut ram, CARS);
                 ram.set_i32(TIME, time as i32);
+                ram.set_i32(hwtr_hle::original::world::OPTIONS, world.options as i32);
             }
             let mut car = Car::read(&Ram(&mut m.bus.ram), CARS);
             world.zone_effects(&t, &mut car, zone, driven.then_some(time));
@@ -140,7 +143,7 @@ fn boost_pads_and_launchers_match_the_original() {
     let (mut launched, mut boosted) = (0, 0);
     for name in STATES {
         let Some(mut m) = common::state(&exe, name) else { return };
-        let (mut world, addresses) = collision(&Ram(&mut m.bus.ram));
+        let (world, addresses) = collision(&Ram(&mut m.bus.ram));
         let id = world.objects.iter().position(|o| o.car == Some(0)).expect("the player's object");
         let launchers: Vec<u16> = (0..world.scp.zones.len() as u16)
             .filter(|&z| world.scp.zones[z as usize].flags & 0x4800 == 0x4000)

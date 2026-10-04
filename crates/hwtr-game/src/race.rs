@@ -410,6 +410,7 @@ impl Race {
         let course = Course::new(&setup, &scp, line.lap_length);
         let mut collision = Collision::new(scp);
         collision.course = course;
+        collision.options = setup.options;
         let mut rand = Rand::default();
         // The race's sounds (0x8001924c, from race_load's 0x80034fd0): one
         // of the crashes banks 1, 3 and 4, and one of twelve dialogs.
