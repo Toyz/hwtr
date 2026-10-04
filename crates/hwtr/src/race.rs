@@ -219,11 +219,9 @@ impl RaceSound {
     }
 
     /// Every car's engine keyed (0x80015ebc for each, as 0x800350d4 and
-    /// 0x80036758 do), or let go (0x80036634).
-    fn engines_on(&mut self, on: bool) {
-        let changes: Vec<_> = (0..self.engines.cars.len())
-            .flat_map(|slot| if on { self.engines.key_on(slot) } else { self.engines.key_off(slot) })
-            .collect();
+    /// 0x80036758 do).
+    fn engines_on(&mut self) {
+        let changes: Vec<_> = (0..self.engines.cars.len()).flat_map(|slot| self.engines.key_on(slot)).collect();
         self.apply(&changes);
     }
 }
@@ -272,7 +270,7 @@ impl RaceSound {
                 Some((hwtr_game::snd::Bank::from_vh(&vh, 0)?, std::sync::Arc::from(vb)))
             })
             .collect();
-        self.engines_on(true);
+        self.engines_on();
     }
 
     /// 0x80015990: the pause menu's effects, always on voice 19.
@@ -707,6 +705,15 @@ impl Race {
                 continue;
             }
             tracing::info!("{event:?} at {} ms", self.race.time);
+            // 0x80036634 (the pause, before its sound) and 0x800364cc (the
+            // race's end): every car's voices let go.
+            if matches!(event, RaceEvent::Pause | RaceEvent::Finish)
+                && let Some(s) = &mut self.sound
+            {
+                let alive = s.alive();
+                let changes = s.engines.silence(&|v| alive.get(v).copied().unwrap_or(false));
+                s.apply(&changes);
+            }
             // What each sounds (the calls to 0x800157f8): the countdown,
             // the start, a player's checkpoints, laps and wrong way, a
             // player's wreck, the pause.
@@ -732,7 +739,10 @@ impl Race {
             if let Some(s) = &mut self.sound {
                 match event {
                     RaceEvent::Wrecked { car } => {
-                        let changes = s.engines.key_off(car as usize);
+                        let alive = s.alive();
+                        let changes = s
+                            .engines
+                            .wrecked(&self.race.tables, car as usize, &|v| alive.get(v).copied().unwrap_or(false));
                         s.apply(&changes);
                     }
                     // 0x80041384: a player's car back on the road sounds 13.
@@ -743,8 +753,7 @@ impl Race {
                         let changes = s.engines.key_on(car as usize);
                         s.apply(&changes);
                     }
-                    RaceEvent::Pause => s.engines_on(false),
-                    RaceEvent::Resume => s.engines_on(true),
+                    RaceEvent::Resume => s.engines_on(),
                     _ => {}
                 }
             }

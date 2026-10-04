@@ -366,8 +366,12 @@ pub struct Car {
     /// Player one's wreck has a line to play (decided at random as it
     /// wrecks, played half a second on).
     pub wreck_line: bool,
-    /// A player's car has just been wrecked: the pad gets a jolt.
+    /// A player's car has just been wrecked: the pad gets a jolt, its
+    /// camera shakes and effect 29 plays.
     pub jolted: bool,
+    /// The car has just been wrecked: its engine stops and its wreck
+    /// sounds where it is.
+    pub crashed: crate::effects::Pending<()>,
     /// Milliseconds since it wrecked; at 3000 it is put back on the road.
     pub wreck_ms: u32,
     /// Asked to be put back on the road at its next update.

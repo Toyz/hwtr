@@ -315,6 +315,7 @@ impl InMemory for Car {
             wreck_line: ram.flag(at + WRECK_VIEW),
             // An event the port passes on at once; never left set.
             jolted: false,
+            crashed: Default::default(),
             wreck_ms: ram.i32(at + WRECK_MS) as u32,
             reset_requested: ram.flag(at + RESET_REQUESTED),
             reset_grace_ms: ram.i32(at + RESET_GRACE) as u32,

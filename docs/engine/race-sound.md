@@ -2,8 +2,8 @@
 title: The race's sound: engines, hits and tyres
 status: partial
 discs: US
-covers: US CCCPSX.EXE:0x8001924c sound_race_init, 0x80019870 iface_sound_fill, 0x80019abc voice_alloc, 0x800354ac sound_frame, 0x80045a84 car_sound_input, 0x80017928 mixer_one, 0x80035a88 contact_sound, 0x80035c7c pair_sound, 0x80016280 impact_on, 0x80016820 scrape_on, 0x800169a8 scrape_off, 0x80016a18 crash_on, 0x80016490 tyres_on, 0x800167b0 tyres_off, 0x80015b88 tyres_volume, 0x80015bcc scrape_volume, 0x800364cc race_sound_off, 0x80036484 commentary_ask, 0x80019754 dialog_play, 0x800d2628 commentary, 0x8011a840 car_sound, 0x80128e94 car_sound_state, 0x800be888 tyre_effects, 0x800be8a4 contact_effects, 0x800bea6c ground_priority, 0x800d0c28 tyre_voices, 0x800d0c2c scrape_voices
-worklog: 48, 51
+covers: US CCCPSX.EXE:0x8001924c sound_race_init, 0x80019870 iface_sound_fill, 0x80019abc voice_alloc, 0x800354ac sound_frame, 0x80045a84 car_sound_input, 0x80017928 mixer_one, 0x80035a88 contact_sound, 0x80035c7c pair_sound, 0x80016280 impact_on, 0x80016820 scrape_on, 0x800169a8 scrape_off, 0x80016a18 crash_on, 0x80016490 tyres_on, 0x800167b0 tyres_off, 0x80015b88 tyres_volume, 0x80015bcc scrape_volume, 0x800364cc race_sound_off, 0x80036634 pause_sound_off, 0x80016004 engine_off, 0x80016078 wreck_on, 0x800161f4 wreck_off, 0x80015b44 wreck_volume, 0x80016c0c crash_off, 0x80016404 impact_off, 0x8001a824 voice_key, 0x8001a8dc voice_off, 0x8003bebc camera_shake, 0x80036484 commentary_ask, 0x80019754 dialog_play, 0x800d2628 commentary, 0x8011a840 car_sound, 0x80128e94 car_sound_state, 0x800be888 tyre_effects, 0x800be8a4 contact_effects, 0x800bea6c ground_priority, 0x800d0c28 tyre_voices, 0x800d0c2c scrape_voices
+worklog: 48, 51, 60
 ---
 
 # The race's sound
@@ -50,9 +50,40 @@ and the app loads the crashes bank.
 2. failing that, the first one whose recorded importance (0x8011acc0) is
    below the asked one, letting it go
 
-Only keys made through 0x8001a824 record an importance. The impact and
-the crash key libsnd directly, so their voices keep whatever importance
-was there before.
+Keys made through 0x8001a824 record an importance: 1 for the engines
+(0x80015ebc), 0 for the tyres and the scrape, the asked one for an effect
+(0x800157f8). The impact, the crash and the wreck key libsnd directly, so
+their voices keep whatever importance was there before.
+
+Voices are let go in two ways:
+
+- **0x8001a824's partner (0x8001a8dc).** It clears the importance to 0.
+  The engines (0x80016004, only while the engine voice plays), the tyres
+  (0x800167b0) and the scrape (0x800169a8) are let go this way.
+- **The release.** The wreck (0x800161f4), crash (0x80016c0c) and impact
+  (0x80016404) voices are let go only if they play. Each is given back at
+  importance 255 and forgotten.
+
+## A wreck (0x8004619c)
+
+1. For a player's car, after its jolt, effect 29 plays at importance 1
+   (0x800157f8), and its camera shakes for 250 ms (0x8003bebc).
+2. For any car:
+   - Its engine is let go (0x80016004).
+   - Its wreck level (car sound +0x34) is set to 4096 (0x80015b44).
+   - Effect 29 is keyed on an effect voice at importance 0 (0x80016078).
+     It is heard from the car: the level and Doppler of 0x80018280 and
+     0x80018760, scaled by the wreck level and halved. The voice is kept
+     at +0x48 (-1 for none).
+3. The mixer keeps that voice at the wreck level scaled each frame.
+4. A contact that changes the car's scrape releases the wreck voice.
+
+## The pause and the race's end
+
+The pause (0x80036634, then effect 14) and the race's end (0x800364cc)
+let go every car's engine, wreck, tyres, scrape, crash and impact voices,
+in that order. The world's sounds stop too; the pause then pauses the
+music (0x80014a0c).
 
 ## Each frame (0x800354ac)
 
@@ -179,12 +210,12 @@ Each frame the one-player mixer:
 | engine | as before (0x8001a36c) |
 | tyres | tyre level scaled; for the first two cars, a fifth if keyed by effect 16, three fifths if by 23 |
 | scrape | scrape level scaled, on the player's scrape voice |
+| wreck | wreck level scaled (set right after the engine's bend) |
 | crash | a third |
 | impact | impact level scaled, halved |
 
 ## Unknown
 
-- What voice +0x48 (keyed by 0x80016078) is.
 - The world's own sounds (12 records of 36 bytes at 0x8011aab0, mixed
   after the cars).
 - The two-player mixer's handling of the hits' voices.

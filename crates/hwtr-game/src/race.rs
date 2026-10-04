@@ -115,7 +115,8 @@ pub enum RaceEvent {
     Wreck {
         car: u8,
     },
-    /// Any car was wrecked: its engine stops (0x80016004).
+    /// Any car was wrecked: its engine stops (0x80016004) and its wreck
+    /// sounds where it is (0x80016078).
     Wrecked {
         car: u8,
     },
@@ -702,18 +703,23 @@ impl Race {
                 if self.collision.players_touched {
                     self.snapshots.take(self.time, &self.cars, &self.cameras, None);
                 }
-                // 0x8004619c: a player's wreck jolts the pad of its port.
+                // 0x8004619c: a player's wreck shakes its camera for 250
+                // ms (0x8003bebc), jolts the pad of its port and sounds
+                // 29; then any wreck stops its engine and sounds where it
+                // is.
                 for car in &mut self.cars {
-                    let jolted = std::mem::take(&mut car.jolted);
-                    if jolted {
-                        self.events.push(RaceEvent::Wrecked { car: car.slot });
-                    }
-                    if jolted && car.flags & 1 != 0 {
-                        self.events.push(RaceEvent::Wreck { car: car.slot });
+                    if std::mem::take(&mut car.jolted) {
                         let port = car.slot as usize;
+                        if let Some(c) = self.cameras.get_mut(port) {
+                            c.shake = 250;
+                        }
                         if let Some(m) = self.motors.get_mut(port) {
                             m.jolt(self.vibration[port], self.tuning.wreck_jolt, self.clock);
                         }
+                        self.events.push(RaceEvent::Wreck { car: car.slot });
+                    }
+                    if car.crashed.0.take().is_some() {
+                        self.events.push(RaceEvent::Wrecked { car: car.slot });
                     }
                 }
                 let laps = self.collision.lap_events.iter().filter(|(slot, _)| {

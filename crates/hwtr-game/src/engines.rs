@@ -262,16 +262,19 @@ pub struct CarSound {
     /// The scrape's effect, and how long until it stops, ms.
     pub scrape: u8,
     pub scrape_ms: u32,
-    /// The tyres', the scrape's and the impact's volumes, 0 to 4096.
+    /// The tyres', the scrape's, the impact's and the wreck's volumes, 0
+    /// to 4096 (+0x38, +0x3c, +0x40, +0x34).
     pub tyre_level: i32,
     pub scrape_level: i32,
     pub impact_level: i32,
-    /// The voices the tyres, the scrape, the crash and the impact were
-    /// keyed on.
+    pub wreck_level: i32,
+    /// The voices the tyres, the scrape, the crash, the impact and the
+    /// wreck were keyed on (+0x4c, +0x4e, +0x50, +0x52, +0x48).
     pub tyre_voice: Option<usize>,
     pub scrape_voice: Option<usize>,
     pub crash_voice: Option<usize>,
     pub impact_voice: Option<usize>,
+    pub wreck_voice: Option<usize>,
 }
 
 /// The bank a voice is keyed from: a car's engine (by slot), the effects
@@ -423,9 +426,10 @@ impl Engines {
                 }
                 let [impact, scrape] = self.hits.contacts.get(surface as usize).copied().unwrap_or_default();
                 if self.cars[slot].scrape_ms != 0 {
-                    // A change of scrape stops voice +0x48 (0x800161f4),
-                    // which nothing here keys, and starts the new one.
+                    // A change of scrape lets the wreck's voice go
+                    // (0x800161f4) and starts the new one.
                     if scrape != self.cars[slot].scrape {
+                        out.extend(self.release_wreck(slot, alive));
                         if scrape != 0 {
                             out.extend(self.scrape_on(t, slot, scrape));
                         }
@@ -543,6 +547,7 @@ impl Engines {
         let voice = self.hits.scrape_voices[slot % 4];
         let e = self.effect(id);
         self.cars[slot].scrape_voice = Some(voice);
+        self.importance[voice] = 0;
         vec![Change::KeyOn {
             voice,
             bank: Bank::Effects,
@@ -556,8 +561,16 @@ impl Engines {
     }
 
     /// 0x800169a8 and 0x800167b0: a voice let go if it plays.
-    fn stop(voice: Option<usize>, alive: &dyn Fn(usize) -> bool) -> Option<Change> {
-        voice.filter(|&v| alive(v)).map(|voice| Change::KeyOff { voice })
+    fn stop(&mut self, voice: Option<usize>, alive: &dyn Fn(usize) -> bool) -> Option<Change> {
+        voice.filter(|&v| alive(v)).map(|v| self.let_go(v))
+    }
+
+    /// 0x8001a8dc: voice `v` let go, its importance cleared.
+    fn let_go(&mut self, v: usize) -> Change {
+        if let Some(i) = self.importance.get_mut(v) {
+            *i = 0;
+        }
+        Change::KeyOff { voice: v }
     }
 
     /// 0x80016490: a player's car's tyres keyed with effect `id` on their
@@ -581,6 +594,7 @@ impl Engines {
         let voice = self.hits.tyre_voices[slot % 4];
         let e = self.effect(id);
         self.cars[slot].tyre_voice = Some(voice);
+        self.importance[voice] = 0;
         vec![Change::KeyOn {
             voice,
             bank: Bank::Effects,
@@ -605,7 +619,7 @@ impl Engines {
     }
 
     /// 0x80015ebc: car `slot`'s engine keyed on silent, and a player's
-    /// overrun.
+    /// overrun, both at importance 1.
     pub fn key_on(&mut self, slot: usize) -> Vec<Change> {
         let Some(note) = self.kind(slot).map(|k| k.key_note as u8) else { return Vec::new() };
         let e = self.effect;
@@ -620,7 +634,9 @@ impl Engines {
             right: 0,
         }];
         self.cars[slot].bend = e.note as u16;
+        self.importance[slot] = 1;
         if slot < self.players {
+            self.importance[self.cars.len() + slot] = 1;
             out.push(Change::KeyOn {
                 voice: self.cars.len() + slot,
                 bank: Bank::Car(slot),
@@ -635,11 +651,83 @@ impl Engines {
         out
     }
 
-    /// 0x80016004: car `slot`'s voices let go.
-    pub fn key_off(&self, slot: usize) -> Vec<Change> {
-        let mut out = vec![Change::KeyOff { voice: slot }];
-        if slot < self.players {
-            out.push(Change::KeyOff { voice: self.cars.len() + slot });
+    /// 0x800161f4, 0x80016c0c and 0x80016404: an effect voice of a car's
+    /// let go if it plays, given back (importance 255) and forgotten.
+    fn release(&mut self, voice: Option<usize>, alive: &dyn Fn(usize) -> bool) -> Option<Change> {
+        let v = voice.filter(|&v| alive(v))?;
+        if let Some(i) = self.importance.get_mut(v) {
+            *i = 255;
+        }
+        Some(Change::KeyOff { voice: v })
+    }
+
+    /// 0x800161f4: car `slot`'s wreck voice let go.
+    fn release_wreck(&mut self, slot: usize, alive: &dyn Fn(usize) -> bool) -> Option<Change> {
+        let c = self.release(self.cars[slot].wreck_voice, alive)?;
+        self.cars[slot].wreck_voice = None;
+        Some(c)
+    }
+
+    /// 0x8004619c's sounds for car `slot`'s wreck: its engine let go
+    /// (0x80016004), its wreck's volume full (0x80015b44), and effect 29
+    /// keyed on a voice of its own where it is (0x80016078).
+    pub fn wrecked(&mut self, t: &Tables, slot: usize, alive: &dyn Fn(usize) -> bool) -> Vec<Change> {
+        let mut out = self.key_off(slot, alive);
+        self.cars[slot].wreck_level = 4096;
+        let picked = self.voice(0, alive);
+        let ([l, r], fine) = self.heard(t, slot);
+        let level = self.cars[slot].wreck_level;
+        let side = |v: i32| ((fx(level, v << 12) >> 12) as i16 / 2) as u8;
+        self.cars[slot].wreck_voice = None;
+        let Some((voice, stolen)) = picked else { return out };
+        if stolen {
+            out.push(Change::KeyOff { voice });
+        }
+        let e = self.effect(29);
+        out.push(Change::KeyOn {
+            voice,
+            bank: Bank::Effects,
+            program: e.program,
+            tone: e.tone,
+            note: e.note,
+            fine,
+            left: side(l),
+            right: side(r),
+        });
+        self.cars[slot].wreck_voice = Some(voice);
+        out
+    }
+
+    /// 0x80036634 (the pause) and 0x800364cc (the race's end), for each
+    /// car: its engine, its wreck, tyres, scrape, crash and impact let go.
+    pub fn silence(&mut self, alive: &dyn Fn(usize) -> bool) -> Vec<Change> {
+        let mut out = Vec::new();
+        for slot in 0..self.cars.len() {
+            out.extend(self.key_off(slot, alive));
+            out.extend(self.release_wreck(slot, alive));
+            out.extend(self.stop(self.cars[slot].tyre_voice, alive));
+            out.extend(self.stop(self.cars[slot].scrape_voice, alive));
+            if let Some(c) = self.release(self.cars[slot].crash_voice, alive) {
+                self.cars[slot].crash_voice = None;
+                out.push(c);
+            }
+            if let Some(c) = self.release(self.cars[slot].impact_voice, alive) {
+                self.cars[slot].impact_voice = None;
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    /// 0x80016004: car `slot`'s engine voices let go, if its engine plays
+    /// (a player's second voice with it).
+    pub fn key_off(&mut self, slot: usize, alive: &dyn Fn(usize) -> bool) -> Vec<Change> {
+        let mut out = Vec::new();
+        if alive(slot) {
+            out.push(self.let_go(slot));
+            if slot < self.players {
+                out.push(self.let_go(self.cars.len() + slot));
+            }
         }
         out
     }
@@ -675,21 +763,20 @@ impl Engines {
                 let playing = self.cars[slot].tyres;
                 if id != 0 {
                     if playing != id {
-                        out.extend(Self::stop(self.cars[slot].tyre_voice, alive));
+                        out.extend(self.stop(self.cars[slot].tyre_voice, alive));
                         out.extend(self.tyres_on(t, slot, id));
                     }
                     self.cars[slot].tyre_level = input.roll.max(input.skid).min(4096);
                 } else if playing != 0 {
-                    out.extend(Self::stop(self.cars[slot].tyre_voice, alive));
+                    out.extend(self.stop(self.cars[slot].tyre_voice, alive));
                 }
                 self.cars[slot].tyres = id;
             }
-            let car = &mut self.cars[slot];
-            if ms >= car.scrape_ms {
-                out.extend(Self::stop(car.scrape_voice, alive));
-                car.scrape_ms = 0;
+            if ms >= self.cars[slot].scrape_ms {
+                out.extend(self.stop(self.cars[slot].scrape_voice, alive));
+                self.cars[slot].scrape_ms = 0;
             } else {
-                car.scrape_ms -= ms;
+                self.cars[slot].scrape_ms -= ms;
             }
         }
         if self.players < 2 {
@@ -722,13 +809,15 @@ impl Engines {
             }
             let car = &self.cars[slot];
             let playing = |v: Option<usize>| v.filter(|&v| alive(v));
-            let (tyres, scrape, crash, impact) = (
+            let (tyres, scrape, crash, wreck, impact) = (
                 playing(car.tyre_voice),
                 playing(car.scrape_voice),
                 playing(car.crash_voice),
+                playing(car.wreck_voice),
                 playing(car.impact_voice),
             );
-            if !engine && tyres.is_none() && scrape.is_none() && crash.is_none() && impact.is_none() {
+            if !engine && tyres.is_none() && scrape.is_none() && crash.is_none() && wreck.is_none() && impact.is_none()
+            {
                 continue;
             }
             let [left, right] = level(t, listener, input.pos, volume);
@@ -744,6 +833,9 @@ impl Engines {
             let car = &self.cars[slot];
             let scaled = |level: i32, v: i32| (fx(level, v << 12) >> 12) as i16;
             let volume = |voice: usize, l: i16, r: i16| Change::Volume { voice, left: l as u8, right: r as u8 };
+            if let Some(voice) = wreck {
+                out.push(volume(voice, scaled(car.wreck_level, left), scaled(car.wreck_level, right)));
+            }
             if let Some(voice) = tyres {
                 let (mut l, mut r) = (scaled(car.tyre_level, left), scaled(car.tyre_level, right));
                 if slot < 2 && car.tyres_keyed == 16 {

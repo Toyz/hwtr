@@ -15,9 +15,10 @@ impl Car {
     ///
     /// The wreck's smoke, embers and flying faces (0x80029e10 with
     /// 0x8002e574) draw their random numbers here, after the throw; the
-    /// race gives them to the effects. Not yet ported: the wheels flying
-    /// off as debris (0x8007c9b0, a player's car, which draws random
-    /// numbers before the throw), and the sounds, the HUD and the camera.
+    /// race gives them to the effects, and runs the sounds and a player's
+    /// camera shake (`jolted`, `crashed`). Not yet ported: the wheels
+    /// flying off as debris (0x8007c9b0, a player's car, which draws
+    /// random numbers before the throw).
     pub fn wreck(&mut self, flip: bool, rand: &mut Rand) {
         if self.wrecked {
             return;
@@ -56,8 +57,8 @@ impl Car {
                 self.wreck_line = true;
             }
             self.jolted = true;
-            tracing::trace!("car {}: the wreck's sound and HUD, not yet ported", self.slot);
         }
+        self.crashed.0 = Some(());
     }
 }
 

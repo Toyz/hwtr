@@ -133,6 +133,8 @@ fn engines_from(m: &mut hwtr_cpu::Machine, byte: &dyn Fn(u32) -> u8) -> Engines 
         car.tyre_level = ram.i32(at + 0x38);
         car.scrape_level = ram.i32(at + 0x3c);
         car.impact_level = ram.i32(at + 0x40);
+        car.wreck_level = ram.i32(at + 0x34);
+        car.wreck_voice = voice_at(&ram, at + 0x48);
         car.tyre_voice = voice_at(&ram, at + 0x4c);
         car.scrape_voice = voice_at(&ram, at + 0x4e);
         car.crash_voice = voice_at(&ram, at + 0x50);
@@ -210,7 +212,8 @@ fn scramble(m: &mut hwtr_cpu::Machine, rng: &mut common::Rng, rig: &Rig) {
         for k in 0..3 {
             ram.set_i32(at + 0x38 + 4 * k, rng.below(4097) as i32);
         }
-        ram.set_i16(at + 0x48, -1);
+        ram.set_i32(at + 0x34, rng.below(4097) as i32);
+        ram.set_i16(at + 0x48, voices[rng.below(voices.len() as u32) as usize]);
         for k in 0..4 {
             ram.set_i16(at + 0x4c + 2 * k, voices[rng.below(voices.len() as u32) as usize]);
         }
@@ -245,6 +248,73 @@ fn check_records(m: &mut hwtr_cpu::Machine, e: &Engines, slot: usize, what: &str
     assert_eq!(voice_at(&ram, at + 0x4e), car.scrape_voice, "{what}: scrape voice");
     assert_eq!(voice_at(&ram, at + 0x50), car.crash_voice, "{what}: crash voice");
     assert_eq!(voice_at(&ram, at + 0x52), car.impact_voice, "{what}: impact voice");
+    assert_eq!(ram.i32(at + 0x34), car.wreck_level, "{what}: wreck volume");
+    assert_eq!(voice_at(&ram, at + 0x48), car.wreck_voice, "{what}: wreck voice");
+    let importance: [u8; 24] = std::array::from_fn(|v| ram.u8(IMPORTANCE + v as u32));
+    assert_eq!(importance, e.importance, "{what}: importance");
+}
+
+/// A wreck's sounds (0x8004619c's calls): the car's engine let go
+/// (0x80016004), its wreck's volume full (0x80015b44), effect 29 keyed
+/// where it is (0x80016078); with any voices playing and any listener.
+#[test]
+fn a_wreck_sounds_as_in_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-race") else { return };
+    let t = Tables::from_exe(&exe);
+    let view = exe.view();
+    let byte = |a: u32| view.u8(a).unwrap_or(0);
+    let rig = rig(&mut m);
+    let mut rng = common::Rng(0x3ec_50d);
+    let cars = Ram(&mut m.bus.ram).u8(COUNT) as u32;
+    let mut keyed = 0;
+    for round in 0..2000 {
+        scramble(&mut m, &mut rng, &rig);
+        let slot = rng.below(cars);
+        let mut e = engines_from(&mut m, &byte);
+        m.call(0x8001_6004, &[slot]).unwrap();
+        m.call(0x8001_5b44, &[slot, 4096]).unwrap();
+        m.call(0x8001_6078, &[slot, 29, 1]).unwrap();
+        let alive = *rig.alive.borrow();
+        let changes = e.wrecked(&t, slot as usize, &|v| alive[v]);
+        let what = format!("round {round}: car {slot}");
+        assert_eq!(*rig.keyed.borrow(), keyed_of(&changes), "{what}: keyed");
+        assert_eq!(*rig.off.borrow(), offs_of(&changes), "{what}: let go");
+        check_records(&mut m, &e, slot as usize, &what);
+        keyed += rig.keyed.borrow().len();
+    }
+    assert!(keyed > 1000, "{keyed} keyed");
+}
+
+/// The pause's silence (0x80036634, no world sounds, the music left
+/// alone): every car's voices let go and given back.
+#[test]
+fn the_pause_silences_as_in_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let Some(mut m) = common::state(&exe, "desert1-race") else { return };
+    let view = exe.view();
+    let byte = |a: u32| view.u8(a).unwrap_or(0);
+    let rig = rig(&mut m);
+    m.stub(0x8001_4a0c, 0);
+    let mut rng = common::Rng(0x51_1e4ce);
+    let mut offs = 0;
+    for round in 0..1000 {
+        scramble(&mut m, &mut rng, &rig);
+        let mut ram = Ram(&mut m.bus.ram);
+        ram.set_u8(0x800d_0df0, 0);
+        assert_eq!(ram.u8(0x800d_2621), ram.u8(COUNT), "the race's cars are the engines'");
+        let mut e = engines_from(&mut m, &byte);
+        m.call(0x8003_6634, &[]).unwrap();
+        let alive = *rig.alive.borrow();
+        let changes = e.silence(&|v| alive[v]);
+        let what = format!("round {round}");
+        assert_eq!(*rig.off.borrow(), offs_of(&changes), "{what}: let go");
+        for slot in 0..e.cars.len() {
+            check_records(&mut m, &e, slot, &format!("{what}: car {slot}"));
+        }
+        offs += rig.off.borrow().len();
+    }
+    assert!(offs > 5000, "{offs} let go");
 }
 
 #[test]
