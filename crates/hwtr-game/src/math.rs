@@ -14,6 +14,10 @@ pub const COS_ENTRIES: usize = 6435;
 /// A full turn, π/2·4096·4 rounded as the game rounds it.
 pub const TURN: i32 = 25736;
 
+/// The surface friction table at 0x800beac0, one byte per surface kind.
+pub const FRICTION_TABLE: u32 = 0x800b_eac0;
+pub const FRICTION_ENTRIES: usize = 256;
+
 /// The square-root table at 0x800b904c: 1024·√i for i = 0..4096.
 pub const SQRT_TABLE: u32 = 0x800b_904c;
 pub const SQRT_ENTRIES: usize = 4096;
@@ -21,6 +25,8 @@ pub const SQRT_ENTRIES: usize = 4096;
 pub struct Tables {
     pub cos: Vec<u16>,
     pub sqrt: Vec<u16>,
+    /// Each ground surface's tyre friction, in percent (0x800beac0).
+    pub surface_friction: Vec<u8>,
 }
 
 impl Tables {
@@ -28,7 +34,8 @@ impl Tables {
         let m = exe.view();
         let cos = (0..COS_ENTRIES as u32).map(|i| m.u16(COS_TABLE + 2 * i).unwrap_or(0)).collect();
         let sqrt = (0..SQRT_ENTRIES as u32).map(|i| m.u16(SQRT_TABLE + 2 * i).unwrap_or(0)).collect();
-        Tables { cos, sqrt }
+        let surface_friction = (0..FRICTION_ENTRIES as u32).map(|i| m.u8(FRICTION_TABLE + i).unwrap_or(0)).collect();
+        Tables { cos, sqrt, surface_friction }
     }
 
     /// The same tables read from main RAM with the executable loaded.
@@ -39,7 +46,9 @@ impl Tables {
         };
         let cos = (0..COS_ENTRIES as u32).map(|i| u16_at(COS_TABLE + 2 * i)).collect();
         let sqrt = (0..SQRT_ENTRIES as u32).map(|i| u16_at(SQRT_TABLE + 2 * i)).collect();
-        Tables { cos, sqrt }
+        let surface_friction =
+            (0..FRICTION_ENTRIES as u32).map(|i| ram[((FRICTION_TABLE + i) & 0x1f_ffff) as usize]).collect();
+        Tables { cos, sqrt, surface_friction }
     }
 
     /// cos(x), 0x80010afc.

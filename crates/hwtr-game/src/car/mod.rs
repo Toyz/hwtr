@@ -63,6 +63,9 @@ pub struct Wheel {
     pub spring: i32,
     /// Set when the tyre's force passed its grip.
     pub slip: u8,
+    /// How far the spring is compressed (negative: extended), from the
+    /// collision with the ground.
+    pub compression: i32,
     /// How fast it turns, radians a second, for drawing.
     pub spin_rate: i32,
 }
@@ -261,6 +264,8 @@ pub struct Car {
     pub unknown_865: u8,
     /// 2: full physics (players), 1: computer cars, 0: (not yet known).
     pub state: u8,
+    /// Non-zero: out of the race's collision (meaning not yet known).
+    pub unknown_62c: u8,
     /// Set as the car is loaded; meanings not yet known.
     pub unknown_618: i32,
     pub unknown_624: i32,

@@ -73,6 +73,7 @@ pub const SPRING_PRELOAD: u32 = 0x790;
 pub const EXTENSION: u32 = 0x794;
 pub const UNKNOWN_865: u32 = 0x865;
 pub const STATE: u32 = 0x891;
+pub const UNKNOWN_62C: u32 = 0x62c;
 pub const UNKNOWN_618: u32 = 0x618;
 pub const UNKNOWN_624: u32 = 0x624;
 pub const UNKNOWN_628: u32 = 0x628;
@@ -108,6 +109,7 @@ pub mod wheel {
     pub const FRICTION: u32 = 0x70;
     pub const SPRING: u32 = 0x74;
     pub const SLIP: u32 = 0x78;
+    pub const COMPRESSION: u32 = 0x7c;
     pub const SPIN_RATE: u32 = 0x84;
 }
 
@@ -157,6 +159,7 @@ impl Wheel {
             friction: ram.i32(w + FRICTION),
             spring: ram.i32(w + SPRING),
             slip: ram.u8(w + SLIP),
+            compression: ram.i32(w + COMPRESSION),
             spin_rate: ram.i32(w + SPIN_RATE),
         }
     }
@@ -178,6 +181,7 @@ impl Wheel {
         ram.set_i32(w + FRICTION, self.friction);
         ram.set_i32(w + SPRING, self.spring);
         ram.set_u8(w + SLIP, self.slip);
+        ram.set_i32(w + COMPRESSION, self.compression);
         ram.set_i32(w + SPIN_RATE, self.spin_rate);
     }
 }
@@ -275,6 +279,7 @@ impl Car {
             extension: [ram.i32(at + EXTENSION), ram.i32(at + EXTENSION + 4)],
             unknown_865: ram.u8(at + UNKNOWN_865),
             state: ram.u8(at + STATE),
+            unknown_62c: ram.u8(at + UNKNOWN_62C),
             unknown_618: ram.i32(at + UNKNOWN_618),
             unknown_624: ram.i32(at + UNKNOWN_624),
             unknown_628: ram.u8(at + UNKNOWN_628),
@@ -325,6 +330,7 @@ impl Car {
         ram.set_i32(at + EXTENSION + 4, self.extension[1]);
         ram.set_u8(at + UNKNOWN_865, self.unknown_865);
         ram.set_u8(at + STATE, self.state);
+        ram.set_u8(at + UNKNOWN_62C, self.unknown_62c);
         ram.set_i32(at + UNKNOWN_618, self.unknown_618);
         ram.set_i32(at + UNKNOWN_624, self.unknown_624);
         ram.set_u8(at + UNKNOWN_628, self.unknown_628);

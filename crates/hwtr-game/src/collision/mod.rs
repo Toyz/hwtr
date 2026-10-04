@@ -3,6 +3,7 @@
 
 pub mod object;
 pub mod scp;
+pub mod wheels;
 pub mod world;
 
 pub use object::{CollisionObject, Kind, RefSet};

@@ -132,3 +132,45 @@ fn points_then_zones_match_the_original() {
         assert!(changes > 0, "{name}: no point changed zone");
     }
 }
+
+#[test]
+fn wheels_match_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let t = hwtr_game::math::Tables::from_exe(&exe);
+    let mut grounded = 0;
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { continue };
+        let (mut world, _) = Collision::read(&Ram(&mut m.bus.ram));
+        let mut cars = cars_from(&mut m.bus.ram);
+        let mut rng = common::Rng(0x7ee1_0000_0000_000c);
+        for step in 0..40 {
+            // Nudge the cars up and down and about, so the wheels reach the
+            // ground at every depth.
+            for (k, car) in cars.iter_mut().enumerate() {
+                let mut push = [0; 3].map(|_| (rng.word() as i32) >> (14 + rng.below(6)));
+                push[2] = (rng.word() as i32) >> (13 + rng.below(6));
+                car.body.pos = hwtr_game::math::add(car.body.pos, push);
+                car.body.asleep = 0;
+                car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
+            }
+            world.update_points(&mut cars);
+            world.track_zones(&cars);
+            m.call(0x8004_e47c, &[]).unwrap();
+            m.call(0x8005_15e0, &[]).unwrap();
+            world.wheels(&t, &mut cars);
+            m.call(0x8005_1bc0, &[]).unwrap();
+            let original = cars_from(&mut m.bus.ram);
+            grounded += original.iter().flat_map(|c| &c.wheels).filter(|w| w.on_ground()).count();
+            for (k, (a, b)) in original.iter().zip(&cars).enumerate() {
+                for (i, (wa, wb)) in a.wheels.iter().zip(&b.wheels).enumerate() {
+                    assert_eq!(wa, wb, "{name} step {step}: car {k} wheel {i}");
+                }
+                assert_eq!(a, b, "{name} step {step}: car {k}");
+            }
+            let (w, _) = Collision::read(&Ram(&mut m.bus.ram));
+            world = w;
+            cars = original;
+        }
+    }
+    assert!(grounded > 0, "no wheel touched the ground");
+}
