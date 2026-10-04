@@ -405,8 +405,11 @@ pub struct Car {
     /// random numbers a wreck's effects drew, for the race to use.
     pub model_faces: u16,
     pub wreck_draws: crate::effects::Pending<crate::effects::WreckDraws>,
-    /// A turbo fired this step (it lights the boost flame, 0x8002af60).
+    /// A turbo fired this step (it lights the boost flame, 0x8002af60),
+    /// and the sound effects the car asked for (0x800157f8: effect,
+    /// importance).
     pub turbo_fired: crate::effects::Pending<()>,
+    pub sounds: crate::effects::Pending<Vec<(u8, u8)>>,
     /// Its checkpoints and laps; once they are run it drives itself, the
     /// controls ignored.
     pub laps: crate::laps::Laps,
@@ -864,6 +867,11 @@ impl Car {
 
 
 impl Car {
+    /// 0x800157f8 as the car's code calls it: effect `id` at full volume.
+    pub fn sound(&mut self, id: u8, importance: u8) {
+        self.sounds.0.get_or_insert_with(Vec::new).push((id, importance));
+    }
+
     /// Where the car's model is placed (0x80049ecc): its centre less its
     /// turned origin, with its rotation and its handling's origin.
     pub fn pose(&self) -> crate::effects::CarPose {

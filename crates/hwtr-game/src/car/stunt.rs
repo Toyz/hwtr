@@ -317,7 +317,9 @@ impl Car {
                 a.name = t.name(a.stunt, rand);
                 self.stunt_points = self.stunt_points.wrapping_add(a.points);
                 let added = self.add_turbos(a.turbos);
-                tracing::trace!("stunt {} ({} turbos added): message and sound not yet ported", a.stunt, added);
+                // 0x8003d594: the stunt sounds, brighter with turbos won.
+                self.sound(if added != 0 { 59 } else { 58 }, 1);
+                tracing::trace!("stunt {} ({} turbos added): message not yet ported", a.stunt, added);
                 landed = Some(a);
             }
         }

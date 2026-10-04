@@ -100,7 +100,10 @@ impl Car {
         let top = mph(130);
         let dir = t.normalize(vel).map(|c| fx(c, top));
         self.body.momentum = dir.map(|c| fx(c, self.body.mass));
-        tracing::trace!("car {}: the turbo's sound, not yet ported", self.slot);
+        // 0x80049950: a player's turbo sounds (effect 1).
+        if self.flags & 1 != 0 {
+            self.sound(1, 1);
+        }
         self.turbo_fired.0 = Some(());
         self.boost = Some(top);
         self.body.speed = top;
@@ -121,7 +124,7 @@ impl Car {
                 if drive.endless_turbo {
                     self.turbo(t);
                 } else if self.turbos == 0 {
-                    tracing::trace!("car {}: no turbo left (sound 44), not yet ported", self.slot);
+                    self.sound(44, 0);
                 } else if self.turbo(t) {
                     self.turbos -= 1;
                 }

@@ -134,6 +134,9 @@ pub enum RaceEvent {
     PowerUp { car: u8 },
     /// A world object was knocked over, with its sound (0x80036270).
     Knock { sound: u8, at: crate::math::Vec3 },
+    /// Sound effect `id` with its importance (0x800157f8), as the cars or
+    /// the HUD ask.
+    Effect { id: u8, importance: u8 },
 }
 
 /// A world volume as the race keeps it: the object drawn for it, whether
@@ -640,6 +643,9 @@ impl Race {
             // The step's wrecks' effects (0x80029e10), their random numbers
             // drawn as each happened.
             for slot in 0..self.cars.len() {
+                for (id, importance) in self.cars[slot].sounds.0.take().unwrap_or_default() {
+                    self.events.push(RaceEvent::Effect { id, importance });
+                }
                 if self.cars[slot].turbo_fired.0.take().is_some() {
                     let human = self.cars[slot].flags & 3 != 0;
                     let shown = self.car_shown(slot);
@@ -1052,6 +1058,10 @@ impl Race {
         if !done(self, player) {
             let Some(car) = self.cars.get(slot) else { return Vec::new() };
             let mut out = self.hud.draw(player, car, self.time);
+            // 0x8006381c: the turbo meter full sounds (effect 60).
+            for id in std::mem::take(&mut self.hud.sounds) {
+                self.events.push(RaceEvent::Effect { id: id as u8, importance: 1 });
+            }
             if let Some(kit) = &self.pause_kit {
                 out.extend(self.hud.wrong_way(player, car, self.time, kit.style(), &self.results_text.wrong_way));
             }

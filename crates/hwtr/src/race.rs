@@ -601,6 +601,7 @@ impl Race {
                 RaceEvent::Wreck { .. } => Some((29, 1)),
                 RaceEvent::PowerUp { .. } => Some((24, 0)),
                 RaceEvent::Knock { sound, .. } => Some((sound, 0)),
+                RaceEvent::Effect { id, importance } => Some((id, importance)),
                 _ => None,
             };
             if let (Some((id, importance)), Some(s)) = (effect, &mut self.sound) {
