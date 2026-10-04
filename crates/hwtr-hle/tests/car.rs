@@ -476,10 +476,10 @@ fn wreck_matches_the_original_for_computer_cars() {
             on_car(&mut port, at, |car, _| car.wreck(flip != 0, &mut rand));
             m.call(0x8004_619c, &[at, 0, flip]).unwrap();
             let original = Car::read(&Ram(&mut m.bus.ram), at);
-            // The car takes the generator's first draws; the wreck's effects
-            // then draw a few hundred more to crumple the model (0x8002e574,
-            // not yet ported), so the seeds part here.
+            // The car takes the generator's first draws, the wreck's effects
+            // (0x8002e574, through 0x80029e10) a few hundred more.
             assert_eq!(original, Car::read(&Ram(&mut port), at), "{name} round {round}");
+            assert_eq!(m.bus.read_u32(SEED), rand.seed, "{name} round {round}: the seed");
         }
     }
 }

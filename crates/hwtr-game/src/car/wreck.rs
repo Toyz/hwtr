@@ -13,11 +13,11 @@ impl Car {
     /// its inertia. Player one's wreck may get a line, at random, and a
     /// player's jolts the pad.
     ///
-    /// Not yet ported: the wheels flying off as debris (0x8007c9b0, a
-    /// player's car, which draws random numbers before the throw), the
-    /// model crumpled at random (0x8002e574, through 0x80029e10, a few
-    /// hundred draws after the throw), and the sounds, the HUD and the
-    /// camera.
+    /// The wreck's smoke, embers and flying faces (0x80029e10 with
+    /// 0x8002e574) draw their random numbers here, after the throw; the
+    /// race gives them to the effects. Not yet ported: the wheels flying
+    /// off as debris (0x8007c9b0, a player's car, which draws random
+    /// numbers before the throw), and the sounds, the HUD and the camera.
     pub fn wreck(&mut self, flip: bool, rand: &mut Rand) {
         if self.wrecked {
             return;
@@ -29,6 +29,7 @@ impl Car {
             body.spin = body.spin.map(i32::wrapping_neg);
         }
         body.vel = body.vel.map(|c| fx(c, 0x800));
+        let fx_vel = body.vel;
         if self.flags & 1 != 0 {
             tracing::trace!("car {}: the wheels fly off (0x8007c9b0), not yet ported", self.slot);
         }
@@ -45,6 +46,10 @@ impl Car {
         body.ang_momentum = inertia.map(|row| {
             (0..3).fold(0i64, |s, k| s.wrapping_add(row[k].wrapping_mul(spin[k] as i64) >> 12))
         });
+        // 0x80029e10 (mode 0): the wreck's smoke, embers and chunks, their
+        // random numbers drawn now.
+        let human = self.flags & 3 != 0;
+        self.wreck_draws.0 = Some(crate::effects::WreckDraws::take(rand, self.slot, fx_vel, human, self.model_faces as usize));
         self.flags_8 &= !2;
         if self.flags & 1 != 0 {
             if rand.below(2) != 0 {

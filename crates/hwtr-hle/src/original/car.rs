@@ -329,6 +329,11 @@ impl InMemory for Car {
             wrong_way_ms: ram.i32(at + WRONG_WAY_MS) as u32,
             wrong_way: ram.flag(at + WRONG_WAY),
             just_reset: ram.flag(at + JUST_RESET),
+            model_faces: {
+                let model = super::effects::model(ram, ram.u8(at + SLOT) as u32);
+                if model == 0 { 0 } else { ram.i32(ram.i32(model + 4) as u32 + 0x34).clamp(0, 0xffff) as u16 }
+            },
+            wreck_draws: Default::default(),
             laps: laps(ram, at),
             lap_distance: ram.i32(at + LAP_DISTANCE),
             ground: Ground {

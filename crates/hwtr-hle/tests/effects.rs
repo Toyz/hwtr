@@ -60,7 +60,7 @@ fn effects_match_the_original() {
             miss = Some(format!("{what}: {detail}"));
         }
     };
-    for round in 0..250 {
+    for round in 0..300 {
         m.bus.ram.copy_from_slice(&start);
         let mut ours = codec::read(&Ram(&mut m.bus.ram));
         scramble(&mut rng, &mut ours);
@@ -70,7 +70,75 @@ fn effects_match_the_original() {
         let mut ours = ours0.clone();
         Ram(&mut m.bus.ram).set_i32(SEED, seed as i32);
         let mut rand = Rand { seed };
-        match round % 5 {
+        match round % 6 {
+            5 => {
+                // A wreck's smoke, embers and chunks from car 0's model.
+                let slot = 0u32;
+                let (faces, pose, human, model) = {
+                    let ram = Ram(&mut m.bus.ram);
+                    let model = codec::model(&ram, slot);
+                    let root = ram.i32(model + 4) as u32;
+                    let cvs = ram.i32(model + 16) as u32;
+                    let cwh = ram.i32(cvs + 0x1e4) as u32;
+                    let rot: hwtr_game::math::Matrix = std::array::from_fn(|r| std::array::from_fn(|c| ram.i16(root + 6 * r as u32 + 2 * c as u32)));
+                    let at = ram.vec3(root + 0x14).map(|c| c >> 1);
+                    let pose = effects::CarPose { at, rot, origin: ram.vec3(cwh + 0x80) };
+                    let (verts, n, face_at) = (ram.i32(root + 0x2c) as u32, ram.i32(root + 0x34), ram.i32(root + 0x38) as u32);
+                    let (clut, tpage) = (ram.i16(root + 0x40) as u16, ram.i16(root + 0x42) as u16);
+                    let faces: Vec<effects::ChunkFace> = (0..n.max(0) as u32)
+                        .map(|f| {
+                            let fa = face_at + 20 * f;
+                            let uvat = |o: u32| [ram.u8(fa + o), ram.u8(fa + o + 1)];
+                            effects::ChunkFace {
+                                verts: std::array::from_fn(|k| {
+                                    let v = verts + 8 * ram.u8(fa + k as u32) as u32;
+                                    [ram.i16(v), ram.i16(v + 2), ram.i16(v + 4)]
+                                }),
+                                uv: [uvat(10), uvat(14), uvat(8), uvat(12)],
+                                clut,
+                                tpage,
+                            }
+                        })
+                        .collect();
+                    (faces, pose, ram.u8(cvs + 0x1ee) != 0, model)
+                };
+                let vel = [0; 3].map(|_| rng.word() as i32 >> 8);
+                Ram(&mut m.bus.ram).set_vec3(ARGS, vel);
+                let draws = effects::WreckDraws::take(&mut rand, slot as u8, vel, human, faces.len());
+                ours.car_wreck(&t, &draws, &pose, &faces);
+                m.call(0x8002_e574, &[model, ARGS, 0]).unwrap();
+                check(format!("round {round} wreck"), &ours, rand.seed, &mut m);
+                // Then a few frames of it: embers, the update, the
+                // columns and the chunks drawn.
+                {
+                    let mut ram = Ram(&mut m.bus.ram);
+                    for k in 0..8 {
+                        ram.set_i32(ARGS + 0x40 + 4 * k, 0);
+                    }
+                    ram.set_i16(ARGS + 0x40, 4096);
+                    ram.set_i16(ARGS + 0x48, 4096);
+                    ram.set_i16(ARGS + 0x50, 4096);
+                }
+                let cam = [[4096, 0, 0], [0, 4096, 0], [0, 0, 4096]];
+                for f in 0..12 {
+                    ours.update(false, fps);
+                    m.call(0x8002_f354, &[]).unwrap();
+                    check(format!("round {round} wreck frame {f} update"), &ours, rand.seed, &mut m);
+                    let mut chunks_only = ours.clone();
+                    let _ = chunks_only.draw(&t, &cam, fps, false);
+                    ours.pools[3] = chunks_only.pools[3].clone();
+                    ours.chunk_colour = chunks_only.chunk_colour;
+                    m.call(0x8002_f618, &[codec::HEADERS[3], ARGS + 0x40]).unwrap();
+                    check(format!("round {round} wreck frame {f} chunks drawn"), &ours, rand.seed, &mut m);
+                    let _ = ours.draw_columns(&t, &mut rand, &cam, fps, false, &[pose]);
+                    m.call(0x8003_07d0, &[ARGS + 0x40]).unwrap();
+                    check(format!("round {round} wreck frame {f} columns"), &ours, rand.seed, &mut m);
+                    ours.frame_done(false);
+                    Ram(&mut m.bus.ram).set_i32(codec::FRAME_COUNT, ours.frame_count as i32);
+                    let tick = Ram(&mut m.bus.ram).i16(0x8011_ec2c);
+                    Ram(&mut m.bus.ram).set_i16(0x8011_ec2c, (tick - 1).max(1));
+                }
+            }
             4 => {
                 // The puffs drawn: faded, the faded killed.
                 {
@@ -90,7 +158,7 @@ fn effects_match_the_original() {
                 check(format!("round {round} puffs drawn"), &ours, rand.seed, &mut m);
             }
             0 => {
-                ours.update(false);
+                ours.update(false, fps);
                 m.call(0x8002_f354, &[]).unwrap();
                 check(format!("round {round} update"), &ours, rand.seed, &mut m);
             }

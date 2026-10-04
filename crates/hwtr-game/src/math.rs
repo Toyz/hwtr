@@ -323,6 +323,90 @@ impl Tables {
     }
 }
 
+/// The GTE's matrix product (MVMVA, sf=1, lm=0): each column of `b` through
+/// `a`, saturated to 16 bits.
+pub fn gte_mul(a: &Matrix, b: &Matrix) -> Matrix {
+    let mut out = [[0i16; 3]; 3];
+    for j in 0..3 {
+        for i in 0..3 {
+            let s: i64 = (0..3).map(|k| a[i][k] as i64 * b[k][j] as i64).sum();
+            out[i][j] = (s >> 12).clamp(-0x8000, 0x7fff) as i16;
+        }
+    }
+    out
+}
+
+impl Tables {
+    /// libgte's RotMatrixZ, RotMatrixY and RotMatrixX (0x800a8308,
+    /// 0x800a9dd8, 0x800a8168) on the identity: the turn by `a` 4096ths of
+    /// a turn about z, y or x, by rcossin_tbl (a negative angle the table's
+    /// entry for its size, the sine negated).
+    pub fn rot_axis(&self, axis: usize, a: i32) -> Matrix {
+        let (s, c) = self.rcossin[(a.unsigned_abs() & 0xfff) as usize];
+        let s = if a < 0 { s.wrapping_neg() } else { s };
+        match axis {
+            2 => [[c, s.wrapping_neg(), 0], [s, c, 0], [0, 0, 4096]],
+            1 => [[c, 0, s], [0, 4096, 0], [s.wrapping_neg(), 0, c]],
+            _ => [[4096, 0, 0], [0, c, s.wrapping_neg()], [0, s, c]],
+        }
+    }
+
+    /// The table square root the effects use (0x8002c5dc, 0x8006a5bc): the
+    /// highest even power of two not above `v` found 16, 8, 4, 2 at a time
+    /// from 0, the table read at `v` scaled to 2^10..2^12, scaled back.
+    pub fn sqrt_steps(&self, v: i32) -> i32 {
+        let mut e = 0;
+        let mut step = 16;
+        while step >= 2 {
+            if v >= 1i32.wrapping_shl((e + step) as u32) {
+                e += step;
+            }
+            step >>= 1;
+        }
+        let idx = if e >= 10 { v >> (e - 10) } else { v << (10 - e) };
+        let root = self.sqrt.get(idx as usize & 0xffff).copied().unwrap_or(0) as i32;
+        root >> ((30 - e) >> 1)
+    }
+}
+
+/// 0x8006aabc: the quaternion of a turn by `angle` (radians, 4.12) about
+/// `axis`.
+pub fn quat_from_axis_angle(t: &Tables, angle: i32, axis: Vec3) -> [i32; 4] {
+    let h = div_fx(angle, 0x2000);
+    let (s, c) = (t.sin(h), t.cos(h));
+    [fx(axis[0], s), fx(axis[1], s), fx(axis[2], s), c]
+}
+
+/// 0x8006a5bc: the unit quaternion of rotation `m` (x, y, z, w; 4.12), by
+/// the trace when it is positive, else by the largest diagonal entry.
+pub fn matrix_to_quat(t: &Tables, m: &Matrix) -> [i32; 4] {
+    let e = |i: usize, j: usize| m[i][j] as i32;
+    let trace = e(0, 0) + e(1, 1) + e(2, 2);
+    let mut q = [0i32; 4];
+    if trace > 0 {
+        let s = t.sqrt_steps(trace + 4096) << 6;
+        q[3] = fx(s, 2048);
+        let k = div_fx(2048, s);
+        q[0] = fx(e(2, 1) - e(1, 2), k);
+        q[1] = fx(e(0, 2) - e(2, 0), k);
+        q[2] = fx(e(1, 0) - e(0, 1), k);
+    } else {
+        let mut i = (e(0, 0) < e(1, 1)) as usize;
+        if e(i, i) < e(2, 2) {
+            i = 2;
+        }
+        let next = [1usize, 2, 0];
+        let (j, k) = (next[i], next[next[i]]);
+        let s = t.sqrt_steps(e(i, i) - e(j, j) - e(k, k) + 4096) << 6;
+        q[i] = fx(2048, s);
+        let r = div_fx(2048, s);
+        q[3] = fx(e(k, j) - e(j, k), r);
+        q[j] = fx(e(j, i) + e(i, j), r);
+        q[k] = fx(e(k, i) + e(i, k), r);
+    }
+    q
+}
+
 /// libgcc's `__divdi3` (0x800a9f78), 64-bit division truncated toward zero.
 /// The game never divides by zero with it; that gives 0 here.
 pub fn divdi3(a: i64, b: i64) -> i64 {

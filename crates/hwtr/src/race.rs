@@ -408,6 +408,27 @@ impl Race {
                 })
                 .collect();
             race.set_volumes(&volumes);
+            // The cars' models' root faces, which a wreck throws off
+            // (0x8002e574: corners, the texels at +10, +14, +8, +12).
+            race.car_faces = scene
+                .cars
+                .iter()
+                .map(|c| {
+                    let root = &c.model.root;
+                    root.faces
+                        .iter()
+                        .map(|f| hwtr_game::effects::ChunkFace {
+                            verts: f.v.map(|i| root.verts.get(i as usize).map_or([0; 3], |v| [v.x, v.y, v.z])),
+                            uv: [f.uv[0], f.uv[1], f.uv[3], f.uv[2]],
+                            clut: c.clut,
+                            tpage: c.tpage,
+                        })
+                        .collect()
+                })
+                .collect();
+            for (car, faces) in race.cars.iter_mut().zip(&race.car_faces) {
+                car.model_faces = faces.len().min(0xffff) as u16;
+            }
             // 0x80021390: the trackside cameras.
             race.camera_spots = world
                 .cameras
@@ -658,7 +679,9 @@ impl Race {
             if !self.race.car_shown(k) {
                 continue;
             }
-            tris.extend(hwtr_render::mesh::car_triangles(&look.model, look.clut, look.tpage, pos, Mat3::from_quat(rot)));
+            // A wrecked car's model is blackened (0x8002e51c).
+            let rgb = if self.race.effects.charred.get(k).copied().unwrap_or(false) { 0x18_18_18 } else { 0x80_80_80 };
+            tris.extend(hwtr_render::mesh::car_triangles(&look.model, look.clut, look.tpage, pos, Mat3::from_quat(rot), rgb));
         }
         tris
     }

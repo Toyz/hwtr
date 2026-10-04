@@ -241,19 +241,20 @@ pub fn place_car_texture(vram: &mut Vram, tim: &hwtr_data::Tim, slot: usize) -> 
 /// A car model's triangles at `pos` turned by `rot`. The game draws cars at
 /// half their model's scale (inferred: at full scale the grid's cars would
 /// overlap). Faces are lit at the base colour 0x80, a texel modulation of 1.
-pub fn car_triangles(m: &hwtr_data::car::Model, clut: u16, tpage: u16, pos: glam::Vec3, rot: glam::Mat3) -> Vec<Vtx> {
+pub fn car_triangles(m: &hwtr_data::car::Model, clut: u16, tpage: u16, pos: glam::Vec3, rot: glam::Mat3, root_rgb: u32) -> Vec<Vtx> {
     let mut out = Vec::new();
     let root = glam::Vec3::new(m.root.pos[0] as f32, m.root.pos[1] as f32, m.root.pos[2] as f32);
     let nodes = std::iter::once((&m.root, glam::Vec3::ZERO))
         .chain(m.children.iter().map(|c| (c, glam::Vec3::new(c.pos[0] as f32, c.pos[1] as f32, c.pos[2] as f32))));
-    for (node, offset) in nodes {
+    for (n, (node, offset)) in nodes.enumerate() {
+        let colour = if n == 0 { root_rgb } else { 0x80_80_80 };
         for f in &node.faces {
             let corner = |k: usize| {
                 let v = node.verts[f.v[k] as usize];
                 let local = (glam::Vec3::new(v.x as f32, v.y as f32, v.z as f32) + offset + root) * 0.5;
                 Vtx {
                     pos: (rot * local + pos).to_array(),
-                    colour: 0x80_80_80,
+                    colour,
                     uv: uv(f.uv[k]),
                     mode: clut as u32 | (tpage as u32) << 16,
                     window: Vtx::WHOLE,

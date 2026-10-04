@@ -401,6 +401,10 @@ pub struct Car {
     /// Put back on the road since the last frame drawn (+0x928): no skid
     /// marks this frame.
     pub just_reset: bool,
+    /// The faces its model's root has (what its wreck throws off), and the
+    /// random numbers a wreck's effects drew, for the race to use.
+    pub model_faces: u16,
+    pub wreck_draws: crate::effects::Pending<crate::effects::WreckDraws>,
     /// Its checkpoints and laps; once they are run it drives itself, the
     /// controls ignored.
     pub laps: crate::laps::Laps,
@@ -856,3 +860,14 @@ impl Car {
     }
 }
 
+
+impl Car {
+    /// Where the car's model is placed (0x80049ecc): its centre less its
+    /// turned origin, with its rotation and its handling's origin.
+    pub fn pose(&self) -> crate::effects::CarPose {
+        let rot = self.body.rot;
+        let turned = rot.map(|row| (0..3).fold(0i32, |s, k| s.wrapping_add(fx(row[k] as i32, self.origin[k]))));
+        let centre = crate::math::add(self.body.pos, self.body.centre);
+        crate::effects::CarPose { at: crate::math::sub(centre, turned), rot, origin: self.handling.origin }
+    }
+}

@@ -10,7 +10,7 @@
 
 use crate::car::Car;
 use crate::line::BestLine;
-use crate::math::{Matrix, Tables, Vec3, add, cross, div_fx, dot, fx, mul_16_64, mul_64_16, sub, transpose};
+use crate::math::{gte_mul, Matrix, Tables, Vec3, add, cross, div_fx, dot, fx, mul_16_64, mul_64_16, sub, transpose};
 use crate::rand::Rand;
 
 /// The AI's own random numbers (0x800d2710): a linear congruential
@@ -546,19 +546,6 @@ fn set_cols(cols: [Vec3; 3]) -> Matrix {
 
 fn scale(v: Vec3, k: i32) -> Vec3 {
     v.map(|c| fx(c, k))
-}
-
-/// The GTE's matrix product (MVMVA, sf=1, lm=0): each column of `b` through
-/// `a`, saturated to 16 bits.
-fn gte_mul(a: &Matrix, b: &Matrix) -> Matrix {
-    let mut out = [[0i16; 3]; 3];
-    for j in 0..3 {
-        for i in 0..3 {
-            let s: i64 = (0..3).map(|k| a[i][k] as i64 * b[k][j] as i64).sum();
-            out[i][j] = (s >> 12).clamp(-0x8000, 0x7fff) as i16;
-        }
-    }
-    out
 }
 
 impl Ai {

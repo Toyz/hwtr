@@ -45,7 +45,7 @@ pub struct SceneCar {
 
 impl SceneCar {
     pub fn triangles(&self) -> Vec<Vtx> {
-        mesh::car_triangles(&self.model, self.clut, self.tpage, self.pos, glam::Mat3::from_quat(self.rot))
+        mesh::car_triangles(&self.model, self.clut, self.tpage, self.pos, glam::Mat3::from_quat(self.rot), 0x80_80_80)
     }
 }
 

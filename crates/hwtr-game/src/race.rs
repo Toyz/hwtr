@@ -266,8 +266,10 @@ pub struct Race {
     pub results_text: crate::hud::ResultsText,
     /// The world's trackside cameras, which the attract race cuts to.
     pub camera_spots: Vec<crate::camera::Spot>,
-    /// Dust, smoke, skid marks, sparks and debris.
+    /// Dust, smoke, skid marks, sparks and debris; and each car's model's
+    /// root faces, which its wreck throws off.
     pub effects: crate::effects::Effects,
+    pub car_faces: Vec<Vec<crate::effects::ChunkFace>>,
 }
 
 /// How many of the views a player cycles through (the fifth, the side view,
@@ -380,6 +382,7 @@ impl Race {
             results_text: Default::default(),
             camera_spots: Vec::new(),
             effects: Default::default(),
+            car_faces: Vec::new(),
         }
     }
 
@@ -487,6 +490,8 @@ impl Race {
         self.power_ups.drop_all(car);
         car.reset_grace_ms = 2000;
         car.just_reset = true;
+        // 0x80029f04: the puffs and sparks cleared, the model its colour.
+        self.effects.car_reset(slot as u8);
         if let Some(obj) = self.collision.objects.iter_mut().find(|o| o.car == Some(slot as u8)) {
             obj.flags |= 1;
         }
@@ -608,6 +613,15 @@ impl Race {
             }
             // 0x80068130: power-ups run out, pickups come back.
             self.power_ups.step(&mut self.cars, self.time);
+            // The step's wrecks' effects (0x80029e10), their random numbers
+            // drawn as each happened.
+            for slot in 0..self.cars.len() {
+                if let Some(d) = self.cars[slot].wreck_draws.0.take() {
+                    let pose = self.cars[slot].pose();
+                    let faces = self.car_faces.get(slot).map_or(&[][..], |f| &f[..]);
+                    self.effects.car_wreck(&self.tables, &d, &pose, faces);
+                }
+            }
         }
         self.time = self.time.wrapping_add(STEP_MS as u32);
     }
@@ -831,6 +845,17 @@ impl Race {
         if shots != 0 {
             let k = ((since - RESULTS_MS) / SNAPSHOT_MS) as usize % shots;
             self.snapshots.put_back(k, &mut self.cars, &mut self.cameras);
+            // 0x8004aef8's effects: a wrecked car's model blackened
+            // (0x80029e10 mode 2), any other's effects cleared (0x80029f04).
+            if let Some(shot) = self.snapshots.shots.get(k) {
+                for (slot, c) in shot.cars.iter().enumerate() {
+                    if c.wrecked {
+                        self.effects.car_charred(slot as u8);
+                    } else {
+                        self.effects.car_reset(slot as u8);
+                    }
+                }
+            }
         }
         if since > RESULTS_LEAVE_MS || (self.accept_released && buttons.accept) || buttons.start {
             self.over = true;
@@ -863,11 +888,13 @@ impl Race {
     pub fn effects_frame(&mut self, frame_ms: u32) -> Vec<crate::effects::EffectQuad> {
         let paused = self.paused.is_some();
         let fps = crate::effects::fps(frame_ms);
-        self.effects.update(paused);
+        self.effects.update(paused, fps);
         let shown: Vec<bool> = (0..self.cars.len()).map(|k| self.car_shown(k)).collect();
         self.effects.emit_trails(&mut self.rand, fps, &shown);
         let cam = self.cameras.first().map_or([[4096, 0, 0], [0, 4096, 0], [0, 0, 4096]], |c| c.rot);
-        let quads = self.effects.draw(&self.tables, &cam, fps, paused);
+        let mut quads = self.effects.draw(&self.tables, &cam, fps, paused);
+        let poses: Vec<_> = self.cars.iter().map(|c| c.pose()).collect();
+        quads.extend(self.effects.draw_columns(&self.tables, &mut self.rand, &cam, fps, paused, &poses));
         tracing::trace!("effects: {} quads", quads.len());
         self.effects.frame_done(paused);
         if !paused {

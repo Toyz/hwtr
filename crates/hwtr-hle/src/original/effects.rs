@@ -4,7 +4,7 @@
 //! trails (0x8011ec2c on), read into and written from [`Effects`]. A
 //! record's buffer is the slot its velocity (or corner) pointer points at.
 
-use hwtr_game::effects::{CAPACITY, Effects, Pool, Record, Trail};
+use hwtr_game::effects::{CAPACITY, Chunk, Column, Effects, Ember, Pool, Record, Trail};
 
 use super::Ram;
 
@@ -13,6 +13,23 @@ pub const RECORDS: [u32; 4] = [0x8011_fb3c, 0x8012_0f3c, 0x8012_293c, 0x8012_2e8
 const VEL: [u32; 4] = [0x8012_0c3c, 0, 0x8012_2d9c, 0x8012_3b4c];
 const ACCEL: [u32; 4] = [0x8012_093c, 0, 0, 0x8012_390c];
 const CORNERS: u32 = 0x8012_1d3c;
+/// The debris' quads (32 bytes: four of s16 x, y, z, u8 u, v), normals and
+/// turning blocks (40 bytes).
+const CHUNK_QUADS: u32 = 0x8012_450c;
+const CHUNK_NORMALS: u32 = 0x8012_4b0c;
+const CHUNK_TURNS: u32 = 0x8012_3d8c;
+const EMBERS: u32 = 0x8011_f59c;
+const COLUMNS: u32 = 0x8012_510c;
+const FLASH: u32 = 0x800d_0db8;
+const CHUNK_COLOUR: u32 = 0x8012_6c8c + 64;
+/// The cars' models (car_get_model 0x80021b58: three a slot); a model's
+/// root node is at +4, its colour at +0x44.
+pub const MODELS: u32 = 0x8011_d3c0;
+
+/// Car `slot`'s full model, if loaded.
+pub fn model(ram: &Ram, slot: u32) -> u32 {
+    ram.i32(MODELS + 12 * slot) as u32
+}
 const RECORD: u32 = 56;
 
 pub const FRAME_COUNT: u32 = 0x800d_0b68;
@@ -56,8 +73,22 @@ pub fn read(ram: &Ram) -> Effects {
                 colour: [0, 1, 2].map(|c| ram.i16(r + 0x2c + 2 * c) as u16),
                 kind: ram.u8(r + 0x32),
                 frame: ram.u8(r + 0x33),
+                clut: ram.i16(r + 0x28) as u16,
+                tpage: ram.i16(r + 0x2a) as u16,
+                semi: ram.u8(r + 0x34) != 0,
                 buf: buf_of(ram, k, r, i),
             };
+            if k == 3 {
+                let (q, c) = (CHUNK_QUADS + 32 * i as u32, CHUNK_TURNS + 40 * i as u32);
+                p.chunks[i] = Chunk {
+                    verts: std::array::from_fn(|n| std::array::from_fn(|a| ram.i16(q + 8 * n as u32 + 2 * a as u32))),
+                    uv: std::array::from_fn(|n| [ram.u8(q + 8 * n as u32 + 6), ram.u8(q + 8 * n as u32 + 7)]),
+                    base: std::array::from_fn(|n| ram.i32(c + 4 * n as u32)),
+                    axis: ram.vec3(c + 0x10),
+                    angle: ram.i32(c + 0x20),
+                    step: ram.i32(c + 0x24),
+                };
+            }
             if let Some(v) = &mut p.vel {
                 v[i] = ram.vec3(VEL[k] + 12 * i as u32);
             }
@@ -91,6 +122,42 @@ pub fn read(ram: &Ram) -> Effects {
     e.calls_frame = ram.i32(CALLS_FRAME) as u32;
     e.origin_set = ram.u8(ORIGIN_SET) != 0;
     e.origin = ram.vec3(ORIGIN);
+    for (i, em) in e.embers.iter_mut().enumerate() {
+        let a = EMBERS + 72 * i as u32;
+        *em = Ember {
+            age: ram.u8(a),
+            life: ram.i32(a + 4),
+            pos: ram.vec3(a + 8),
+            vel: ram.vec3(a + 24),
+            turn: std::array::from_fn(|r| std::array::from_fn(|c| ram.i16(a + 40 + 6 * r as u32 + 2 * c as u32))),
+        };
+    }
+    for (i, col) in e.columns.iter_mut().enumerate() {
+        let a = COLUMNS + 64 * i as u32;
+        *col = Column {
+            loops: ram.u8(a) as i8,
+            loop_end: ram.u8(a + 1) as i8,
+            loop_restart: ram.u8(a + 2) as i8,
+            pos: ram.vec3(a + 4),
+            vel: ram.vec3(a + 20),
+            colour: [ram.u8(a + 36), ram.u8(a + 37), ram.u8(a + 38)],
+            jitter: [ram.i32(a + 40), ram.i32(a + 44)],
+            start: ram.i32(a + 48) as u32,
+            end: ram.i32(a + 52) as u32,
+            ticks: ram.i16(a + 56) as u16,
+            frame: ram.u8(a + 58) as i8,
+            per: ram.u8(a + 59),
+            add: ram.u8(a + 60),
+            kind: ram.u8(a + 61),
+            slot: ram.u8(a + 62),
+        };
+    }
+    e.flash = [ram.i16(FLASH), ram.i16(FLASH + 2)];
+    e.chunk_colour = [ram.u8(CHUNK_COLOUR), ram.u8(CHUNK_COLOUR + 1), ram.u8(CHUNK_COLOUR + 2)];
+    for (slot, c) in e.charred.iter_mut().enumerate() {
+        let m = model(ram, slot as u32);
+        *c = m != 0 && ram.i32(ram.i32(m + 4) as u32 + 0x44) as u32 & 0xff_ffff == 0x18_1818;
+    }
     e
 }
 
@@ -110,6 +177,29 @@ pub fn write(e: &Effects, ram: &mut Ram) {
             }
             ram.set_u8(r + 0x32, rec.kind);
             ram.set_u8(r + 0x33, rec.frame);
+            ram.set_i16(r + 0x28, rec.clut as i16);
+            ram.set_i16(r + 0x2a, rec.tpage as i16);
+            ram.set_u8(r + 0x34, rec.semi as u8);
+            if k == 3 {
+                ram.set_i32(r + 4, (CHUNK_QUADS + 32 * rec.buf as u32) as i32);
+                ram.set_i32(r + 8, (CHUNK_NORMALS + 32 * rec.buf as u32) as i32);
+                ram.set_i32(r + 0xc, (CHUNK_TURNS + 40 * rec.buf as u32) as i32);
+                let c = &p.chunks[i];
+                let (q, t) = (CHUNK_QUADS + 32 * i as u32, CHUNK_TURNS + 40 * i as u32);
+                for n in 0..4u32 {
+                    for a in 0..3u32 {
+                        ram.set_i16(q + 8 * n + 2 * a, c.verts[n as usize][a as usize]);
+                    }
+                    ram.set_u8(q + 8 * n + 6, c.uv[n as usize][0]);
+                    ram.set_u8(q + 8 * n + 7, c.uv[n as usize][1]);
+                }
+                for n in 0..4u32 {
+                    ram.set_i32(t + 4 * n, c.base[n as usize]);
+                }
+                ram.set_vec3(t + 0x10, c.axis);
+                ram.set_i32(t + 0x20, c.angle);
+                ram.set_i32(t + 0x24, c.step);
+            }
             match k {
                 1 => ram.set_i32(r, (CORNERS + 48 * rec.buf as u32) as i32),
                 _ if VEL[k] != 0 => {
@@ -151,4 +241,42 @@ pub fn write(e: &Effects, ram: &mut Ram) {
     ram.set_i32(CALLS_FRAME, e.calls_frame as i32);
     ram.set_u8(ORIGIN_SET, e.origin_set as u8);
     ram.set_vec3(ORIGIN, e.origin);
+    for (i, em) in e.embers.iter().enumerate() {
+        let a = EMBERS + 72 * i as u32;
+        ram.set_u8(a, em.age);
+        ram.set_i32(a + 4, em.life);
+        ram.set_vec3(a + 8, em.pos);
+        ram.set_vec3(a + 24, em.vel);
+        for r in 0..3u32 {
+            for c in 0..3u32 {
+                ram.set_i16(a + 40 + 6 * r + 2 * c, em.turn[r as usize][c as usize]);
+            }
+        }
+    }
+    for (i, col) in e.columns.iter().enumerate() {
+        let a = COLUMNS + 64 * i as u32;
+        ram.set_u8(a, col.loops as u8);
+        ram.set_u8(a + 1, col.loop_end as u8);
+        ram.set_u8(a + 2, col.loop_restart as u8);
+        ram.set_vec3(a + 4, col.pos);
+        ram.set_vec3(a + 20, col.vel);
+        for c in 0..3 {
+            ram.set_u8(a + 36 + c as u32, col.colour[c]);
+        }
+        ram.set_i32(a + 40, col.jitter[0]);
+        ram.set_i32(a + 44, col.jitter[1]);
+        ram.set_i32(a + 48, col.start as i32);
+        ram.set_i32(a + 52, col.end as i32);
+        ram.set_i16(a + 56, col.ticks as i16);
+        ram.set_u8(a + 58, col.frame as u8);
+        ram.set_u8(a + 59, col.per);
+        ram.set_u8(a + 60, col.add);
+        ram.set_u8(a + 61, col.kind);
+        ram.set_u8(a + 62, col.slot);
+    }
+    ram.set_i16(FLASH, e.flash[0]);
+    ram.set_i16(FLASH + 2, e.flash[1]);
+    for c in 0..3 {
+        ram.set_u8(CHUNK_COLOUR + c as u32, e.chunk_colour[c]);
+    }
 }

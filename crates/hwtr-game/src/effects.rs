@@ -47,6 +47,11 @@ pub struct Record {
     pub colour: [u16; 3],
     pub kind: u8,
     pub frame: u8,
+    /// A debris chunk's texture (+0x28, +0x2a), and whether it blends and
+    /// fades (+0x34).
+    pub clut: u16,
+    pub tpage: u16,
+    pub semi: bool,
     /// The side buffers (velocity, acceleration, corners) this record
     /// uses: its own slot's, until a compaction copies another's.
     pub buf: usize,
@@ -63,6 +68,116 @@ pub struct Pool {
     pub accel: Option<Vec<Vec3>>,
     /// A skid mark's four corners from the origin (0x80121d3c).
     pub corners: Vec<[Vec3; 4]>,
+    /// A debris chunk's quad and turning (0x8012450c, 0x80123d8c).
+    pub chunks: Vec<Chunk>,
+}
+
+/// A debris chunk's quad (its corners, in its own axes, and texels) and
+/// how it turns: its first orientation, the axis it spins about, the angle
+/// it has turned and the turn a frame (radians, 4.12).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Chunk {
+    pub verts: [[i16; 3]; 4],
+    pub uv: [[u8; 2]; 4],
+    pub base: [i32; 4],
+    pub axis: Vec3,
+    pub angle: i32,
+    pub step: i32,
+}
+
+/// A face that can fly off as a chunk: a car model's root face or a
+/// prop's quad (corners, texels in the order the chunk keeps them, texture).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ChunkFace {
+    pub verts: [[i16; 3]; 4],
+    pub uv: [[u8; 2]; 4],
+    pub clut: u16,
+    pub tpage: u16,
+}
+
+/// A wreck's ember (0x8011f59c, 72 bytes): frames since it began, frames
+/// left, where it is, its velocity and the small turn it gets every frame.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Ember {
+    pub age: u8,
+    pub life: i32,
+    pub pos: Vec3,
+    pub vel: Vec3,
+    pub turn: Matrix,
+}
+
+/// A smoke column (0x8012510c, 64 bytes): the animation's loop, where it
+/// is and drifts, its offset on the screen, the frames it runs between,
+/// the animation's frame (-1 when idle) and pace, the size added, and
+/// whether it follows a car (kind 1) and which.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Column {
+    pub loops: i8,
+    pub loop_end: i8,
+    pub loop_restart: i8,
+    pub pos: Vec3,
+    pub vel: Vec3,
+    pub colour: [u8; 3],
+    pub jitter: [i32; 2],
+    pub start: u32,
+    pub end: u32,
+    pub ticks: u16,
+    pub frame: i8,
+    pub per: u8,
+    pub add: u8,
+    pub kind: u8,
+    pub slot: u8,
+}
+
+/// What a step leaves for the frame, not part of the original's record:
+/// equal to anything, so it does not count when cars are compared.
+#[derive(Clone, Debug, Default)]
+pub struct Pending<T>(pub Option<T>);
+
+impl<T> PartialEq for Pending<T> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl<T> Eq for Pending<T> {}
+
+/// The random numbers a wreck's effects draw, taken as the wreck happens
+/// (inside 0x8004619c, which calls 0x80029e10) so the game's sequence is
+/// kept; the effects use them after the step.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WreckDraws {
+    pub slot: u8,
+    pub vel: Vec3,
+    pub human: bool,
+    pub rands: Vec<u32>,
+}
+
+impl WreckDraws {
+    /// 0x80029e10 mode 0's draws: the smoke columns' (two each), the
+    /// embers' (seven each), and fifteen for each of up to 48 chunks.
+    pub fn take(rand: &mut Rand, slot: u8, vel: Vec3, human: bool, faces: usize) -> WreckDraws {
+        let n = 10 + 140 + 15 * faces.min(48);
+        WreckDraws { slot, vel, human, rands: (0..n).map(|_| rand.rand()).collect() }
+    }
+}
+
+/// Where a car is drawn, for the effects that start from it or follow it:
+/// its model's place (0x80049ecc's), rotation, and its handling's origin.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CarPose {
+    pub at: Vec3,
+    pub rot: Matrix,
+    pub origin: Vec3,
+}
+
+impl CarPose {
+    /// The car's centre as its wreck takes it (0x8002e574): the model's
+    /// place and its rotated origin.
+    pub fn centre(&self) -> Vec3 {
+        let o = crate::math::apply_matrix_lv(&self.rot, self.origin);
+        crate::math::add(self.at, o)
+    }
 }
 
 impl Pool {
@@ -75,6 +190,7 @@ impl Pool {
             vel: matches!(k, PUFFS | SPARKS | DEBRIS).then(|| vec![[0; 3]; cap]),
             accel: matches!(k, PUFFS | DEBRIS).then(|| vec![[0; 3]; cap]),
             corners: vec![[[0; 3]; 4]; if k == SKIDS { cap } else { 0 }],
+            chunks: vec![Chunk::default(); if k == DEBRIS { cap } else { 0 }],
         }
     }
 
@@ -163,6 +279,15 @@ pub struct Effects {
     /// Skid marks are kept from this point so their numbers stay small
     /// (0x80127acc).
     pub origin: Vec3,
+    pub embers: [Ember; 20],
+    pub columns: [Column; 5],
+    /// Each player's screen flash after a wreck (0x800d0db8).
+    pub flash: [i16; 2],
+    /// The chunks' shared colour (the one quad 0x80126c8c they all draw
+    /// through), which every chunk drawn fades.
+    pub chunk_colour: [u8; 3],
+    /// Each car's model blackened by its wreck (root colour 0x181818).
+    pub charred: [bool; 6],
 }
 
 impl Default for Effects {
@@ -215,6 +340,11 @@ impl Effects {
             calls: 0,
             origin_set: false,
             origin: [0; 3],
+            embers: [Ember::default(); 20],
+            columns: [Column { frame: -1, ticks: 0xffff, ..Column::default() }; 5],
+            flash: [0; 2],
+            chunk_colour: [176; 3],
+            charred: [false; 6],
         }
     }
 
@@ -289,10 +419,240 @@ impl Effects {
         r.kind = 255;
     }
 
+    /// 0x8003119c: an ember's spark, still, 40 frames.
+    fn spark_puff(&mut self, fps: i32, pos: Vec3, frame0: u8) {
+        if ENABLED & 1 == 0 || fps <= FPS_FLOOR {
+            return;
+        }
+        let p = &mut self.pools[PUFFS];
+        let i = p.alloc();
+        let buf = p.records[i].buf;
+        if let Some(v) = &mut p.vel {
+            v[buf] = [0; 3];
+        }
+        if let Some(a) = &mut p.accel {
+            a[buf] = [0; 3];
+        }
+        let r = &mut p.records[i];
+        r.pos = pos;
+        r.flags = 0x1101;
+        r.kind = 19;
+        r.colour = [128; 3];
+        r.frame = frame0;
+        r.life = 40;
+    }
+
+    /// 0x8002d800: twenty embers from `pos`, each thrown a random way at
+    /// 8 to 38 units a frame and turned a little more every frame, 40
+    /// frames; seven random numbers each.
+    fn embers_spawn(&mut self, t: &crate::math::Tables, pos: Vec3, rands: &mut impl Iterator<Item = u32>) {
+        let mut next = || rands.next().unwrap_or(0);
+        for e in &mut self.embers {
+            e.life = 40;
+            e.age = 0;
+            e.pos = pos;
+            let mut v = [
+                div_fx(((next() & 0xff) << 12) as i32, 0x8_0000).wrapping_sub(4096),
+                div_fx(((next() & 0xff) << 12) as i32, 0x8_0000).wrapping_sub(4096),
+                2867,
+            ];
+            let len = t.length(v);
+            v = v.map(|c| div_fx(c, len));
+            let speed = fx(((next() & 15) << 12) as i32, 8192).wrapping_add(0x8000);
+            e.vel = v.map(|c| fx(c, speed));
+            let bits = next();
+            let mut m: Matrix = [[4096, 0, 0], [0, 4096, 0], [0, 0, 4096]];
+            for (axis, bit) in [(2, 1), (1, 2), (0, 4)] {
+                let mut a = (((next() & 63) << 12) as i32) / 1024;
+                if bits & bit != 0 {
+                    a = -a;
+                }
+                m = crate::math::gte_mul(&m, &t.rot_axis(axis, ((a << 12) / 25736) & 0xfff));
+            }
+            e.turn = m;
+        }
+    }
+
+    /// 0x8002d70c (and the flash it draws first, 0x8002e128): each live
+    /// ember moves, its velocity turns, and it leaves a spark. Runs paused
+    /// or not.
+    fn embers_update(&mut self, fps: i32) {
+        for f in &mut self.flash {
+            if *f != 0 {
+                *f = f.wrapping_sub(3);
+                if *f < 130 {
+                    *f = 0;
+                }
+            }
+        }
+        for k in 0..self.embers.len() {
+            let e = &mut self.embers[k];
+            e.life -= 1;
+            if e.life <= 0 {
+                e.life = 0;
+                continue;
+            }
+            e.age = e.age.wrapping_add(1);
+            e.pos = [0, 1, 2].map(|i| e.pos[i].wrapping_add(e.vel[i]));
+            e.vel = crate::math::apply_matrix_lv(&e.turn, e.vel);
+            let (pos, frame) = (e.pos, e.age.wrapping_add(10));
+            self.spark_puff(fps, pos, frame);
+        }
+    }
+
+    /// 0x8003063c: five smoke columns from `pos`, three frames apart, each
+    /// 20 frames, drifting by an eighth of `vel` (kind 0) or following car
+    /// `slot` (kind 1); two random numbers each.
+    fn columns_spawn(&mut self, pos: Vec3, vel: Vec3, kind: u8, slot: u8, rands: &mut impl Iterator<Item = u32>) {
+        let mut next = || rands.next().unwrap_or(0);
+        for (i, c) in self.columns.iter_mut().enumerate() {
+            let r1 = next() % 10_000;
+            let jx = div_fx((r1 << 12) as i32, 0x3_2000).wrapping_sub(50 << 12);
+            let jy = ((next() % 25) << 12) as i32;
+            let mut start = self.frame_count.wrapping_add(3 * i as u32);
+            start = start.wrapping_add((start == u32::MAX) as u32);
+            *c = Column {
+                loops: 0,
+                loop_end: 6,
+                loop_restart: 4,
+                pos,
+                vel,
+                colour: [238; 3],
+                jitter: [jx, jy],
+                start,
+                end: start.wrapping_add(19),
+                ticks: 0,
+                frame: 5,
+                per: 2,
+                add: 60,
+                kind,
+                slot,
+            };
+        }
+    }
+
+    /// 0x8002c5dc: a chunk's flight from `pos` with a fourteenth of `vel`
+    /// plus a random push as strong as that, falling 2 units a frame², and
+    /// its random turning; fifteen random numbers. Every chunk's colour
+    /// is reset.
+    fn chunk_init(&mut self, t: &crate::math::Tables, pos: Vec3, vel: Vec3, i: usize, rands: &mut impl Iterator<Item = u32>) {
+        let mut next = || rands.next().unwrap_or(0);
+        self.chunk_colour = [176; 3];
+        let d = vel.map(|c| div_fx(c, 0xe000));
+        let s2 = fx(d[0], d[0]).wrapping_add(fx(d[1], d[1])).wrapping_add(fx(d[2], d[2]));
+        let speed = t.sqrt_steps(s2) << 6;
+        let jit = |r: u32| div_fx((((r & 127) as i32) - 64) << 12, 0x8_0000);
+        let p = [pos[0].wrapping_add(jit(next())), pos[1].wrapping_add(jit(next())), pos[2].wrapping_add(jit(next()))];
+        let push = |r: u32| fx(div_fx((((r & 127) as i32) - 64) << 12, 0x7_f000), speed);
+        let v = [d[0].wrapping_add(push(next())), d[1].wrapping_add(push(next())), d[2].wrapping_add(push(next()))];
+        let bits = next();
+        let mut m: Matrix = [[4096, 0, 0], [0, 4096, 0], [0, 0, 4096]];
+        let turn = |m: &mut Matrix, axis: usize, scale: i32, neg: bool, r: u32| {
+            let mut a = div_fx(((r & 63) << 12) as i32, scale);
+            if neg {
+                a = -a;
+            }
+            *m = crate::math::gte_mul(m, &t.rot_axis(axis, ((a << 12) / 25736) & 0xfff));
+        };
+        for (axis, bit) in [(2, 1), (1, 2), (0, 4)] {
+            turn(&mut m, axis, 0x2_0000, bits & bit != 0, next());
+        }
+        let base = crate::math::matrix_to_quat(t, &m);
+        for (axis, bit) in [(2, 16), (1, 32), (0, 64)] {
+            turn(&mut m, axis, 0x1_0000, bits & bit != 0, next());
+        }
+        let axis = m[0].map(i32::from);
+        let mut angle = div_fx(((next() & 63) << 12) as i32, 0x8_0000);
+        if bits & 8 != 0 {
+            angle = -angle;
+        }
+        let mut step = div_fx(((next() & 63) << 12) as i32, 0x8_0000);
+        if bits & 16 != 0 {
+            step = -step;
+        }
+        let pool = &mut self.pools[DEBRIS];
+        let buf = pool.records[i].buf;
+        if let Some(vels) = &mut pool.vel {
+            vels[buf] = v;
+        }
+        if let Some(acc) = &mut pool.accel {
+            acc[buf] = [0, 0, -8192];
+        }
+        if let Some(c) = pool.chunks.get_mut(buf) {
+            c.base = base;
+            c.axis = axis;
+            c.angle = angle;
+            c.step = step;
+        }
+        let r = &mut pool.records[i];
+        r.pos = p;
+        r.frame = 0;
+    }
+
+    /// 0x80029e10 mode 0 with 0x8002e574: car `draws.slot`'s wreck from
+    /// `pose`: five smoke columns following it, its model blackened, a
+    /// player's screen flashing, twenty embers, and its model's faces
+    /// (`faces`, up to 48) flying off as chunks with an eighth of its
+    /// velocity.
+    pub fn car_wreck(&mut self, t: &crate::math::Tables, draws: &WreckDraws, pose: &CarPose, faces: &[ChunkFace]) {
+        let mut rands = draws.rands.iter().copied();
+        let centre = pose.centre();
+        self.columns_spawn(centre, draws.vel, 1, draws.slot, &mut rands);
+        if let Some(c) = self.charred.get_mut(draws.slot as usize) {
+            *c = true;
+        }
+        if draws.human && let Some(f) = self.flash.get_mut(draws.slot as usize) {
+            *f = 160;
+        }
+        self.embers_spawn(t, centre, &mut rands);
+        let vel = draws.vel.map(|c| div_fx(c, 0x8000));
+        for face in faces.iter().take(48) {
+            let i = self.pools[DEBRIS].alloc();
+            self.pools[DEBRIS].records[i].semi = true;
+            self.chunk_init(t, centre, vel, i, &mut rands);
+            let p = &mut self.pools[DEBRIS];
+            let buf = p.records[i].buf;
+            if let Some(c) = p.chunks.get_mut(buf) {
+                c.verts = face.verts.map(|v| v.map(|x| x.wrapping_shl(1)));
+                c.uv = face.uv;
+            }
+            let r = &mut p.records[i];
+            r.flags = 0xd8;
+            r.life = 20;
+            r.kind = 255;
+            r.clut = face.clut;
+            r.tpage = face.tpage;
+        }
+    }
+
+    /// 0x80029e10 mode 2: a car shown wrecked (a snapshot put back).
+    pub fn car_charred(&mut self, slot: u8) {
+        if let Some(c) = self.charred.get_mut(slot as usize) {
+            *c = true;
+        }
+    }
+
+    /// 0x80029f04: the puffs and sparks of every car gone, the smoke
+    /// columns idle, car `slot` its own colour again.
+    pub fn car_reset(&mut self, slot: u8) {
+        for k in [PUFFS, SPARKS] {
+            for r in &mut self.pools[k].records {
+                r.life = 0;
+            }
+        }
+        for c in &mut self.columns {
+            c.frame = -1;
+        }
+        if let Some(c) = self.charred.get_mut(slot as usize) {
+            *c = false;
+        }
+    }
+
     /// 0x8002f354 (less the wreck's embers): every record older by a
     /// frame and moved; the dead dropped from the old end, or overwritten
     /// by the record before them.
-    pub fn update(&mut self, paused: bool) {
+    pub fn update(&mut self, paused: bool, fps: i32) {
+        self.embers_update(fps);
         for p in &mut self.pools {
             let mut i = p.oldest;
             loop {
@@ -324,8 +684,10 @@ impl Effects {
                                 r.frame = r.frame.wrapping_add(4);
                             }
                         }
-                        if r.flags & 0x10 != 0 {
-                            tracing::trace!("a debris chunk's spin: not yet ported");
+                        if r.flags & 0x10 != 0
+                            && let Some(c) = p.chunks.get_mut(buf)
+                        {
+                            c.angle = c.angle.wrapping_add(c.step);
                         }
                     }
                 } else if i == p.oldest {
@@ -456,6 +818,7 @@ impl Effects {
     /// frame; all 21 below 22 frames a second) and die at nothing.
     pub fn draw(&mut self, t: &crate::math::Tables, cam: &Matrix, fps: i32, paused: bool) -> Vec<EffectQuad> {
         let mut out = Vec::new();
+        let mut orient: Matrix = [[4096, 0, 0], [0, 4096, 0], [0, 0, 4096]];
         let right = column(cam, 0);
         let down = column(cam, 2).map(i32::wrapping_neg);
         let frame_count = self.frame_count;
@@ -466,6 +829,15 @@ impl Effects {
             for i in p.slots() {
                 let buf = p.records[i].buf;
                 let r = &mut p.records[i];
+                if r.flags & 1 == 0 && r.flags & 8 != 0
+                    && let Some(c) = p.chunks.get(buf)
+                {
+                    let a = crate::math::quat_to_matrix(crate::math::quat_from_axis_angle(t, c.angle, c.axis));
+                    let b = crate::math::quat_to_matrix(c.base);
+                    orient = std::array::from_fn(|row| {
+                        std::array::from_fn(|col| (0..3).fold(0i32, |s, k| s.wrapping_add(fx(a[row][k] as i32, b[k][col] as i32))) as i16)
+                    });
+                }
                 if r.flags & 0x1000 != 0 {
                     tmpl = match r.kind {
                         1 => PUFF_1,
@@ -523,8 +895,86 @@ impl Effects {
                     let (clut, tpage) = sheet(t, 3);
                     out.push(EffectQuad { corners, uv: SPARK_UV, clut, tpage, colour: [128; 3], semi: false });
                 } else if r.flags & 0x80 != 0 {
-                    tracing::trace!("a debris chunk's draw: not yet ported");
+                    let c = p.chunks.get(buf).copied().unwrap_or_default();
+                    if !paused {
+                        if r.semi {
+                            self.chunk_colour = self.chunk_colour.map(|v| v.wrapping_sub(3));
+                        }
+                        if self.chunk_colour[0] == 0 {
+                            r.life = 0;
+                            continue;
+                        }
+                    }
+                    let corners = c.verts.map(|v| {
+                        let v = v.map(|x| (x as i32) << 12);
+                        [0, 1, 2].map(|i| {
+                            (0..3).fold(r.pos[i], |s, k| s.wrapping_add(fx(orient[i][k] as i32, v[k])))
+                        })
+                    });
+                    out.push(EffectQuad { corners, uv: c.uv, clut: r.clut, tpage: r.tpage, colour: self.chunk_colour, semi: r.semi });
                 }
+            }
+        }
+        out
+    }
+
+    /// 0x800307d0: the smoke columns: each running one (from its start
+    /// frame) drifts or follows its car (`poses`), is drawn as a billboard
+    /// growing 4 units a step from the sheet's ten smoke frames, steps
+    /// every second frame, sheds grey smoke in its last two steps, and
+    /// stops at its end frame.
+    pub fn draw_columns(&mut self, t: &crate::math::Tables, rand: &mut Rand, cam: &Matrix, fps: i32, paused: bool, poses: &[CarPose]) -> Vec<EffectQuad> {
+        const OFFSETS: [[i32; 2]; 5] = [[0, -0xa000], [0x4_b000, 0xa000], [-0x4_b000, 0xf000], [0x3_2000, 0x4_1000], [-0x3_2000, 0x4_1000]];
+        const U: [u8; 10] = [0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0];
+        let right = column(cam, 0);
+        let down = column(cam, 2).map(i32::wrapping_neg);
+        let mut out = Vec::new();
+        for i in 0..5 {
+            let c = self.columns[i];
+            if c.frame < 0 || self.frame_count < c.start {
+                continue;
+            }
+            let mut c = c;
+            if !paused {
+                if c.kind == 0 {
+                    c.pos = [0, 1, 2].map(|k| c.pos[k].wrapping_add(c.vel[k] >> 3));
+                } else if c.kind == 1 && let Some(p) = poses.get(c.slot as usize) {
+                    c.pos = p.centre();
+                }
+            }
+            let st = c.frame as i32 - 5;
+            let size = 128 + c.add as i32 + 4 * st;
+            let (hx, hy) = ((size >> 1) << 12, (size >> 1) << 12);
+            let offs = [[size, 0], [0, 0], [0, size], [size, size]];
+            let us = [0xbfu8, 0x80, 0x80, 0xbf].map(|u| U[st as usize % 10].wrapping_add(u.wrapping_sub(128)));
+            let vs = [0u8, 0, 0x3f, 0x3f].map(|v| if st < 6 { v } else { v + 64 });
+            let shift = [OFFSETS[i][0].wrapping_add(c.jitter[0]).wrapping_sub(hx), OFFSETS[i][1].wrapping_add(c.jitter[1]).wrapping_sub(hy)];
+            let corners = offs.map(|[x, y]| {
+                let (x, y) = (((x as i32) << 12).wrapping_add(shift[0]), ((y as i32) << 12).wrapping_add(shift[1]));
+                [0, 1, 2].map(|k| c.pos[k].wrapping_add(fx(right[k], x)).wrapping_add(fx(down[k], y)))
+            });
+            let (clut, tpage) = sheet(t, c.frame as usize);
+            out.push(EffectQuad { corners, uv: std::array::from_fn(|k| [us[k], vs[k]]), clut, tpage, colour: [128; 3], semi: true });
+            if !paused {
+                c.ticks = c.ticks.wrapping_add(1);
+                if c.per != 0 && (c.ticks as i16) % (c.per as i16) == 0 {
+                    let mut s = c.frame as i32 - 5;
+                    if c.loops > 0 && c.loop_end as i32 + 1 == s {
+                        s = c.loop_restart as i32;
+                        c.loops -= 1;
+                    } else {
+                        s = (s + 1) % 10;
+                    }
+                    c.frame = (5 + s) as i8;
+                }
+                c.colour = c.colour.map(|v| v.wrapping_sub(4));
+            }
+            self.columns[i] = c;
+            if c.frame >= 13 {
+                self.dust(rand, fps, c.pos, 40, 0, None);
+            }
+            if self.frame_count >= c.end {
+                self.columns[i].frame = -1;
             }
         }
         out
