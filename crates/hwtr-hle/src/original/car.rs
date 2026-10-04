@@ -6,10 +6,11 @@
 //! never sees it. Tests and the reference's shadow checks use it to hold the
 //! port to the original byte for byte.
 
-use super::handling::{BLOCK_A, Handling};
-use super::{AxisLock, Car, Engine, Ground, GroundPlane, Tuning, TuningSet, Wheel};
-use crate::body::{self, Body};
-use crate::ram::Ram;
+use hwtr_game::car::handling::{BLOCK_A, Handling};
+use hwtr_game::car::{AxisLock, Car, Engine, Ground, GroundPlane, Tuning, Wheel};
+use super::body;
+use hwtr_game::body::Body;
+use super::{InMemory, Ram};
 
 pub const CARS: u32 = 0x8012_8fcc;
 pub const CAR_SIZE: u32 = 0x930;
@@ -26,16 +27,16 @@ pub const STICK: u32 = 0x1c;
 pub const HANDBRAKE: u32 = 0x24;
 /// The rigid body; the car's position, velocity and the rest are its.
 pub const BODY: u32 = 0x30;
-pub const GRAVITY_DIR: u32 = BODY + body::layout::GRAVITY_DIR;
+pub const GRAVITY_DIR: u32 = BODY + body::GRAVITY_DIR;
 /// The body's centre of mass offset, where drag acts.
-pub const DRAG_POINT: u32 = BODY + body::layout::CENTRE;
-pub const POS: u32 = BODY + body::layout::POS;
-pub const VEL: u32 = BODY + body::layout::VEL;
-pub const SPEED: u32 = BODY + body::layout::SPEED;
-pub const ROT: u32 = BODY + body::layout::ROT;
-pub const SPIN: u32 = BODY + body::layout::SPIN;
-pub const FORCE: u32 = BODY + body::layout::FORCE;
-pub const TORQUE: u32 = BODY + body::layout::TORQUE;
+pub const DRAG_POINT: u32 = BODY + body::CENTRE;
+pub const POS: u32 = BODY + body::POS;
+pub const VEL: u32 = BODY + body::VEL;
+pub const SPEED: u32 = BODY + body::SPEED;
+pub const ROT: u32 = BODY + body::ROT;
+pub const SPIN: u32 = BODY + body::SPIN;
+pub const FORCE: u32 = BODY + body::FORCE;
+pub const TORQUE: u32 = BODY + body::TORQUE;
 pub const WHEELS: u32 = 0x218;
 pub const WHEEL_SIZE: u32 = 0x88;
 pub const WHEEL_COUNT: u32 = 0x548;
@@ -153,24 +154,8 @@ pub mod engine {
     pub const TORQUE_CURVE: u32 = 0x48;
 }
 
-/// Offsets within the tuning bytes: three sets of three from +33.
-pub mod tuning {
-    pub const DOWNFORCE_MPH: u32 = 10;
-    pub const SETS: u32 = 33;
-    pub const SURFACE_DRAG: u32 = 51;
-    pub const COMPUTER_SKILL: u32 = 14;
-    pub const STEER_MPH: u32 = 8;
-    pub const STEER_PERCENT: [u32; 2] = [0x3a, 9];
-    pub const PLAYER_SKILL: u32 = 16;
-    pub const RIGHT_SIDE_MS: u32 = 0x35;
-    pub const RIGHT_END_MS: u32 = 0x36;
-    pub const RIGHT_ROOF_MS: u32 = 0x37;
-    pub const STAY_ROOF_PERCENT: u32 = 0x38;
-    pub const WRECK_ROOF_TENS: u32 = 0x39;
-}
-
-impl Wheel {
-    pub fn read(ram: &Ram, w: u32) -> Wheel {
+impl InMemory for Wheel {
+    fn read(ram: &Ram, w: u32) -> Wheel {
         use wheel::*;
         Wheel {
             mount: ram.vec3(w + MOUNT),
@@ -193,7 +178,7 @@ impl Wheel {
         }
     }
 
-    pub fn write(&self, ram: &mut Ram, w: u32) {
+    fn write(&self, ram: &mut Ram, w: u32) {
         use wheel::*;
         ram.set_vec3(w + MOUNT, self.mount);
         ram.set_i32(w + MOUNT_PAD, self.mount_pad);
@@ -215,8 +200,8 @@ impl Wheel {
     }
 }
 
-impl Engine {
-    pub fn read(ram: &Ram, e: u32) -> Engine {
+impl InMemory for Engine {
+    fn read(ram: &Ram, e: u32) -> Engine {
         use engine::*;
         Engine {
             rpm: ram.i32(e + RPM),
@@ -236,7 +221,7 @@ impl Engine {
         }
     }
 
-    pub fn write(&self, ram: &mut Ram, e: u32) {
+    fn write(&self, ram: &mut Ram, e: u32) {
         use engine::*;
         ram.set_i32(e + RPM, self.rpm);
         ram.set_i32(e + WHEEL_RPM, self.wheel_rpm);
@@ -259,40 +244,15 @@ impl Engine {
     }
 }
 
-impl Tuning {
-    /// TUNING.PRM, the 256 bytes the game loads to 0x80136a18.
-    pub fn from_prm(b: &[u8]) -> Tuning {
-        use tuning::*;
-        let at = |k: u32| b.get(k as usize).copied().unwrap_or(0);
-        let set = |k: u32| {
-            let o = SETS + 3 * k;
-            TuningSet { downforce_front: at(o), downforce_rear: at(o + 1), grip_front: at(o + 2) }
-        };
-        Tuning {
-            downforce_mph: at(DOWNFORCE_MPH),
-            sets: [set(0), set(1), set(2)],
-            surface_drag: at(SURFACE_DRAG),
-            computer_skill: [at(COMPUTER_SKILL), at(COMPUTER_SKILL + 1)],
-            player_skill: [at(PLAYER_SKILL), at(PLAYER_SKILL + 1)],
-            steer_mph: at(STEER_MPH),
-            steer_percent: STEER_PERCENT.map(at),
-            right_side_ms: at(RIGHT_SIDE_MS),
-            right_end_ms: at(RIGHT_END_MS),
-            stay_roof_percent: at(STAY_ROOF_PERCENT),
-            right_roof_ms: at(RIGHT_ROOF_MS),
-            wreck_roof_tens: at(WRECK_ROOF_TENS),
-        }
-    }
-
-    pub fn read(ram: &Ram) -> Tuning {
-        let bytes: Vec<u8> = (0..256).map(|k| ram.u8(TUNING + k)).collect();
-        Tuning::from_prm(&bytes)
-    }
+/// The settings the original loaded (TUNING.PRM, at [`TUNING`]).
+pub fn tuning(ram: &Ram) -> Tuning {
+    let bytes: Vec<u8> = (0..256).map(|k| ram.u8(TUNING + k)).collect();
+    Tuning::from_prm(&bytes)
 }
 
-impl Car {
+impl InMemory for Car {
     /// The car record at `at`.
-    pub fn read(ram: &Ram, at: u32) -> Car {
+    fn read(ram: &Ram, at: u32) -> Car {
         let wheels = (0..ram.u8(at + WHEEL_COUNT) as u32).map(|i| Wheel::read(ram, at + WHEELS + i * WHEEL_SIZE));
         let handling: [u8; BLOCK_A] = std::array::from_fn(|k| ram.u8(at + HANDLING + k as u32));
         Car {
@@ -370,7 +330,7 @@ impl Car {
     }
 
     /// Writes the car back over the record at `at`.
-    pub fn write(&self, ram: &mut Ram, at: u32) {
+    fn write(&self, ram: &mut Ram, at: u32) {
         ram.set_u8(at + SLOT, self.slot);
         ram.set_i32(at + FLAGS, self.flags);
         ram.set_i32(at + FLAGS_8, self.flags_8);

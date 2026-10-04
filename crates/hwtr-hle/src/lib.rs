@@ -19,6 +19,7 @@
 
 pub mod gpu;
 pub mod hw;
+pub mod original;
 pub mod port;
 pub mod script;
 

@@ -37,7 +37,7 @@ impl StuntTable {
     pub const NAMES: u32 = 0x800b_f114;
 
     /// The tables from a byte reader over the executable or RAM.
-    pub fn read(byte: impl Fn(u32) -> u8) -> StuntTable {
+    pub fn read(byte: &impl Fn(u32) -> u8) -> StuntTable {
         let word = |a: u32| i32::from_le_bytes([byte(a), byte(a + 1), byte(a + 2), byte(a + 3)]);
         StuntTable {
             priority: std::array::from_fn(|k| byte(Self::PRIORITY + k as u32)),
@@ -285,12 +285,12 @@ impl Car {
             }
             self.air_ms = self.air_ms.wrapping_add(ms as u32);
             let spin = self.own_spin();
-            for k in 0..3 {
-                if (spin[k] ^ self.stunt_spin[k]) < 0 && self.stunt_peak[k].wrapping_abs() < self.stunt_turn[k].wrapping_abs()
-                {
-                    self.stunt_peak[k] = self.stunt_turn[k];
+            let axes = spin.iter().zip(&self.stunt_spin).zip(self.stunt_turn.iter_mut().zip(&mut self.stunt_peak));
+            for ((&now, &before), (turn, peak)) in axes {
+                if (now ^ before) < 0 && peak.wrapping_abs() < turn.wrapping_abs() {
+                    *peak = *turn;
                 }
-                self.stunt_turn[k] = self.stunt_turn[k].wrapping_add(fx(spin[k], dt));
+                *turn = turn.wrapping_add(fx(now, dt));
             }
             self.stunt_spin = spin;
         } else {

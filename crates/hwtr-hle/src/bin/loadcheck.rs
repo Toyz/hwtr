@@ -10,13 +10,13 @@
 
 #![forbid(unsafe_code)]
 
+use hwtr_hle::original::InMemory;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use hwtr_game::car::layout::{CAR_SIZE, CARS};
-use hwtr_game::car::{Car, Tuning, handling};
-use hwtr_game::race::RaceSetup;
-use hwtr_game::ram::Ram;
+use hwtr_hle::original::car::{CAR_SIZE, CARS};
+use hwtr_game::car::{Car, handling};
+use hwtr_hle::original::Ram;
 use hwtr_hle::Hle;
 use hwtr_hle::script::Script;
 
@@ -57,8 +57,8 @@ fn main() {
             let big = hwtr_data::Big::parse(&big).expect("big");
             let mut copy = bus.ram.clone();
             let ram = Ram(&mut copy);
-            let setup = RaceSetup::read(&ram, setup_at);
-            let tuning = Tuning::read(&ram);
+            let setup = hwtr_hle::original::race::setup(&ram, setup_at);
+            let tuning = hwtr_hle::original::car::tuning(&ram);
             let scp = ram.i32(SCP) as u32;
             let track = setup.track.to_uppercase();
             for (slot, entrant) in setup.cars.iter().enumerate() {

@@ -3,10 +3,12 @@
 
 mod common;
 
-use hwtr_game::body::{Body, layout as body};
-use hwtr_game::car::layout::{BODY, CAR_COUNT, CAR_SIZE, CARS};
+use hwtr_hle::original::InMemory;
+use hwtr_game::body::Body;
+use hwtr_hle::original::body;
+use hwtr_hle::original::car::{BODY, CAR_COUNT, CAR_SIZE, CARS};
 use hwtr_game::math::Tables;
-use hwtr_game::ram::Ram;
+use hwtr_hle::original::Ram;
 
 const STATES: [&str; 3] = ["desert1-race", "desert1-drive", "desert1-speed"];
 

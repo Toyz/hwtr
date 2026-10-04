@@ -18,20 +18,19 @@
 
 #![forbid(unsafe_code)]
 
+use hwtr_hle::original::InMemory;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use hwtr_game::body::Body;
 
 use hwtr_game::car::Car;
-use hwtr_game::car::layout::{CAR_COUNT, CAR_SIZE, CARS};
-use hwtr_game::collision::Collision;
+use hwtr_hle::original::car::{CAR_COUNT, CAR_SIZE, CARS};
 use hwtr_game::collision::world::Step;
-use hwtr_game::collision::world::layout::STEP;
+use hwtr_hle::original::world::STEP;
 use hwtr_game::rand::Rand;
-use hwtr_game::rand::layout::SEED;
-use hwtr_game::math::Tables;
-use hwtr_game::ram::Ram;
+use hwtr_hle::original::rand::SEED;
+use hwtr_hle::original::Ram;
 use hwtr_hle::Hle;
 use hwtr_hle::script::Script;
 
@@ -84,9 +83,9 @@ fn main() {
     let mut hle = Hle::new(disc).expect("hle");
     hle.load(&std::fs::read(&state).expect("state file")).expect("state");
     hle.m.step_limit = 30_000_000;
-    let tables = Tables::from_ram(&hle.m.bus.ram);
+    let tables = hwtr_hle::original::tables(&hle.m.bus.ram);
     tracing::info!("friction table {:?}", &tables.surface_friction[..12]);
-    let tuning = hwtr_game::car::Tuning::read(&Ram(&mut hle.m.bus.ram));
+    let tuning = hwtr_hle::original::car::tuning(&Ram(&mut hle.m.bus.ram));
     let dt = (hwtr_game::race::STEP_MS << 12) / 1000;
     // The player's body as each impulse the original applies finds it.
     let entries: Rc<RefCell<Vec<Body>>> = Rc::default();
@@ -114,7 +113,7 @@ fn main() {
     });
     let (mut steps, mut same, mut reported) = (0u32, 0u32, 0u32);
     for f in 0..frames {
-        let (mut world, _) = Collision::read(&Ram(&mut hle.m.bus.ram));
+        let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut hle.m.bus.ram));
         let mut native = cars(&mut hle.m.bus.ram);
         let (before, seed, time, clock) = {
             let ram = Ram(&mut hle.m.bus.ram);
@@ -154,7 +153,7 @@ fn main() {
                 let ram = Ram(&mut hle.m.bus.ram);
                 (ram.i16(0x800d_2674) as u16, ram.i16(0x800d_2676) as u16)
             };
-            let (original_world, _) = Collision::read(&Ram(&mut hle.m.bus.ram));
+            let (original_world, _) = hwtr_hle::original::world::collision(&Ram(&mut hle.m.bus.ram));
             tracing::warn!(
                 "frame {f} (step {steps}): {} fields differ; contacts: original {contacts} {:?}, port {} {:?}; car pairs {pairs}",
                 d.len(),

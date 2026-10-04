@@ -2,9 +2,10 @@
 
 mod common;
 
-use hwtr_game::pad::layout::{MAPPING, PAD_BUFFER};
+use hwtr_hle::original::InMemory;
+use hwtr_hle::original::pad::{MAPPING, PAD_BUFFER};
 use hwtr_game::pad::{Mapping, PadKind, PadReader, PadState};
-use hwtr_game::ram::Ram;
+use hwtr_hle::original::Ram;
 
 #[test]
 fn reads_match_the_original() {
@@ -15,7 +16,7 @@ fn reads_match_the_original() {
         Mapping(std::array::from_fn(|k| ram.i32(MAPPING + 4 * k as u32) as u32))
     };
     assert_eq!(mapping, Mapping::default(), "the state's mapping is the default");
-    let mut reader = PadReader::read_ram(&Ram(&mut m.bus.ram), 0);
+    let mut reader = <PadReader as InMemory>::read(&Ram(&mut m.bus.ram), hwtr_hle::original::pad::port(0));
     let mut rng = common::Rng(0x9ad0_0000_0000_0001);
     let mut seen = [0u32; 8];
     for frame in 0..3000 {
@@ -39,7 +40,7 @@ fn reads_match_the_original() {
         m.bus.load(PAD_BUFFER, &bytes);
         m.call(0x8001_bec0, &[0, elapsed]).unwrap();
         reader.read(&pad, &mapping, elapsed);
-        let original = PadReader::read_ram(&Ram(&mut m.bus.ram), 0);
+        let original = <PadReader as InMemory>::read(&Ram(&mut m.bus.ram), hwtr_hle::original::pad::port(0));
         assert_eq!(original, reader, "frame {frame}: {pad:?}, {elapsed} ms");
         for (s, l) in seen.iter_mut().zip(original.levels) {
             *s += (l != 0 && l != 255) as u32;

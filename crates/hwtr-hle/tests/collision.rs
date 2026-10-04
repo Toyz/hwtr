@@ -3,8 +3,9 @@
 
 mod common;
 
+use hwtr_hle::original::InMemory;
 use hwtr_game::collision::Scp;
-use hwtr_game::ram::Ram;
+use hwtr_hle::original::Ram;
 
 /// Where the game keeps its pointer to the loaded SCP.
 const SCP: u32 = 0x800d_2658;
@@ -40,7 +41,7 @@ fn zone_at_matches_the_original() {
 }
 
 use hwtr_game::car::Car;
-use hwtr_game::car::layout::{CAR_COUNT, CAR_SIZE, CARS};
+use hwtr_hle::original::car::{CAR_COUNT, CAR_SIZE, CARS};
 use hwtr_game::collision::Collision;
 
 const STATES: [&str; 4] = ["desert1-race", "desert1-drive", "desert1-speed", "desert1-air"];
@@ -56,7 +57,7 @@ fn check_pass(addr: u32, pass: impl Fn(&mut Collision, &mut Vec<Car>)) {
     let Some(exe) = common::exe() else { return };
     for name in STATES {
         let Some(mut m) = common::state(&exe, name) else { continue };
-        let (mut world, _) = Collision::read(&Ram(&mut m.bus.ram));
+        let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
         let mut cars = cars_from(&mut m.bus.ram);
         let mut rng = common::Rng(0xc011_0000_0000_000a);
         for step in 0..12 {
@@ -72,7 +73,7 @@ fn check_pass(addr: u32, pass: impl Fn(&mut Collision, &mut Vec<Car>)) {
             }
             pass(&mut world, &mut cars);
             m.call(addr, &[]).unwrap();
-            let (original, _) = Collision::read(&Ram(&mut m.bus.ram));
+            let (original, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
             let original_cars = cars_from(&mut m.bus.ram);
             for (k, (a, b)) in original.objects.iter().zip(&world.objects).enumerate() {
                 assert_eq!(a, b, "{name} step {step}: object {k}");
@@ -104,7 +105,7 @@ fn points_then_zones_match_the_original() {
     let Some(exe) = common::exe() else { return };
     for name in STATES {
         let Some(mut m) = common::state(&exe, name) else { continue };
-        let (mut world, _) = Collision::read(&Ram(&mut m.bus.ram));
+        let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
         let mut cars = cars_from(&mut m.bus.ram);
         let mut rng = common::Rng(0xc011_0000_0000_000b);
         let mut changes = 0;
@@ -120,7 +121,7 @@ fn points_then_zones_match_the_original() {
             world.track_zones(&cars);
             m.call(0x8004_e47c, &[]).unwrap();
             m.call(0x8005_15e0, &[]).unwrap();
-            let (original, _) = Collision::read(&Ram(&mut m.bus.ram));
+            let (original, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
             changes += original.objects.iter().zip(&before).filter(|(o, b)| o.point_zones != **b).count();
             for (k, (a, b)) in original.objects.iter().zip(&world.objects).enumerate() {
                 assert_eq!(a, b, "{name} step {step}: object {k}");
@@ -140,7 +141,7 @@ fn wheels_match_the_original() {
     let mut grounded = 0;
     for name in STATES {
         let Some(mut m) = common::state(&exe, name) else { continue };
-        let (mut world, _) = Collision::read(&Ram(&mut m.bus.ram));
+        let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
         let mut cars = cars_from(&mut m.bus.ram);
         let mut rng = common::Rng(0x7ee1_0000_0000_000c);
         for step in 0..40 {
@@ -167,7 +168,7 @@ fn wheels_match_the_original() {
                 }
                 assert_eq!(a, b, "{name} step {step}: car {k}");
             }
-            let (w, _) = Collision::read(&Ram(&mut m.bus.ram));
+            let (w, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
             world = w;
             cars = original;
         }
@@ -184,7 +185,7 @@ fn ground_matches_the_original() {
         let Some(mut m) = common::state(&exe, name) else { continue };
         // Every other road zone turns gravity toward its surface, as a
         // loop's do (Desert has none).
-        let scp_at = Ram(&mut m.bus.ram).i32(hwtr_game::collision::world::layout::SCP) as u32;
+        let scp_at = Ram(&mut m.bus.ram).i32(hwtr_hle::original::world::SCP) as u32;
         let zones = Ram(&mut m.bus.ram).i32(scp_at) as u32;
         for z in (1..zones).step_by(2) {
             let at = scp_at + 240 + 20 * z;
@@ -193,7 +194,7 @@ fn ground_matches_the_original() {
                 Ram(&mut m.bus.ram).set_u8(at + 1, flags | 0x20);
             }
         }
-        let (mut world, _) = Collision::read(&Ram(&mut m.bus.ram));
+        let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
         let mut cars = cars_from(&mut m.bus.ram);
         let mut rng = common::Rng(0x6e0d_0000_0000_000d);
         for step in 0..40 {
@@ -230,7 +231,7 @@ fn ground_matches_the_original() {
                     if a.ground.origin == [0; 3] { from_wheels += 1 } else { from_zones += 1 }
                 }
             }
-            let (w, _) = Collision::read(&Ram(&mut m.bus.ram));
+            let (w, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
             world = w;
             cars = original;
         }
@@ -240,13 +241,13 @@ fn ground_matches_the_original() {
 
 #[test]
 fn walls_match_the_original() {
-    use hwtr_game::collision::world::layout::CONTACT_COUNT;
+    use hwtr_hle::original::world::CONTACT_COUNT;
     let Some(exe) = common::exe() else { return };
     let t = hwtr_game::math::Tables::from_exe(&exe);
     let (mut pushed, mut contacts, mut through) = (0, 0, 0);
     for name in STATES {
         let Some(mut m) = common::state(&exe, name) else { continue };
-        let (mut world, _) = Collision::read(&Ram(&mut m.bus.ram));
+        let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
         let mut cars = cars_from(&mut m.bus.ram);
         let mut rng = common::Rng(0x3a11_0000_0000_000e);
         for step in 0..60 {
@@ -274,7 +275,7 @@ fn walls_match_the_original() {
             Ram(&mut m.bus.ram).set_i16(CONTACT_COUNT, 0);
             world.walls(&t, &mut cars);
             m.call(0x8005_4964, &[]).unwrap();
-            let (original, _) = Collision::read(&Ram(&mut m.bus.ram));
+            let (original, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
             let original_cars = cars_from(&mut m.bus.ram);
             assert_eq!(original.contacts, world.contacts, "{name} step {step}: contacts");
             for (k, (a, b)) in original_cars.iter().zip(&cars).enumerate() {
@@ -293,13 +294,13 @@ fn walls_match_the_original() {
 
 #[test]
 fn contact_impulses_match_the_original() {
-    use hwtr_game::collision::world::layout::{CONTACT_COUNT, CONTACT_SIZE, CONTACTS};
+    use hwtr_hle::original::world::{CONTACT_COUNT, CONTACT_SIZE, CONTACTS};
     let Some(exe) = common::exe() else { return };
     let t = hwtr_game::math::Tables::from_exe(&exe);
     let (mut pushed, mut sliding) = (0, 0);
     for name in STATES {
         let Some(mut m) = common::state(&exe, name) else { continue };
-        let (mut world, _) = Collision::read(&Ram(&mut m.bus.ram));
+        let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
         let mut cars = cars_from(&mut m.bus.ram);
         let mut rng = common::Rng(0x1a9c_0000_0000_000f);
         for step in 0..60 {
@@ -338,7 +339,7 @@ fn contact_impulses_match_the_original() {
                 pushed += (size != 0) as u32;
                 sliding += (friction != 0 && size != 0) as u32;
             }
-            let (w, _) = Collision::read(&Ram(&mut m.bus.ram));
+            let (w, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
             world = w;
             cars = cars_from(&mut m.bus.ram);
         }

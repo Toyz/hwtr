@@ -1,11 +1,29 @@
-//! Main RAM as the original lays it out, for the codecs (`layout` modules)
-//! that convert between it and the port's types.
-//!
-//! The port's logic works on Rust types; this is only how tests and the
-//! reference's shadow checks read those types out of the original's memory
-//! and write them back, to compare the two byte for byte.
+//! The original game's state, read out of the interpreter's memory into the
+//! port's types and written back: how the tests, racecheck and the shadow
+//! checks hold the port to the original. The port itself has no memory
+//! model; only this side knows where the original keeps anything.
 
-use crate::math::{Matrix, Matrix64};
+pub mod body;
+pub mod car;
+pub mod object;
+pub mod pad;
+pub mod race;
+pub mod rand;
+pub mod world;
+
+use hwtr_game::math::{Matrix, Matrix64, Tables};
+
+/// A port type as the original keeps it at an address.
+pub trait InMemory: Sized {
+    fn read(ram: &Ram, at: u32) -> Self;
+    fn write(&self, ram: &mut Ram, at: u32);
+}
+
+/// The executable's tables as loaded in the original's memory.
+pub fn tables(ram: &[u8]) -> Tables {
+    let byte = |a: u32| ram[(a & 0x1f_ffff) as usize];
+    Tables::from_bytes(byte)
+}
 
 /// The 2 MB of main RAM, addressed as the game addresses it (KSEG0 and its
 /// mirrors all land in the same bytes).

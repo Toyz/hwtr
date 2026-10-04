@@ -4,8 +4,7 @@
 //!
 //! Units are the game's: inches, seconds, radians, all 4.12 fixed point and
 //! multiplied with GCC's `(a * b) >> 12` ([`fx`]). See
-//! `docs/engine/car-object.md`; where the original keeps all this is in
-//! [`layout`].
+//! `docs/engine/car-object.md`.
 
 mod controls;
 pub mod handling;
@@ -13,7 +12,6 @@ pub mod righting;
 pub mod wreck;
 pub mod impact;
 pub mod stunt;
-pub mod layout;
 mod load;
 
 pub use controls::Controls;
@@ -199,8 +197,7 @@ pub struct TuningSet {
     pub grip_front: u8,
 }
 
-/// Settings shared by every car (at 0x80136a18; where they come from is not
-/// yet known).
+/// Settings shared by every car, from TUNING.PRM.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Tuning {
     /// A speed in mph added to a grounded car's for its downforce.
@@ -228,7 +225,47 @@ pub struct Tuning {
     pub wreck_roof_tens: u8,
 }
 
+/// Where TUNING.PRM keeps each setting.
+mod prm {
+    pub const DOWNFORCE_MPH: u32 = 10;
+    pub const SETS: u32 = 33;
+    pub const SURFACE_DRAG: u32 = 51;
+    pub const COMPUTER_SKILL: u32 = 14;
+    pub const STEER_MPH: u32 = 8;
+    pub const STEER_PERCENT: [u32; 2] = [0x3a, 9];
+    pub const PLAYER_SKILL: u32 = 16;
+    pub const RIGHT_SIDE_MS: u32 = 0x35;
+    pub const RIGHT_END_MS: u32 = 0x36;
+    pub const RIGHT_ROOF_MS: u32 = 0x37;
+    pub const STAY_ROOF_PERCENT: u32 = 0x38;
+    pub const WRECK_ROOF_TENS: u32 = 0x39;
+}
+
 impl Tuning {
+    /// TUNING.PRM, the race settings file (256 bytes).
+    pub fn from_prm(b: &[u8]) -> Tuning {
+        use prm::*;
+        let at = |k: u32| b.get(k as usize).copied().unwrap_or(0);
+        let set = |k: u32| {
+            let o = SETS + 3 * k;
+            TuningSet { downforce_front: at(o), downforce_rear: at(o + 1), grip_front: at(o + 2) }
+        };
+        Tuning {
+            downforce_mph: at(DOWNFORCE_MPH),
+            sets: [set(0), set(1), set(2)],
+            surface_drag: at(SURFACE_DRAG),
+            computer_skill: [at(COMPUTER_SKILL), at(COMPUTER_SKILL + 1)],
+            player_skill: [at(PLAYER_SKILL), at(PLAYER_SKILL + 1)],
+            steer_mph: at(STEER_MPH),
+            steer_percent: STEER_PERCENT.map(at),
+            right_side_ms: at(RIGHT_SIDE_MS),
+            right_end_ms: at(RIGHT_END_MS),
+            stay_roof_percent: at(STAY_ROOF_PERCENT),
+            right_roof_ms: at(RIGHT_ROOF_MS),
+            wreck_roof_tens: at(WRECK_ROOF_TENS),
+        }
+    }
+
     /// The set a car's flags choose, if any.
     pub fn for_flags(&self, flags: i32) -> Option<&TuningSet> {
         if flags & 0x80 != 0 {

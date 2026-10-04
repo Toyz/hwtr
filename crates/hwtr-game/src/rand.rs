@@ -21,8 +21,3 @@ impl Rand {
         r.checked_rem(n).unwrap_or(r)
     }
 }
-
-/// Where the original keeps it.
-pub mod layout {
-    pub const SEED: u32 = 0x8014_2388;
-}

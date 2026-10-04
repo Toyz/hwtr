@@ -34,24 +34,16 @@ pub struct Tables {
 impl Tables {
     pub fn from_exe(exe: &Exe) -> Tables {
         let m = exe.view();
-        let cos = (0..COS_ENTRIES as u32).map(|i| m.u16(COS_TABLE + 2 * i).unwrap_or(0)).collect();
-        let sqrt = (0..SQRT_ENTRIES as u32).map(|i| m.u16(SQRT_TABLE + 2 * i).unwrap_or(0)).collect();
-        let surface_friction = (0..FRICTION_ENTRIES as u32).map(|i| m.u8(FRICTION_TABLE + i).unwrap_or(0)).collect();
-        let stunts = crate::car::stunt::StuntTable::read(|a| m.u8(a).unwrap_or(0));
-        Tables { cos, sqrt, surface_friction, stunts }
+        Tables::from_bytes(|a| m.u8(a).unwrap_or(0))
     }
 
-    /// The same tables read from main RAM with the executable loaded.
-    pub fn from_ram(ram: &[u8]) -> Tables {
-        let u16_at = |a: u32| {
-            let i = (a & 0x1f_ffff) as usize;
-            u16::from_le_bytes([ram[i], ram[i + 1]])
-        };
+    /// The tables from `byte`, which reads the executable at an address.
+    pub fn from_bytes(byte: impl Fn(u32) -> u8) -> Tables {
+        let u16_at = |a: u32| u16::from_le_bytes([byte(a), byte(a + 1)]);
         let cos = (0..COS_ENTRIES as u32).map(|i| u16_at(COS_TABLE + 2 * i)).collect();
         let sqrt = (0..SQRT_ENTRIES as u32).map(|i| u16_at(SQRT_TABLE + 2 * i)).collect();
-        let surface_friction =
-            (0..FRICTION_ENTRIES as u32).map(|i| ram[((FRICTION_TABLE + i) & 0x1f_ffff) as usize]).collect();
-        let stunts = crate::car::stunt::StuntTable::read(|a| ram[(a & 0x1f_ffff) as usize]);
+        let surface_friction = (0..FRICTION_ENTRIES as u32).map(|i| byte(FRICTION_TABLE + i)).collect();
+        let stunts = crate::car::stunt::StuntTable::read(&byte);
         Tables { cos, sqrt, surface_friction, stunts }
     }
 

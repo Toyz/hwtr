@@ -2,15 +2,16 @@
 
 mod common;
 
-use hwtr_game::car::layout::{self as car, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS};
+use hwtr_hle::original::InMemory;
+use hwtr_hle::original::car::{self as car, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS};
 use hwtr_game::car::{Car, Tuning, Wheel};
 use hwtr_game::math::{Tables, div_fx, fx};
-use hwtr_game::ram::Ram;
+use hwtr_hle::original::Ram;
 
 /// Runs `f` on the car at `at`, read out of `ram` and written back.
 fn on_car<R>(ram: &mut [u8], at: u32, f: impl FnOnce(&mut Car, &Tuning) -> R) -> R {
     let mut ram = Ram(ram);
-    let (mut car, tuning) = (Car::read(&ram, at), Tuning::read(&ram));
+    let (mut car, tuning) = (Car::read(&ram, at), hwtr_hle::original::car::tuning(&ram));
     let r = f(&mut car, &tuning);
     car.write(&mut ram, at);
     r
@@ -381,7 +382,8 @@ fn air_control_matches_the_original() {
 #[test]
 fn righting_matches_the_original() {
     use hwtr_game::car::righting::Righting;
-    use hwtr_game::rand::{Rand, layout::SEED};
+    use hwtr_game::rand::Rand;
+    use hwtr_hle::original::rand::SEED;
     let Some(exe) = common::exe() else { return };
     let mut rng = common::Rng(0x2167_0000_0000_0010);
     let mut seen = std::collections::BTreeMap::new();
@@ -447,7 +449,8 @@ fn righting_matches_the_original() {
 
 #[test]
 fn wreck_matches_the_original_for_computer_cars() {
-    use hwtr_game::rand::{Rand, layout::SEED};
+    use hwtr_game::rand::Rand;
+    use hwtr_hle::original::rand::SEED;
     let Some(exe) = common::exe() else { return };
     let mut rng = common::Rng(0x3eec_0000_0000_0011);
     for name in STATES {
@@ -529,7 +532,8 @@ fn stunt_awards_match_the_original() {
 
 #[test]
 fn stunt_watch_matches_the_original() {
-    use hwtr_game::rand::{Rand, layout::SEED};
+    use hwtr_game::rand::Rand;
+    use hwtr_hle::original::rand::SEED;
     let Some(exe) = common::exe() else { return };
     let t = Tables::from_exe(&exe);
     let mut rng = common::Rng(0x5701_0000_0000_0013);

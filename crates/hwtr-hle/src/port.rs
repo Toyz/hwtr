@@ -11,14 +11,15 @@
 //! itself runs unchanged, so its timing does too. `install` replaces the
 //! originals outright.
 
+use crate::original::InMemory;
 use std::rc::Rc;
 
 use hwtr_cpu::{Bus, Cpu, Machine};
 use hwtr_game::body::Body;
-use hwtr_game::car::layout::{BODY, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS, wheel};
+use crate::original::car::{BODY, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS, wheel};
 use hwtr_game::car::{Car, Tuning};
 use hwtr_game::math::Tables;
-use hwtr_game::ram::Ram;
+use crate::original::Ram;
 
 /// Runs a port in place of the original: arguments in the CPU's registers,
 /// memory on the bus; returns v0.
@@ -42,7 +43,7 @@ pub const PORTED: &[(u32, &str, Adapter)] = &[
 /// Runs `f` on the car at `at`, read out of RAM and written back.
 fn on_car<R>(bus: &mut Bus, at: u32, f: impl FnOnce(&mut Car, &Tuning) -> R) -> R {
     let mut ram = Ram(&mut bus.ram);
-    let (mut car, tuning) = (Car::read(&ram, at), Tuning::read(&ram));
+    let (mut car, tuning) = (Car::read(&ram, at), crate::original::car::tuning(&ram));
     let r = f(&mut car, &tuning);
     car.write(&mut ram, at);
     r
@@ -135,7 +136,7 @@ fn orthonormalize(t: &Tables, cpu: &mut Cpu, bus: &mut Bus) -> u32 {
 
 /// Hooks the ported functions into `m` in place of the originals.
 pub fn install(m: &mut Machine) {
-    let t = Rc::new(Tables::from_ram(&m.bus.ram));
+    let t = Rc::new(crate::original::tables(&m.bus.ram));
     for &(addr, _, adapter) in PORTED {
         let t = t.clone();
         m.hook(addr, move |cpu, bus| adapter(&t, cpu, bus));
@@ -147,7 +148,7 @@ pub fn install(m: &mut Machine) {
 /// (the call's own frames), the 16 bytes above it (where the callee may save
 /// its register arguments) and [`unmatched`] words.
 pub fn shadow(m: &mut Machine) {
-    let t = Rc::new(Tables::from_ram(&m.bus.ram));
+    let t = Rc::new(crate::original::tables(&m.bus.ram));
     let skip = Rc::new(unmatched());
     for &(addr, _, adapter) in PORTED {
         let (t, skip) = (t.clone(), skip.clone());

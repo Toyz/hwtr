@@ -117,8 +117,8 @@ pub struct Scp {
 }
 
 impl Scp {
-    /// Parses an SCP file (or the copy the game keeps in RAM: the six
-    /// pointers it writes at +216 are ignored).
+    /// Parses an SCP file (the six words at +216, which the game fills
+    /// with pointers once loaded, are ignored).
     pub fn parse(b: &[u8]) -> Option<Scp> {
         let u16_at = |at: usize| u16::from_le_bytes([b[at], b[at + 1]]);
         let i16_at = |at: usize| u16_at(at) as i16;
