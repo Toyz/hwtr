@@ -100,8 +100,8 @@ pub struct Race {
     sound: Option<RaceSound>,
 }
 
-/// The race's effects (bank 0, `MAINSFX2`, from the track's archive), the
-/// sound chip, and the effects volume.
+/// The race's effects (bank 0, `MAINSFX2`, or `DUDE` under cheat 16, from
+/// the track's archive), the sound chip, and the effects volume.
 struct RaceSound {
     spu: std::sync::Arc<std::sync::Mutex<crate::spu::Spu>>,
     effects: crate::spu::Effects,
@@ -563,10 +563,13 @@ impl Race {
         // then 0x800157f8 plays at three eighths of it.
         let cars = race.cars.len();
         let cars_names: Vec<String> = race.setup.cars.iter().map(|c| c.name.clone()).collect();
-        let sound = match (spu, get("MAINSFX2VH"), get("MAINSFX2VB")) {
+        // Cheat option 16 swaps in the DUDE bank (0x80013ff8(16)).
+        let dude = race.setup.options & 16 != 0;
+        let (vh, vb) = if dude { ("DUDEVH", "DUDEVB") } else { ("MAINSFX2VH", "MAINSFX2VB") };
+        let sound = match (spu, get(vh), get(vb)) {
             (Some(spu), Ok(vh), Ok(vb)) => hwtr_game::snd::Bank::from_vh(vh, 0).map(|bank| RaceSound {
                 spu,
-                effects: crate::spu::Effects::new(&byte, bank, vb),
+                effects: crate::spu::Effects::new(&byte, bank, vb, dude),
                 volume: (volume as i32 * 127 / 255) * 3 / 8,
                 effects_volume: volume as i32 * 127 / 255,
                 first: cars + 10,

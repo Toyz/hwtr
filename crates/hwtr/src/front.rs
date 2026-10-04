@@ -121,7 +121,7 @@ impl FrontEnd {
         let textures = crate::pieces::Textures::load(get("SCREENSGLM")?, &byte, &mut vram);
         let tables = hwtr_game::math::Tables::from_exe(&exe);
         let bank = hwtr_game::snd::Bank::from_vh(get("HWMENUVH")?, 0).ok_or("HWMENU.VH does not parse")?;
-        let effects = crate::spu::Effects::new(&byte, bank, get("HWMENUVB")?);
+        let effects = crate::spu::Effects::new(&byte, bank, get("HWMENUVB")?, false);
         let files = Files {
             strings: get("ENGLISHHWT")?,
             tuning: get("TUNINGPRM")?,

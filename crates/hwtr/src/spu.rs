@@ -420,18 +420,10 @@ pub struct Effects {
 }
 
 impl Effects {
-    /// 0x8001a73c: the effects table from the executable's (0x800bd5f8, 61
-    /// records of tone, program, note, id), by id, for `bank`.
-    pub fn new(byte: &dyn Fn(u32) -> u8, bank: hwtr_game::snd::Bank, samples: &[u8]) -> Effects {
-        let word = |a: u32| u32::from_le_bytes([byte(a), byte(a + 1), byte(a + 2), byte(a + 3)]);
-        let table = (0..61u32)
-            .map(|id| {
-                (0..61u32)
-                    .map(|k| 0x800b_d5f8 + 16 * k)
-                    .find(|&r| word(r + 12) == id)
-                    .map_or([0; 3], |r| [word(r), word(r + 4), word(r + 8)])
-            })
-            .collect();
+    /// The effects of `bank`, by id, from the executable's table
+    /// ([`hwtr_game::snd::effects_table`]); `dude` under cheat option 16.
+    pub fn new(byte: &dyn Fn(u32) -> u8, bank: hwtr_game::snd::Bank, samples: &[u8], dude: bool) -> Effects {
+        let table = hwtr_game::snd::effects_table(byte, dude);
         Effects { bank, samples: samples.into(), notes: hwtr_game::snd::Tables::read(byte), table, mono: false }
     }
 

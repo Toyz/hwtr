@@ -115,6 +115,26 @@ pub struct Tables {
     pub fine: [u16; 128],
 }
 
+/// 0x8001a73c: each effect's tone, program and note, by id, from the
+/// executable's table (0x800bd5f8, 61 records of tone, program, note, id).
+/// With `dude` (cheat option 16, whose bank is DUDE), every effect plays
+/// program 0: its tone if under 8, else tone 3, at the note 60 above that.
+pub fn effects_table(byte: &dyn Fn(u32) -> u8, dude: bool) -> Vec<[u32; 3]> {
+    let word = |a: u32| u32::from_le_bytes([byte(a), byte(a + 1), byte(a + 2), byte(a + 3)]);
+    (0..61u32)
+        .map(|id| {
+            (0..61u32).map(|k| 0x800b_d5f8 + 16 * k).find(|&r| word(r + 12) == id).map_or([0; 3], |r| {
+                if dude {
+                    let tone = if (word(r) as i32) < 8 { word(r) } else { 3 };
+                    [tone, 0, tone + 60]
+                } else {
+                    [word(r), word(r + 4), word(r + 8)]
+                }
+            })
+        })
+        .collect()
+}
+
 impl Tables {
     pub fn read(byte: &dyn Fn(u32) -> u8) -> Tables {
         let half = |a: u32| u16::from_le_bytes([byte(a), byte(a + 1)]);
