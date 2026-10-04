@@ -802,9 +802,6 @@ impl Race {
                         self.events.push(RaceEvent::Spot { at, sound, volume, looped: false, trigger: None });
                     }
                 }
-                tracing::trace!(
-                    "the knocked objects' flight and the wrecks' debris (0x8002e27c, 0x8007c894): not yet ported"
-                );
             }
             let demo = self.demo_views();
             let (views, count) = if demo {

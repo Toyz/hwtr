@@ -293,6 +293,84 @@ fn walls_match_the_original() {
 }
 
 #[test]
+fn computer_walls_match_the_original() {
+    use hwtr_hle::original::world::CONTACT_COUNT;
+    let Some(exe) = common::exe() else { return };
+    let t = hwtr_game::math::Tables::from_exe(&exe);
+    let (mut boxed, mut on_road, mut pushed, mut contacts, mut through) = (0, 0, 0, 0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { continue };
+        let (mut world, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+        let mut cars = cars_from(&mut m.bus.ram);
+        let mut rng = common::Rng(0xb0c5_0000_0000_0011);
+        for step in 0..80 {
+            // Wreck or finish some computer cars, turn them every way (half
+            // turns about an axis), shove them about and set them moving.
+            for (k, car) in cars.iter_mut().enumerate() {
+                let mut push = [0; 3].map(|_| (rng.word() as i32) >> (11 + rng.below(8)));
+                push[2] = (rng.word() as i32) >> (12 + rng.below(6));
+                car.body.pos = hwtr_game::math::add(car.body.pos, push);
+                car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (8 + rng.below(8)));
+                car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (16 + rng.below(6)));
+                car.body.asleep = rng.below(8) == 0;
+                car.flags &= !0x3800;
+                if car.flags & 1 == 0 {
+                    car.wrecked = rng.below(3) != 0;
+                    car.laps.finished = rng.below(3) == 0;
+                    let axis = rng.below(4) as usize;
+                    if axis < 3 {
+                        for row in car.body.rot.iter_mut() {
+                            for (j, c) in row.iter_mut().enumerate() {
+                                if j != axis {
+                                    *c = c.wrapping_neg();
+                                }
+                            }
+                        }
+                    }
+                }
+                car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
+            }
+            world.update_points(&mut cars);
+            world.track_zones(&cars);
+            world.wheels(&t, &mut cars);
+            world.ground(&t, &mut cars);
+            world.walls(&t, &mut cars);
+            for addr in [0x8004_e47c, 0x8005_15e0, 0x8005_1bc0, 0x8005_36b4, 0x8005_4964] {
+                m.call(addr, &[]).unwrap();
+            }
+            let before: Vec<_> = cars.iter().map(|c| c.body.pos).collect();
+            world.contacts.clear();
+            Ram(&mut m.bus.ram).set_i16(CONTACT_COUNT, 0);
+            world.computer_walls(&t, &mut cars);
+            m.call(0x8005_72f0, &[]).unwrap();
+            let (original, _) = hwtr_hle::original::world::collision(&Ram(&mut m.bus.ram));
+            let original_cars = cars_from(&mut m.bus.ram);
+            assert_eq!(original.contacts, world.contacts, "{name} step {step}: contacts");
+            for (k, (a, b)) in original_cars.iter().zip(&cars).enumerate() {
+                assert_eq!(a, b, "{name} step {step}: car {k}");
+            }
+            boxed += cars.iter().filter(|c| c.flags & 1 == 0 && (c.wrecked || c.laps.finished)).count();
+            on_road += world
+                .computers
+                .iter()
+                .filter(|&id| {
+                    let o = &world.objects[id];
+                    let c = &cars[o.car.unwrap() as usize];
+                    (c.wrecked || c.laps.finished) && world.scp.zones[o.point_zones[0] as usize].is_road()
+                })
+                .count();
+            pushed += original_cars.iter().zip(&before).filter(|(c, p)| c.body.pos != **p).count();
+            contacts += original.contacts.len();
+            through += original_cars.iter().filter(|c| c.flags & 0x800 != 0).count();
+            world = original;
+            cars = original_cars;
+        }
+    }
+    eprintln!("boxed {boxed}, on the road {on_road}, pushed {pushed}, contacts {contacts}, through {through}");
+    assert!(on_road > 0 && pushed > 0 && contacts > 0 && through > 0);
+}
+
+#[test]
 fn contact_impulses_match_the_original() {
     use hwtr_hle::original::world::{CONTACT_COUNT, CONTACT_SIZE, CONTACTS};
     let Some(exe) = common::exe() else { return };

@@ -283,16 +283,16 @@ impl Collision {
     }
 
     /// The part of 0x8005148c ported so far: the zones, the players'
-    /// wheels, the ground under each car, the walls, the fences, then the
+    /// wheels, the ground under each car, the walls, the computer cars out
+    /// of the race as boxes (0x800572f0), the fences, then the
     /// effects of the zones cars' lead points entered, then the wrecks the
     /// walls flagged: through a wall (a flip), or into a wrecking surface.
-    /// (The computer cars' walls, 0x800572f0, are not yet ported.)
     pub fn stages(&mut self, t: &crate::math::Tables, cars: &mut [Car], step: &mut Step) {
         self.track_zones(cars);
         self.wheels(t, cars);
         self.ground(t, cars);
         self.walls(t, cars);
-        tracing::trace!("the computer cars' walls (0x800572f0): not yet ported");
+        self.computer_walls(t, cars);
         self.fences(cars);
         for id in self.cars.iter().collect::<Vec<_>>() {
             if self.objects[id].flags & ZONE_CHANGED == 0 {

@@ -5,7 +5,7 @@ use super::object::Kind;
 use super::world::{Collision, ObjectId, Step};
 use crate::car::Car;
 use crate::car::righting::Righting;
-use crate::math::{Tables, Vec3, add, cross, div_fx, dot, fx, sub};
+use crate::math::{Tables, Vec3, add, column, cross, div_fx, dot, fx, sub};
 
 /// A point of a body pressing into a surface, moving into it: the impulse
 /// stage pushes the body back.
@@ -179,11 +179,13 @@ impl Collision {
                         .collect();
                     if road {
                         for point in points {
-                            let sides = self.road_sides(t, &zone, sub(point, origin), ball);
+                            let shape = ball.map_or(Shape::Point, Shape::Ball);
+                            let sides = self.road_sides(t, &zone, sub(point, origin), &shape);
                             for (side, (d, n)) in sides.into_iter().enumerate() {
                                 if d <= 0 {
                                     let surface = if side == 0 { 2 } else { 1 };
-                                    self.press(id, body, flags.as_deref_mut(), nearest(point, n), n, d, surface);
+                                    let through = flags.as_deref_mut().filter(|_| player);
+                                    self.press(id, body, through, nearest(point, n), n, d, surface);
                                 }
                             }
                         }
@@ -208,7 +210,8 @@ impl Collision {
                                     _ => {}
                                 }
                             }
-                            self.press(id, body, flags.as_deref_mut(), point, plane.normal(), d, plane.kind);
+                            let through = flags.as_deref_mut().filter(|_| player);
+                            self.press(id, body, through, point, plane.normal(), d, plane.kind);
                         }
                     }
                 }
@@ -236,9 +239,9 @@ impl Collision {
         (low, high)
     }
 
-    /// A ball (`ball`, its reach) has every side's distance and normal,
-    /// less its reach.
-    fn road_sides(&self, t: &Tables, zone: &super::scp::Zone, p: Vec3, ball: Option<i32>) -> [(i32, Vec3); 4] {
+    /// A ball or a box has every side's distance and normal, less its
+    /// reach toward the side.
+    fn road_sides(&self, t: &Tables, zone: &super::scp::Zone, p: Vec3, shape: &Shape) -> [(i32, Vec3); 4] {
         let (low, high) = self.road_edges(zone, p);
         // Floor (through the right edge), left wall, roof, right wall.
         let sides = [(low[1], high[1]), (low[0], low[1]), (high[0], low[0]), (high[1], high[0])];
@@ -246,25 +249,91 @@ impl Collision {
             let v = sub(toward, base);
             let w = sub(p, base);
             let measure = dot(v, w);
-            if measure > 0 && ball.is_none() {
+            if measure > 0 && matches!(shape, Shape::Point) {
                 return (measure, [0; 3]);
             }
             let len = t.length(v);
             let n = v.map(|c| div_fx(c, len));
-            (dot(n, w).wrapping_sub(ball.unwrap_or(0)), n)
+            (dot(n, w).wrapping_sub(shape.reach(n)), n)
         })
     }
 
-    /// A point of object `id` (its `body`, and a car's `flags`) `d` deep
-    /// (d <= 0) into a surface with normal `n`: a contact if it moves
-    /// inward, then the body pushed back out, unless it has gone right
-    /// through.
+    /// 0x800572f0: each computer car wrecked or past the line, and awake,
+    /// against the sides of the zone its point is in, as a box: its half
+    /// width and length and its origin's height along its axes. Each side
+    /// meets the box's corner deepest toward it, found by turning each
+    /// axis against the side's normal; the axes stay turned for the next
+    /// side, so a side square to an axis meets the corner the last one
+    /// did. A plane zone's planes (but its portals) come first for every
+    /// car, then a road zone's four sides, as in [`Collision::walls`]. A
+    /// plane of kind 3 or 4 marks the car as a player's does, and one gone
+    /// through flags it rather than stopping it.
+    pub fn computer_walls(&mut self, t: &Tables, cars: &mut [Car]) {
+        for road in [false, true] {
+            for id in self.computers.iter().collect::<Vec<_>>() {
+                let obj = &self.objects[id];
+                let Some(slot) = obj.car else { continue };
+                let car = &mut cars[slot as usize];
+                if car.body.asleep || !(car.wrecked || car.laps.finished) {
+                    continue;
+                }
+                let Some(&zone_id) = obj.point_zones.first() else { continue };
+                let zone = self.scp.zones[zone_id as usize];
+                if zone.is_road() != road {
+                    continue;
+                }
+                let reach = [obj.half[0], obj.half[1], car.origin[2]];
+                let mut axes: [Vec3; 3] = std::array::from_fn(|k| column(&car.body.rot, k).map(|c| fx(c, reach[k])));
+                let (centre, origin) = (obj.centre, zone.origin());
+                let corner = |axes: &mut [Vec3; 3], n: Vec3| {
+                    for a in axes.iter_mut() {
+                        if dot(n, *a) > 0 {
+                            *a = a.map(i32::wrapping_neg);
+                        }
+                    }
+                    axes.iter().fold(centre, |p, &a| add(p, a))
+                };
+                if road {
+                    let sides = self.road_sides(t, &zone, sub(centre, origin), &Shape::Box(axes));
+                    for (side, (d, n)) in sides.into_iter().enumerate() {
+                        if d <= 0 {
+                            let point = corner(&mut axes, n);
+                            let surface = if side == 0 { 2 } else { 1 };
+                            self.press(id, &mut car.body, Some(&mut car.flags), point, n, d, surface);
+                        }
+                    }
+                    continue;
+                }
+                for plane in self.scp.planes_of(&zone).to_vec() {
+                    if plane.is_portal() {
+                        continue;
+                    }
+                    let point = corner(&mut axes, plane.normal());
+                    let d = plane.distance(sub(point, origin));
+                    if d > 0 {
+                        continue;
+                    }
+                    match plane.kind {
+                        3 => car.flags |= HIT_KIND_3,
+                        4 => car.flags |= HIT_KIND_4,
+                        _ => {}
+                    }
+                    self.press(id, &mut car.body, Some(&mut car.flags), point, plane.normal(), d, plane.kind);
+                }
+            }
+        }
+    }
+
+    /// A point of object `id` (its `body`) `d` deep (d <= 0) into a
+    /// surface with normal `n`: a contact if it moves inward, then the body
+    /// pushed back out, unless it has gone right through: then the car's
+    /// `through` flags are marked, or without them the body stops.
     #[allow(clippy::too_many_arguments)]
     fn press(
         &mut self,
         id: ObjectId,
         body: &mut crate::body::Body,
-        flags: Option<&mut i32>,
+        through: Option<&mut i32>,
         point: Vec3,
         n: Vec3,
         d: i32,
@@ -277,13 +346,33 @@ impl Collision {
         }
         let depth = d.wrapping_neg();
         if depth > THROUGH {
-            match flags {
-                Some(f) if self.objects[id].kind == Kind::PlayerCar => *f |= THROUGH_WALL,
-                _ => body.asleep = true,
+            match through {
+                Some(f) => *f |= THROUGH_WALL,
+                None => body.asleep = true,
             }
             return;
         }
         body.pos = add(body.pos, n.map(|c| fx(c, depth)));
+    }
+}
+
+/// What meets a zone's sides: a point, a ball of some reach (a flying
+/// wheel), or a box of three half axes (a computer car out of the race).
+pub(crate) enum Shape {
+    Point,
+    Ball(i32),
+    Box([Vec3; 3]),
+}
+
+impl Shape {
+    /// How far the shape reaches toward a side of normal `n`: a box the
+    /// sum of its axes' lengths along it.
+    fn reach(&self, n: Vec3) -> i32 {
+        match self {
+            Shape::Point => 0,
+            Shape::Ball(r) => *r,
+            Shape::Box(axes) => axes.iter().fold(0i32, |s, &a| s.wrapping_add(dot(n, a).wrapping_abs())),
+        }
     }
 }
 
