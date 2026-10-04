@@ -459,7 +459,7 @@ fn wreck_matches_the_original_for_computer_cars() {
             // A computer car (the player's wreck also throws its wheels off,
             // not yet ported), moving and spinning every way.
             let at = CARS + (1 + rng.below(cars - 1)) * CAR_SIZE;
-            let flip = rng.below(2) as u32;
+            let flip = rng.below(2);
             on_car(&mut m.bus.ram, at, |car, _| {
                 assert_eq!(car.flags & 1, 0, "{name}: a computer car");
                 car.wrecked = (rng.below(8) == 0) as u8;
