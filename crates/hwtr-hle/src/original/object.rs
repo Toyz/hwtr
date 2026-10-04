@@ -49,7 +49,6 @@ impl InMemory for CollisionObject {
             centre: ram.vec3(o + CENTRE),
             rot: ram.matrix(o + ROT),
             half: ram.vec3(o + HALF),
-            half_pad: ram.i32(o + HALF + 12),
             local: (0..n).map(|k| ram.vec3(local + 16 * k)).collect(),
             points: (0..n).map(|k| ram.vec3(points + 16 * k)).collect(),
             point_zones: (0..n).map(|k| ram.i16(zones_at + 2 * k) as u16).collect(),
@@ -69,7 +68,6 @@ impl InMemory for CollisionObject {
         ram.set_vec3(o + CENTRE, self.centre);
         ram.set_matrix(o + ROT, &self.rot);
         ram.set_vec3(o + HALF, self.half);
-        ram.set_i32(o + HALF + 12, self.half_pad);
         let (local, points, zones_at) =
             (ram.i32(o + LOCAL) as u32, ram.i32(o + POINTS) as u32, ram.i32(o + POINT_ZONES) as u32);
         for (k, p) in self.local.iter().enumerate() {

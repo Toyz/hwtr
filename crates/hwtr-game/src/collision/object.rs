@@ -79,9 +79,8 @@ pub struct CollisionObject {
     /// mass), world space, and its rotation.
     pub centre: Vec3,
     pub rot: Matrix,
-    /// Half its box, an inch larger each way, and the word after it.
+    /// Half its box, an inch larger each way.
     pub half: Vec3,
-    pub half_pad: i32,
     /// Its points in the body's axes from the centre, and in the world.
     pub local: Vec<Vec3>,
     pub points: Vec<Vec3>,

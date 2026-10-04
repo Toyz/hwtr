@@ -12,8 +12,8 @@ impl Car {
         let gap = clock.wrapping_sub(self.contact_clock);
         self.contact_ms = if gap <= 100 { self.contact_ms.wrapping_add(gap) } else { 0 };
         self.contact_clock = clock;
-        if self.airborne != 0 && self.contact_ms > 500 {
-            self.airborne = 0;
+        if self.airborne && self.contact_ms > 500 {
+            self.airborne = false;
         }
     }
 

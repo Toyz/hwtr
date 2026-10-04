@@ -57,7 +57,8 @@ pub struct RaceSetup {
     /// "Desert", "Glacial", "Volcano", "Haunted", and which of its three.
     pub track: String,
     pub track_number: u8,
-    pub unknown_19: [u8; 3],
+    /// Laps to run.
+    pub laps: u8,
     /// Bit 2: cars at a third of their size; bit 5: wheels at half.
     pub options: u32,
     pub cars: Vec<Entrant>,

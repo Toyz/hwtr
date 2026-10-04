@@ -29,7 +29,7 @@ impl Collision {
             let obj = &self.objects[id];
             let Some(slot) = obj.car else { continue };
             let car = &mut cars[slot as usize];
-            if car.body.asleep != 0 || car.wrecked != 0 {
+            if car.body.asleep || car.wrecked {
                 continue;
             }
             let up = column(&car.body.rot, 2);
@@ -38,7 +38,7 @@ impl Collision {
                 .wheels
                 .iter()
                 .map(|w| Touch {
-                    depth: car.extension[w.is_rear() as usize].wrapping_neg(),
+                    depth: car.extension[w.rear as usize].wrapping_neg(),
                     normal: [0; 3],
                     surface: 0,
                 })
@@ -103,13 +103,13 @@ impl Collision {
             // The springs.
             let preload = car.spring_preload;
             for (k, wheel) in car.wheels.iter_mut().enumerate() {
-                let rear = wheel.is_rear();
+                let rear = wheel.rear;
                 let extension = car.extension[rear as usize];
                 let mut depth = touch[k].depth;
                 if extension.wrapping_neg() < depth {
                     depth = depth.min(car.handling.axle(rear).travel);
                     let spring = preload.wrapping_add(fx(depth, car.handling.axle(rear).stiffness));
-                    wheel.ground = 1;
+                    wheel.on_ground = true;
                     wheel.surface = touch[k].surface;
                     wheel.normal = touch[k].normal;
                     let friction = t.surface_friction.get(touch[k].surface as usize).copied().unwrap_or(0);
@@ -118,7 +118,7 @@ impl Collision {
                     let down = fx(wheel.diameter, -0x800);
                     wheel.contact = add(obj.points[k], touch[k].normal.map(|c| fx(c, down)));
                 } else {
-                    wheel.ground = 0;
+                    wheel.on_ground = false;
                 }
                 wheel.compression = depth;
             }

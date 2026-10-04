@@ -32,11 +32,6 @@ impl Engine {
     }
 }
 
-/// `flag` when the handling's byte `on` is set.
-fn set(on: u8, flag: u8) -> u8 {
-    if on != 0 { flag } else { 0 }
-}
-
 /// The skill a car drives with: its handling's, scaled by the difficulty
 /// into the tuning's range for its kind of driver, at most 4.
 fn skill(base: i32, difficulty: u8, [low, high]: [u8; 2]) -> i32 {
@@ -60,9 +55,7 @@ impl Car {
         self.extension =
             [div_fx(self.spring_preload, h.front.stiffness), div_fx(self.spring_preload, h.rear.stiffness)];
         self.origin = h.origin;
-        self.origin_pad = h.origin_pad;
         [self.width, self.length, self.height] = h.size;
-        self.size_pad = h.size_pad;
         let third = div_fx(0x1000, 0x3000);
         if options & THIRD_SIZE != 0 {
             self.origin = self.origin.map(|c| fx(c, third));
@@ -74,27 +67,25 @@ impl Car {
         let handling = self.handling.clone();
         self.wheels = (0..count as usize)
             .map(|i| {
-                let (mut mount, mount_pad) = handling.mounts[i];
-                let mut unknown_10 = handling.wheel_10[i];
+                let mut mount = handling.mounts[i];
                 let mut diameter = handling.diameters[i];
                 if options & THIRD_SIZE != 0 {
                     mount = mount.map(|c| fx(c, third));
-                    unknown_10 = fx(unknown_10, third);
                     diameter = fx(diameter, third);
                 }
                 if options & HALF_WHEELS != 0 {
-                    unknown_10 = fx(unknown_10, 0x2000);
                     diameter = fx(diameter, 0x2000);
                 }
-                let flags = if i < 2 {
-                    self.front_wheels += 1;
-                    set(handling.front_driven, Wheel::DRIVEN) | set(handling.front_steers, Wheel::STEERS)
-                } else {
+                let rear = i >= 2;
+                let (driven, steers) = if rear {
                     self.rear_wheels += 1;
-                    Wheel::REAR | set(handling.rear_driven, Wheel::DRIVEN) | set(handling.rear_steers, Wheel::STEERS)
+                    (handling.rear_driven, handling.rear_steers)
+                } else {
+                    self.front_wheels += 1;
+                    (handling.front_driven, handling.front_steers)
                 };
-                let wheel = Wheel { mount, mount_pad, unknown_10, diameter, flags, ..Wheel::default() };
-                let ride = handling.axle(wheel.is_rear()).ride_height;
+                let wheel = Wheel { mount, diameter, rear, steers, driven, ..Wheel::default() };
+                let ride = handling.axle(wheel.rear).ride_height;
                 mount[2] = mount[2].wrapping_sub(ride);
                 Wheel { mount, ..wheel }
             })
@@ -138,7 +129,7 @@ impl Car {
         car.state = if player { 2 } else { 1 };
         let range = if player { tuning.player_skill } else { tuning.computer_skill };
         car.handling.skill = skill(car.handling.skill, setup.difficulty, range);
-        car.unknown_7cc = -1;
+        car.respawn_zone = None;
         car
     }
 }

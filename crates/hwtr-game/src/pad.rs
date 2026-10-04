@@ -218,9 +218,9 @@ impl PadReader {
             brake: l(3),
             stick_across: [l(4), l(5)],
             stick_along: [l(6), l(7)],
-            handbrake: l(8),
-            action_9: l(9),
-            action_10: l(10),
+            handbrake: l(8) != 0,
+            reset: l(9) != 0,
+            turbo: l(10) != 0,
         }
     }
 }

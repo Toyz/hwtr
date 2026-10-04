@@ -62,7 +62,7 @@ impl Collision {
             if first {
                 tracing::trace!("contact sound for car {slot}: not yet ported");
             }
-            let was_wrecked = car.wrecked != 0;
+            let was_wrecked = car.wrecked;
             if obj.kind == Kind::PlayerCar && !was_wrecked {
                 if first {
                     car.contact_timers(step.clock);
@@ -70,7 +70,7 @@ impl Collision {
                 if car.hard_impact(c.normal) {
                     car.wreck(false, step.rand);
                 }
-                if car.ground.floor.found != 0
+                if car.ground.floor.found
                     && dot(c.normal, car.ground.floor.normal) > 3547
                     && car.right_itself(step.tuning, step.rand) == Righting::Wreck
                 {
@@ -98,7 +98,7 @@ impl Collision {
                 let obj = &self.objects[id];
                 let Some(slot) = obj.car else { continue };
                 let car = &mut cars[slot as usize];
-                if car.body.asleep != 0 {
+                if car.body.asleep {
                     continue;
                 }
                 let player = obj.kind == Kind::PlayerCar;
@@ -193,7 +193,7 @@ impl Collision {
             if self.objects[id].kind == Kind::PlayerCar {
                 car.flags |= THROUGH_WALL;
             } else {
-                body.asleep = 1;
+                body.asleep = true;
             }
             return;
         }

@@ -59,6 +59,7 @@ fn main() {
             let ram = Ram(&mut copy);
             let setup = hwtr_hle::original::race::setup(&ram, setup_at);
             let tuning = hwtr_hle::original::car::tuning(&ram);
+            let tables = hwtr_hle::original::tables(ram.0);
             let scp = ram.i32(SCP) as u32;
             let track = setup.track.to_uppercase();
             for (slot, entrant) in setup.cars.iter().enumerate() {
@@ -72,14 +73,13 @@ fn main() {
                 let g = scp + 24 + 16 * entrant.grid as u32;
                 let q = scp + 120 + 16 * entrant.grid as u32;
                 let grid = (ram.vec3(g), [ram.i32(q), ram.i32(q + 4), ram.i32(q + 8), ram.i32(q + 12)]);
+                // As the port's race builds it: loaded, then given its
+                // collision object (whose zone sets its flags and lap
+                // distance).
                 let mut port = Car::load(slot as u8, entrant, &setup, (&parts.0, &parts.1), grid, &tuning);
+                let scp = hwtr_game::collision::Scp::parse(&hwtr_hle::original::world::scp_bytes(&ram).1).expect("SCP");
+                hwtr_game::collision::Collision::new(scp).add_car(&tables, &mut port);
                 let original = Car::read(&ram, CARS + slot as u32 * CAR_SIZE);
-                // Not the port's to match yet: flag 0x20, which the zone code
-                // sets as the collision object is made (not yet ported), and
-                // the centre's padding word, which the original fills from
-                // uninitialised stack.
-                port.flags |= original.flags & 0x20;
-                port.body.centre_pad = original.body.centre_pad;
                 let line = if port == original {
                     format!("car {slot} ({}): the same", entrant.name)
                 } else {

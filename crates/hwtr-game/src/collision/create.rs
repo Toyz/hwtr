@@ -36,7 +36,6 @@ impl Collision {
             centre: [0; 3],
             rot: [[0; 3]; 3],
             half: margin,
-            half_pad: car.size_pad,
             points: vec![[0; 3]; local.len()],
             local,
             point_zones,
@@ -83,7 +82,7 @@ impl Collision {
     /// the lap trigger. The laps, power-ups and special zones are not yet
     /// ported.
     pub fn zone_effects(&self, car: &mut Car, zone: u16, initial: bool) {
-        if car.wrecked != 0 {
+        if car.wrecked {
             return;
         }
         let z = self.scp.zones[zone as usize];

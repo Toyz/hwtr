@@ -94,7 +94,7 @@ impl Race {
             flags: 0,
             track: letters.to_string(),
             track_number: number.parse().unwrap_or(1),
-            unknown_19: [0; 3],
+            laps: 3,
             options: 0,
             cars: vec![Entrant { name: name.into(), driver: Driver::PlayerOne, car_id: 0, player: 0, grid: 0 }],
             difficulty: 128,

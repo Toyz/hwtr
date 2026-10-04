@@ -35,12 +35,13 @@ pub struct Axle {
 /// CWH block A, the car's handling.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Handling {
-    /// Non-zero: the front wheels are driven, steer; the rear likewise.
-    pub front_driven: u8,
-    pub front_steers: u8,
-    pub rear_driven: u8,
-    pub rear_steers: u8,
-    pub unknown_04: i32,
+    /// Which wheels are driven, and which steer.
+    pub front_driven: bool,
+    pub front_steers: bool,
+    pub rear_driven: bool,
+    pub rear_steers: bool,
+    /// The front wheels' full steering angle, radians.
+    pub steer_lock: i32,
     pub mass: i32,
     /// The centre of gravity forward and up, as fractions of half the length
     /// and half the height.
@@ -53,25 +54,19 @@ pub struct Handling {
     pub front: Axle,
     pub rear: Axle,
     pub air_power: AirPower,
-    pub unknown_6c: [i32; 2],
     /// Scaled by the race's difficulty for the cars it drives (between two
     /// tuning bytes, held to 4).
     pub skill: i32,
-    /// Bit 0: the dragging surface does not drag.
-    pub unknown_78: i32,
+    /// The dragging surface does not drag it.
+    pub all_terrain: bool,
     pub wheel_count: u8,
-    pub unknown_7d: [u8; 3],
-    /// The point wheel mounts are measured from, and a word after it.
+    /// The point wheel mounts are measured from.
     pub origin: Vec3,
-    pub origin_pad: i32,
-    /// Width, length, height, and a word after them.
+    /// Width, length, height.
     pub size: Vec3,
-    pub size_pad: i32,
-    /// Each wheel's mount point and the word after it (two halfwords).
-    pub mounts: [(Vec3, i32); 6],
-    pub wheel_10: [i32; 6],
+    /// Each wheel's mount point, and its diameter.
+    pub mounts: [Vec3; 6],
     pub diameters: [i32; 6],
-    pub unknown_130: i32,
 }
 
 struct Reader<'a> {
@@ -91,29 +86,19 @@ impl Reader<'_> {
     fn vec3(&mut self) -> Vec3 {
         [self.i32(), self.i32(), self.i32()]
     }
-}
-
-#[derive(Default)]
-struct Writer(Vec<u8>);
-
-impl Writer {
-    fn u8(&mut self, v: u8) {
-        self.0.push(v);
-    }
-    fn i32(&mut self, v: i32) {
-        self.0.extend(v.to_le_bytes());
-    }
-    fn vec3(&mut self, v: Vec3) {
-        v.into_iter().for_each(|x| self.i32(x));
+    /// Passes over bytes the game does not use.
+    fn skip(&mut self, n: usize) {
+        self.at += n;
     }
 }
+
 
 impl Handling {
-    /// Block A, as it lies in the CWH (after the magic) or the car record.
+    /// Block A, as it lies in the CWH (after the magic).
     pub fn from_bytes(b: &[u8; BLOCK_A]) -> Handling {
         let mut r = Reader { b, at: 0 };
         let (front_driven, front_steers, rear_driven, rear_steers) = (r.u8(), r.u8(), r.u8(), r.u8());
-        let unknown_04 = r.i32();
+        let steer_lock = r.i32();
         let (mass, cg_along, cg_up, brake_grip, brake_bias, drag) =
             (r.i32(), r.i32(), r.i32(), r.i32(), r.i32(), r.i32());
         let downforce = [r.i32(), r.i32()];
@@ -130,11 +115,11 @@ impl Handling {
         };
         let (front, rear) = (axle(0), axle(1));
         Handling {
-            front_driven,
-            front_steers,
-            rear_driven,
-            rear_steers,
-            unknown_04,
+            front_driven: front_driven != 0,
+            front_steers: front_steers != 0,
+            rear_driven: rear_driven != 0,
+            rear_steers: rear_steers != 0,
+            steer_lock,
             mass,
             cg_along,
             cg_up,
@@ -144,60 +129,35 @@ impl Handling {
             front,
             rear,
             air_power: AirPower { pitch: r.i32(), roll: r.i32(), yaw: r.i32() },
-            unknown_6c: [r.i32(), r.i32()],
-            skill: r.i32(),
-            unknown_78: r.i32(),
+            skill: {
+                r.skip(8);
+                r.i32()
+            },
+            all_terrain: r.i32() & 1 != 0,
             wheel_count: r.u8(),
-            unknown_7d: [r.u8(), r.u8(), r.u8()],
-            origin: r.vec3(),
-            origin_pad: r.i32(),
-            size: r.vec3(),
-            size_pad: r.i32(),
-            mounts: std::array::from_fn(|_| (r.vec3(), r.i32())),
-            wheel_10: std::array::from_fn(|_| r.i32()),
-            diameters: std::array::from_fn(|_| r.i32()),
-            unknown_130: r.i32(),
+            origin: {
+                r.skip(3);
+                r.vec3()
+            },
+            size: {
+                r.skip(4);
+                r.vec3()
+            },
+            mounts: {
+                r.skip(4);
+                std::array::from_fn(|_| {
+                    let m = r.vec3();
+                    r.skip(4);
+                    m
+                })
+            },
+            diameters: {
+                r.skip(24);
+                std::array::from_fn(|_| r.i32())
+            },
         }
     }
 
-    pub fn to_bytes(&self) -> [u8; BLOCK_A] {
-        let mut w = Writer::default();
-        for b in [self.front_driven, self.front_steers, self.rear_driven, self.rear_steers] {
-            w.u8(b);
-        }
-        w.i32(self.unknown_04);
-        for v in [self.mass, self.cg_along, self.cg_up, self.brake_grip, self.brake_bias, self.drag] {
-            w.i32(v);
-        }
-        for v in [self.front.downforce, self.rear.downforce, self.front.downforce_scale, self.rear.downforce_scale] {
-            w.i32(v);
-        }
-        for a in [self.front, self.rear] {
-            for v in [a.stiffness, a.grip, a.travel, a.damp_in, a.damp_out, a.ride_height] {
-                w.i32(v);
-            }
-        }
-        for v in [self.air_power.pitch, self.air_power.roll, self.air_power.yaw] {
-            w.i32(v);
-        }
-        self.unknown_6c.into_iter().for_each(|v| w.i32(v));
-        w.i32(self.skill);
-        w.i32(self.unknown_78);
-        w.u8(self.wheel_count);
-        self.unknown_7d.into_iter().for_each(|v| w.u8(v));
-        w.vec3(self.origin);
-        w.i32(self.origin_pad);
-        w.vec3(self.size);
-        w.i32(self.size_pad);
-        for (m, pad) in self.mounts {
-            w.vec3(m);
-            w.i32(pad);
-        }
-        self.wheel_10.into_iter().for_each(|v| w.i32(v));
-        self.diameters.into_iter().for_each(|v| w.i32(v));
-        w.i32(self.unknown_130);
-        w.0.try_into().expect("block A is 308 bytes")
-    }
 
     pub fn axle(&self, rear: bool) -> &Axle {
         if rear { &self.rear } else { &self.front }
@@ -248,9 +208,23 @@ pub fn parse_cwh(cwh: &[u8]) -> Option<(Handling, EngineSpec)> {
 mod tests {
     use super::*;
 
+    /// Fields where the CWH keeps them, past the words the game skips.
     #[test]
-    fn block_a_round_trips() {
-        let bytes: [u8; BLOCK_A] = std::array::from_fn(|i| (i * 7 + 3) as u8);
-        assert_eq!(Handling::from_bytes(&bytes).to_bytes(), bytes);
+    fn block_a_fields_sit_where_the_file_keeps_them() {
+        let mut bytes = [0u8; BLOCK_A];
+        let mut put = |at: usize, v: i32| bytes[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        put(0x04, 0x123);
+        put(0x74, 0x2000);
+        put(0x78, 0x3);
+        put(0x80, 11);
+        put(0x90, 22);
+        put(0xa0 + 16 * 5 + 8, 33);
+        put(0x118 + 4 * 5, 44);
+        bytes[0x02] = 1;
+        bytes[0x7c] = 4;
+        let h = Handling::from_bytes(&bytes);
+        assert_eq!((h.steer_lock, h.skill, h.all_terrain, h.wheel_count), (0x123, 0x2000, true, 4));
+        assert!(!h.front_driven && h.rear_driven);
+        assert_eq!((h.origin[0], h.size[0], h.mounts[5][2], h.diameters[5]), (11, 22, 33, 44));
     }
 }

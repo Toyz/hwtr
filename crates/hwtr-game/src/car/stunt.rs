@@ -267,11 +267,11 @@ impl Car {
     /// award returned, with its name, for the HUD) and sounds.
     pub fn watch_stunt(&mut self, dt: i32, scoring: bool, t: &StuntTable, rand: &mut Rand) -> Option<Award> {
         let ms = fx(dt, 1000 << 12) >> 12;
-        if self.airborne == 0 {
+        if !self.airborne {
             if self.grounded != 0 {
                 return None;
             }
-            self.airborne = 1;
+            self.airborne = true;
             self.air_ms = 0;
             self.stunt_spin = self.own_spin();
             self.stunt_turn = [0; 3];
@@ -281,7 +281,7 @@ impl Car {
         let mut landed = None;
         if self.grounded_level == 0 {
             if self.grounded != 0 {
-                self.airborne = 0;
+                self.airborne = false;
             }
             self.air_ms = self.air_ms.wrapping_add(ms as u32);
             let spin = self.own_spin();
@@ -294,7 +294,7 @@ impl Car {
             }
             self.stunt_spin = spin;
         } else {
-            self.airborne = 0;
+            self.airborne = false;
             self.air_ms = self.air_ms.wrapping_add(ms as u32);
             let degrees = div_fx(180 << 12, 0x3244);
             let deg = |v: i32| fx(v, degrees) >> 12;
@@ -335,9 +335,9 @@ impl Car {
             self.turbos = 10;
             added = turbos.wrapping_add(10).wrapping_sub(total);
         }
-        if self.turbos == 10 && self.turbo_hint == 0 {
+        if self.turbos == 10 && !self.turbo_hint {
             tracing::trace!("the ten-turbos line: not yet ported");
-            self.turbo_hint = 1;
+            self.turbo_hint = true;
         }
         added
     }

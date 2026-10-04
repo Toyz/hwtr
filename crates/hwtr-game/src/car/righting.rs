@@ -25,8 +25,8 @@ impl Car {
     /// to be turned back (and which way) or to be wrecked when the time is
     /// up.
     pub fn right_itself(&mut self, tuning: &Tuning, rand: &mut Rand) -> Righting {
-        self.air_armed = 0;
-        self.air_lock.active = 0;
+        self.air_armed = Default::default();
+        self.air_lock.active = false;
         let n = self.ground.floor.normal;
         let rot = self.body.rot;
         let axis = [0, 1, 2].map(|j| column(&rot, j));
@@ -61,13 +61,13 @@ impl Car {
             return Righting::Done;
         }
         if self.righting[2] == 0 {
-            self.rights_itself = ((tuning.stay_roof_percent as u32) < rand.below(100)) as u8;
-            if self.rights_itself != 0 {
-                self.roll_way = rand.below(2) as u8;
+            self.rights_itself = (tuning.stay_roof_percent as u32) < rand.below(100);
+            if self.rights_itself {
+                self.roll_way = rand.below(2) != 0;
             }
         }
         self.righting[2] = self.righting[2].wrapping_add(25);
-        if self.rights_itself == 0 {
+        if !self.rights_itself {
             if (tuning.wreck_roof_tens as u32) * 10 < self.righting[2] {
                 return Righting::Wreck;
             }
@@ -75,7 +75,7 @@ impl Car {
         }
         if (tuning.right_roof_ms as u32) < self.righting[2] {
             let size = square(self.width, self.height);
-            let size = if self.roll_way != 0 { size.wrapping_neg() } else { size };
+            let size = if self.roll_way { size.wrapping_neg() } else { size };
             self.turn(axis[2], axis[0].map(|c| fx(c, size)));
         }
         Righting::Done

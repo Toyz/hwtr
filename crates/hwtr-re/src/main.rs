@@ -72,6 +72,12 @@ impl Args {
         self.items.remove(at);
         (at < self.items.len()).then(|| self.items.remove(at))
     }
+
+    /// Removes the flag `name`, if given.
+    fn take_flag(&mut self, name: &str) -> bool {
+        let at = self.items.iter().position(|a| a == name);
+        at.map(|at| self.items.remove(at)).is_some()
+    }
 }
 
 fn parse_num(text: &str) -> Result<u32> {
@@ -833,10 +839,11 @@ fn callers(args: &mut Args, cue: &Option<String>) -> Result<()> {
     Ok(())
 }
 
-/// C-like pseudo-code for a function, or with `--all` a check that every
-/// function decompiles.
+/// C-like pseudo-code for a function; with `--all` a check that every
+/// function decompiles, and with `--all --dump` every function's text.
 fn pseudo(args: &mut Args, cue: &Option<String>) -> Result<()> {
-    let target = args.items.get(1).cloned().ok_or("pseudo FILE ADDR|NAME|--all")?;
+    let dump = args.take_flag("--dump");
+    let target = args.items.get(1).cloned().ok_or("pseudo FILE ADDR|NAME|--all [--dump]")?;
     let p = Program::load(args, cue)?;
     let names = |a: u32| -> Option<String> {
         if let Some(n) = p.names.get(&a) {
@@ -850,7 +857,12 @@ fn pseudo(args: &mut Args, cue: &Option<String>) -> Result<()> {
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 hwtr_psx::decomp::decompile(&p.a, f, &names)
             })) {
-                Ok(Some(t)) if !t.contains('\0') => ok += 1,
+                Ok(Some(t)) if !t.contains('\0') => {
+                    ok += 1;
+                    if dump {
+                        print!("{t}");
+                    }
+                }
                 Ok(_) => {
                     bad += 1;
                     println!("{f:08x}: unresolved mark in output");

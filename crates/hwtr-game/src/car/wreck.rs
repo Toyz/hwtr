@@ -18,10 +18,10 @@ impl Car {
     /// hundred draws after the throw), and the sounds, the HUD and the
     /// camera.
     pub fn wreck(&mut self, flip: bool, rand: &mut Rand) {
-        if self.wrecked != 0 {
+        if self.wrecked {
             return;
         }
-        self.wrecked = 1;
+        self.wrecked = true;
         let body = &mut self.body;
         if flip {
             body.vel = [0; 3];
@@ -47,7 +47,7 @@ impl Car {
         self.flags_8 &= !2;
         if self.flags & 1 != 0 {
             if rand.below(2) != 0 {
-                self.wreck_view = 1;
+                self.wreck_view = true;
             }
             tracing::trace!("car {}: the wreck's sound, rumble and HUD, not yet ported", self.slot);
         }

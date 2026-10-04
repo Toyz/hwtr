@@ -67,7 +67,7 @@ fn check_pass(addr: u32, pass: impl Fn(&mut Collision, &mut Vec<Car>)) {
                 let push = [0; 3].map(|_| (rng.word() as i32) >> (12 + rng.below(8)));
                 car.body.pos = hwtr_game::math::add(car.body.pos, push);
                 if step % 3 == 0 {
-                    car.body.asleep = 0;
+                    car.body.asleep = false;
                 }
                 car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
             }
@@ -113,7 +113,7 @@ fn points_then_zones_match_the_original() {
             for (k, car) in cars.iter_mut().enumerate() {
                 let push = [0; 3].map(|_| (rng.word() as i32) >> (11 + rng.below(6)));
                 car.body.pos = hwtr_game::math::add(car.body.pos, push);
-                car.body.asleep = 0;
+                car.body.asleep = false;
                 car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
             }
             let before: Vec<Vec<u16>> = world.objects.iter().map(|o| o.point_zones.clone()).collect();
@@ -151,7 +151,7 @@ fn wheels_match_the_original() {
                 let mut push = [0; 3].map(|_| (rng.word() as i32) >> (14 + rng.below(6)));
                 push[2] = (rng.word() as i32) >> (13 + rng.below(6));
                 car.body.pos = hwtr_game::math::add(car.body.pos, push);
-                car.body.asleep = 0;
+                car.body.asleep = false;
                 car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
             }
             world.update_points(&mut cars);
@@ -161,7 +161,7 @@ fn wheels_match_the_original() {
             world.wheels(&t, &mut cars);
             m.call(0x8005_1bc0, &[]).unwrap();
             let original = cars_from(&mut m.bus.ram);
-            grounded += original.iter().flat_map(|c| &c.wheels).filter(|w| w.on_ground()).count();
+            grounded += original.iter().flat_map(|c| &c.wheels).filter(|w| w.on_ground).count();
             for (k, (a, b)) in original.iter().zip(&cars).enumerate() {
                 for (i, (wa, wb)) in a.wheels.iter().zip(&b.wheels).enumerate() {
                     assert_eq!(wa, wb, "{name} step {step}: car {k} wheel {i}");
@@ -202,7 +202,7 @@ fn ground_matches_the_original() {
                 let mut push = [0; 3].map(|_| (rng.word() as i32) >> (10 + rng.below(8)));
                 push[2] = (rng.word() as i32) >> (13 + rng.below(6));
                 car.body.pos = hwtr_game::math::add(car.body.pos, push);
-                car.body.asleep = 0;
+                car.body.asleep = false;
                 // Now and then the car's zone holds gravity.
                 if rng.below(4) == 0 {
                     car.flags ^= 0x400;
@@ -227,7 +227,7 @@ fn ground_matches_the_original() {
             for (k, (a, b)) in original.iter().zip(&cars).enumerate() {
                 assert_eq!(a.ground, b.ground, "{name} step {step}: car {k} ground");
                 assert_eq!(a, b, "{name} step {step}: car {k}");
-                if a.ground.floor.found != 0 {
+                if a.ground.floor.found {
                     if a.ground.origin == [0; 3] { from_wheels += 1 } else { from_zones += 1 }
                 }
             }
@@ -259,7 +259,7 @@ fn walls_match_the_original() {
                 car.body.pos = hwtr_game::math::add(car.body.pos, push);
                 car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (8 + rng.below(8)));
                 car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (16 + rng.below(6)));
-                car.body.asleep = 0;
+                car.body.asleep = false;
                 car.flags &= !0x3800;
                 car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
             }
@@ -283,7 +283,7 @@ fn walls_match_the_original() {
             }
             pushed += original_cars.iter().zip(&before).filter(|(c, p)| c.body.pos != **p).count();
             contacts += original.contacts.len();
-            through += original_cars.iter().filter(|c| c.flags & 0x800 != 0 || c.body.asleep != 0).count();
+            through += original_cars.iter().filter(|c| c.flags & 0x800 != 0 || c.body.asleep).count();
             world = original;
             cars = original_cars;
         }
@@ -311,7 +311,7 @@ fn contact_impulses_match_the_original() {
                 car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (8 + rng.below(8)));
                 car.body.momentum = car.body.vel.map(|c| c.wrapping_mul(8));
                 car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (16 + rng.below(6)));
-                car.body.asleep = 0;
+                car.body.asleep = false;
                 car.flags &= !0x3800;
                 car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
             }

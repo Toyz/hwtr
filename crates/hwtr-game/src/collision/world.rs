@@ -65,7 +65,7 @@ impl Collision {
             let Some(slot) = obj.car else { continue };
             let car = &mut cars[slot as usize];
             let body = &mut car.body;
-            if body.asleep != 0 {
+            if body.asleep {
                 continue;
             }
             obj.centre = add(body.pos, body.centre);
@@ -87,7 +87,7 @@ impl Collision {
             body.sleep_count = body.sleep_count.wrapping_add(1);
             let limit = if obj.kind == Kind::PlayerCar { 16 } else { 40 };
             if (body.sleep_count as u32) >= limit {
-                body.asleep = 1;
+                body.asleep = true;
             }
         }
     }
@@ -103,7 +103,7 @@ impl Collision {
         let order: Vec<ObjectId> = self.moving.iter().collect();
         for id in order {
             let obj = &self.objects[id];
-            if obj.car.is_some_and(|slot| cars[slot as usize].body.asleep != 0) {
+            if obj.car.is_some_and(|slot| cars[slot as usize].body.asleep) {
                 continue;
             }
             let old = obj.point_zones.clone();

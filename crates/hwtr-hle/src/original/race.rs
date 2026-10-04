@@ -32,7 +32,7 @@ pub fn setup(ram: &Ram, at: u32) -> RaceSetup {
             flags: ram.i32(at) as u32,
             track: name(ram, at + 4, 19),
             track_number: ram.u8(at + 0x17),
-            unknown_19: [ram.u8(at + 0x19), ram.u8(at + 0x1a), ram.u8(at + 0x1b)],
+            laps: ram.u8(at + 0x19),
             options: ram.i32(at + 0x1c) as u32,
             cars,
             difficulty: ram.u8(at + 0x72),

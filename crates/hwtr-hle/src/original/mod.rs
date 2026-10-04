@@ -38,6 +38,15 @@ impl Ram<'_> {
         self.0[at(a)]
     }
 
+    /// A byte the game uses as a flag.
+    pub fn flag(&self, a: u32) -> bool {
+        self.u8(a) != 0
+    }
+
+    pub fn set_flag(&mut self, a: u32, v: bool) {
+        self.set_u8(a, v as u8);
+    }
+
     pub fn i16(&self, a: u32) -> i16 {
         i16::from_le_bytes([self.0[at(a)], self.0[at(a + 1)]])
     }

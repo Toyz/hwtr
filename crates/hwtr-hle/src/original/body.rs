@@ -37,7 +37,6 @@ impl InMemory for Body {
             gravity: ram.i32(b + GRAVITY),
             gravity_dir: ram.vec3(b + GRAVITY_DIR),
             centre: ram.vec3(b + CENTRE),
-            centre_pad: ram.i32(b + CENTRE + 12),
             pos: ram.vec3(b + POS),
             momentum: ram.vec3(b + MOMENTUM),
             vel: ram.vec3(b + VEL),
@@ -49,7 +48,7 @@ impl InMemory for Body {
             spin_rate: ram.i32(b + SPIN_RATE),
             force: ram.vec3(b + FORCE),
             torque: wide3(b + TORQUE),
-            asleep: ram.u8(b + ASLEEP),
+            asleep: ram.flag(b + ASLEEP),
             sleep_count: ram.i32(b + SLEEP_COUNT),
         }
     }
@@ -62,7 +61,6 @@ impl InMemory for Body {
         ram.set_i32(b + GRAVITY, self.gravity);
         ram.set_vec3(b + GRAVITY_DIR, self.gravity_dir);
         ram.set_vec3(b + CENTRE, self.centre);
-        ram.set_i32(b + CENTRE + 12, self.centre_pad);
         ram.set_vec3(b + POS, self.pos);
         ram.set_vec3(b + MOMENTUM, self.momentum);
         ram.set_vec3(b + VEL, self.vel);
@@ -76,7 +74,7 @@ impl InMemory for Body {
         ram.set_vec3(b + SPIN, self.spin);
         ram.set_i32(b + SPIN_RATE, self.spin_rate);
         ram.set_vec3(b + FORCE, self.force);
-        ram.set_u8(b + ASLEEP, self.asleep);
+        ram.set_flag(b + ASLEEP, self.asleep);
         ram.set_i32(b + SLEEP_COUNT, self.sleep_count);
     }
 }

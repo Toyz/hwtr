@@ -3,8 +3,9 @@
 use super::{Car, Tuning};
 use crate::math::{div, div_fx, fx};
 
-/// The race's actions as the controls read them, each 0 to 255 (a button
-/// held is 255; an analog stick or trigger anything between).
+/// The race's actions as the controls read them: the steering, pedals and
+/// stick 0 to 255 (a button held is 255; an analog stick anything
+/// between), the rest held or not.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Controls {
     /// Actions 0 and 1 (the d-pad's Left and Right in the original).
@@ -17,10 +18,10 @@ pub struct Controls {
     /// first action less the second (which way each is, is not yet known).
     pub stick_across: [u8; 2],
     pub stick_along: [u8; 2],
-    pub handbrake: u8,
-    /// Actions 9 and 10, meanings not yet known.
-    pub action_9: u8,
-    pub action_10: u8,
+    /// Actions 8 (L2), 9 (R1) and 10 (R2).
+    pub handbrake: bool,
+    pub reset: bool,
+    pub turbo: bool,
 }
 
 impl Car {
@@ -28,21 +29,21 @@ impl Car {
     /// the two steering actions times the car's steering angle, reduced
     /// above the tuning's speed: from its first percentage there toward its
     /// second at top speed. Pedals and the stick are the actions over 255.
-    /// A car driving itself takes no controls (it steers full right, the
-    /// handbrake on, as the original leaves it).
+    /// A car whose race is over takes no controls (it steers full right,
+    /// the handbrake on, as the original leaves it).
     pub fn apply_controls(&mut self, c: &Controls, tuning: &Tuning) {
-        if self.unknown_5e3 != 0 {
+        if self.finished {
             self.steer = 0x1000;
             self.accel = 0;
             self.brake = 0;
-            self.handbrake = 1;
-            self.unknown_25 = 0;
-            self.unknown_27 = 0;
+            self.handbrake = true;
+            self.reset_held = false;
+            self.turbo_held = false;
             return;
         }
         let over = |a: u8, b: u8| div(((a as i32) - (b as i32)) << 12, 255).0;
         // Positive steers right.
-        let mut steer = fx(over(c.steer_right, c.steer_left), self.handling.unknown_04);
+        let mut steer = fx(over(c.steer_right, c.steer_left), self.handling.steer_lock);
         let mph = div_fx(176 << 12, 10 << 12);
         let threshold = fx((tuning.steer_mph as i32) << 12, mph);
         let speed = self.body.speed;
@@ -58,8 +59,7 @@ impl Car {
         self.brake = over(c.brake, 0);
         self.stick = [over(c.stick_across[0], c.stick_across[1]), over(c.stick_along[0], c.stick_along[1])];
         self.handbrake = c.handbrake;
-        self.unknown_25 = c.action_9;
-        self.unknown_26 = c.action_10;
-        self.unknown_27 = c.action_10;
+        self.reset_held = c.reset;
+        self.turbo_held = c.turbo;
     }
 }

@@ -7,7 +7,7 @@
 //! port to the original byte for byte.
 
 use hwtr_game::car::handling::{BLOCK_A, Handling};
-use hwtr_game::car::{AxisLock, Car, Engine, Ground, GroundPlane, Tuning, Wheel};
+use hwtr_game::car::{Armed, AxisLock, Car, Engine, Ground, GroundPlane, Tuning, Wheel};
 use super::body;
 use hwtr_game::body::Body;
 use super::{InMemory, Ram};
@@ -73,14 +73,13 @@ pub const LENGTH: u32 = 0x784;
 pub const HEIGHT: u32 = 0x788;
 pub const SPRING_PRELOAD: u32 = 0x790;
 pub const EXTENSION: u32 = 0x794;
-pub const UNKNOWN_865: u32 = 0x865;
+pub const ALL_TERRAIN: u32 = 0x865;
 pub const STATE: u32 = 0x891;
 pub const WRECKED: u32 = 0x62c;
 pub const WRECK_VIEW: u32 = 0x62d;
-pub const UNKNOWN_25: u32 = 0x25;
-pub const UNKNOWN_26: u32 = 0x26;
-pub const UNKNOWN_27: u32 = 0x27;
-pub const UNKNOWN_5E3: u32 = 0x5e3;
+pub const RESET_HELD: u32 = 0x25;
+pub const TURBO_HELD: u32 = 0x27;
+pub const FINISHED: u32 = 0x5e3;
 pub const LAP_DISTANCE: u32 = 0x5dc;
 /// The ground: the floor (found +0x8b2, origin +0x8b4, normal +0x8c4, d
 /// +0x8d4) and the nearest surface (found +0x8f0, normal +0x8f4, d +0x904).
@@ -97,7 +96,7 @@ pub const AIRBORNE: u32 = 0x628;
 pub const CONTACT_CLOCK: u32 = 0x61c;
 pub const CONTACT_MS: u32 = 0x620;
 pub const CONTACT_TIME: u32 = 0x920;
-pub const UNKNOWN_7CC: u32 = 0x7cc;
+pub const RESPAWN_ZONE: u32 = 0x7cc;
 pub const TURBOS: u32 = 0x874;
 pub const AIR_CONTROL: u32 = 0x86a;
 pub const AIR_ARMED: u32 = 0x86b;
@@ -115,8 +114,6 @@ pub const TUNING: u32 = 0x8013_6a18;
 /// Offsets within a wheel.
 pub mod wheel {
     pub const MOUNT: u32 = 0x00;
-    pub const MOUNT_PAD: u32 = 0x0c;
-    pub const UNKNOWN_10: u32 = 0x10;
     pub const DIAMETER: u32 = 0x14;
     pub const FLAGS: u32 = 0x18;
     pub const HEADING: u32 = 0x1c;
@@ -159,20 +156,20 @@ impl InMemory for Wheel {
         use wheel::*;
         Wheel {
             mount: ram.vec3(w + MOUNT),
-            mount_pad: ram.i32(w + MOUNT_PAD),
-            unknown_10: ram.i32(w + UNKNOWN_10),
             diameter: ram.i32(w + DIAMETER),
-            flags: ram.u8(w + FLAGS),
+            rear: ram.u8(w + FLAGS) & 1 != 0,
+            steers: ram.u8(w + FLAGS) & 2 != 0,
+            driven: ram.u8(w + FLAGS) & 4 != 0,
             heading: ram.vec3(w + HEADING),
             world: ram.vec3(w + WORLD),
-            ground: ram.u8(w + GROUND),
+            on_ground: ram.flag(w + GROUND),
             surface: ram.u8(w + SURFACE),
             normal: ram.vec3(w + NORMAL),
             contact: ram.vec3(w + CONTACT),
             contact_vel: ram.vec3(w + CONTACT_VEL),
             friction: ram.i32(w + FRICTION),
             spring: ram.i32(w + SPRING),
-            slip: ram.u8(w + SLIP),
+            slipping: ram.flag(w + SLIP),
             compression: ram.i32(w + COMPRESSION),
             spin_rate: ram.i32(w + SPIN_RATE),
         }
@@ -181,20 +178,20 @@ impl InMemory for Wheel {
     fn write(&self, ram: &mut Ram, w: u32) {
         use wheel::*;
         ram.set_vec3(w + MOUNT, self.mount);
-        ram.set_i32(w + MOUNT_PAD, self.mount_pad);
-        ram.set_i32(w + UNKNOWN_10, self.unknown_10);
         ram.set_i32(w + DIAMETER, self.diameter);
-        ram.set_u8(w + FLAGS, self.flags);
+        // Bits the port does not model are left as they are.
+        let others = ram.u8(w + FLAGS) & !7;
+        ram.set_u8(w + FLAGS, others | self.rear as u8 | (self.steers as u8) << 1 | (self.driven as u8) << 2);
         ram.set_vec3(w + HEADING, self.heading);
         ram.set_vec3(w + WORLD, self.world);
-        ram.set_u8(w + GROUND, self.ground);
+        ram.set_flag(w + GROUND, self.on_ground);
         ram.set_u8(w + SURFACE, self.surface);
         ram.set_vec3(w + NORMAL, self.normal);
         ram.set_vec3(w + CONTACT, self.contact);
         ram.set_vec3(w + CONTACT_VEL, self.contact_vel);
         ram.set_i32(w + FRICTION, self.friction);
         ram.set_i32(w + SPRING, self.spring);
-        ram.set_u8(w + SLIP, self.slip);
+        ram.set_flag(w + SLIP, self.slipping);
         ram.set_i32(w + COMPRESSION, self.compression);
         ram.set_i32(w + SPIN_RATE, self.spin_rate);
     }
@@ -206,7 +203,7 @@ impl InMemory for Engine {
         Engine {
             rpm: ram.i32(e + RPM),
             wheel_rpm: ram.i32(e + WHEEL_RPM),
-            reverse: ram.u8(e + REVERSE),
+            reverse: ram.flag(e + REVERSE),
             gear: ram.u8(e + GEAR),
             ratio: ram.i32(e + RATIO),
             drive: ram.i64(e + DRIVE),
@@ -225,7 +222,7 @@ impl InMemory for Engine {
         use engine::*;
         ram.set_i32(e + RPM, self.rpm);
         ram.set_i32(e + WHEEL_RPM, self.wheel_rpm);
-        ram.set_u8(e + REVERSE, self.reverse);
+        ram.set_flag(e + REVERSE, self.reverse);
         ram.set_u8(e + GEAR, self.gear);
         ram.set_i32(e + RATIO, self.ratio);
         ram.set_i64(e + DRIVE, self.drive);
@@ -264,7 +261,7 @@ impl InMemory for Car {
             accel: ram.i32(at + ACCEL),
             brake: ram.i32(at + BRAKE),
             stick: [ram.i32(at + STICK), ram.i32(at + STICK + 4)],
-            handbrake: ram.u8(at + HANDBRAKE),
+            handbrake: ram.flag(at + HANDBRAKE),
             body: Body::read(ram, at + BODY),
             wheels: wheels.collect(),
             grounded: ram.u8(at + GROUNDED),
@@ -274,31 +271,28 @@ impl InMemory for Car {
             rear_wheels: ram.u8(at + REAR_WHEELS),
             handling: Handling::from_bytes(&handling),
             origin: ram.vec3(at + ORIGIN),
-            origin_pad: ram.i32(at + ORIGIN + 12),
             width: ram.i32(at + WIDTH),
             length: ram.i32(at + LENGTH),
             height: ram.i32(at + HEIGHT),
-            size_pad: ram.i32(at + HEIGHT + 4),
             spring_preload: ram.i32(at + SPRING_PRELOAD),
             extension: [ram.i32(at + EXTENSION), ram.i32(at + EXTENSION + 4)],
-            unknown_865: ram.u8(at + UNKNOWN_865),
+            all_terrain: ram.flag(at + ALL_TERRAIN),
             state: ram.u8(at + STATE),
-            wrecked: ram.u8(at + WRECKED),
-            wreck_view: ram.u8(at + WRECK_VIEW),
-            unknown_25: ram.u8(at + UNKNOWN_25),
-            unknown_26: ram.u8(at + UNKNOWN_26),
-            unknown_27: ram.u8(at + UNKNOWN_27),
-            unknown_5e3: ram.u8(at + UNKNOWN_5E3),
+            wrecked: ram.flag(at + WRECKED),
+            wreck_view: ram.flag(at + WRECK_VIEW),
+            reset_held: ram.flag(at + RESET_HELD),
+            turbo_held: ram.flag(at + TURBO_HELD),
+            finished: ram.flag(at + FINISHED),
             lap_distance: ram.i32(at + LAP_DISTANCE),
             ground: Ground {
                 floor: GroundPlane {
-                    found: ram.u8(at + FLOOR[0]),
+                    found: ram.flag(at + FLOOR[0]),
                     normal: ram.vec3(at + FLOOR[2]),
                     d: ram.i32(at + FLOOR[3]),
                 },
                 origin: ram.vec3(at + FLOOR[1]),
                 nearest: GroundPlane {
-                    found: ram.u8(at + NEAREST[0]),
+                    found: ram.flag(at + NEAREST[0]),
                     normal: ram.vec3(at + NEAREST[1]),
                     d: ram.i32(at + NEAREST[2]),
                 },
@@ -308,24 +302,24 @@ impl InMemory for Car {
             stunt_turn: ram.vec3(at + STUNT_TURN),
             stunt_peak: ram.vec3(at + STUNT_PEAK),
             air_ms: ram.i32(at + AIR_MS) as u32,
-            turbo_hint: ram.u8(at + TURBO_HINT),
+            turbo_hint: ram.flag(at + TURBO_HINT),
             stunt_points: ram.i32(at + STUNT_POINTS),
-            airborne: ram.u8(at + AIRBORNE),
+            airborne: ram.flag(at + AIRBORNE),
             contact_clock: ram.i32(at + CONTACT_CLOCK) as u32,
             contact_ms: ram.i32(at + CONTACT_MS) as u32,
             contact_time: ram.i32(at + CONTACT_TIME) as u32,
-            unknown_7cc: ram.i32(at + UNKNOWN_7CC),
+            respawn_zone: u16::try_from(ram.i32(at + RESPAWN_ZONE)).ok(),
             turbos: ram.u8(at + TURBOS),
-            air_control: ram.u8(at + AIR_CONTROL),
-            air_armed: ram.u8(at + AIR_ARMED),
+            air_control: ram.flag(at + AIR_CONTROL),
+            air_armed: Armed { along: ram.u8(at + AIR_ARMED) & 1 != 0, across: ram.u8(at + AIR_ARMED) & 2 != 0 },
             air_lock: AxisLock {
-                active: ram.u8(at + AIR_LOCK),
+                active: ram.flag(at + AIR_LOCK),
                 axis: ram.i32(at + AIR_LOCK_AXIS),
                 dir: ram.vec3(at + AIR_LOCK_DIR),
             },
             righting: [0, 1, 2].map(|k| ram.i32(at + RIGHTING + 4 * k) as u32),
-            rights_itself: ram.u8(at + RIGHTS_ITSELF),
-            roll_way: ram.u8(at + ROLL_WAY),
+            rights_itself: ram.flag(at + RIGHTS_ITSELF),
+            roll_way: ram.flag(at + ROLL_WAY),
         }
     }
 
@@ -340,7 +334,7 @@ impl InMemory for Car {
         ram.set_i32(at + BRAKE, self.brake);
         ram.set_i32(at + STICK, self.stick[0]);
         ram.set_i32(at + STICK + 4, self.stick[1]);
-        ram.set_u8(at + HANDBRAKE, self.handbrake);
+        ram.set_flag(at + HANDBRAKE, self.handbrake);
         self.body.write(ram, at + BODY);
         ram.set_u8(at + WHEEL_COUNT, self.wheels.len() as u8);
         for (i, wheel) in self.wheels.iter().enumerate() {
@@ -351,33 +345,28 @@ impl InMemory for Car {
         self.engine.write(ram, at + ENGINE);
         ram.set_u8(at + FRONT_WHEELS, self.front_wheels);
         ram.set_u8(at + REAR_WHEELS, self.rear_wheels);
-        for (k, b) in self.handling.to_bytes().iter().enumerate() {
-            ram.set_u8(at + HANDLING + k as u32, *b);
-        }
+        write_handling(ram, at + HANDLING, &self.handling);
         ram.set_vec3(at + ORIGIN, self.origin);
-        ram.set_i32(at + ORIGIN + 12, self.origin_pad);
         ram.set_i32(at + WIDTH, self.width);
         ram.set_i32(at + LENGTH, self.length);
         ram.set_i32(at + HEIGHT, self.height);
-        ram.set_i32(at + HEIGHT + 4, self.size_pad);
         ram.set_i32(at + SPRING_PRELOAD, self.spring_preload);
         ram.set_i32(at + EXTENSION, self.extension[0]);
         ram.set_i32(at + EXTENSION + 4, self.extension[1]);
-        ram.set_u8(at + UNKNOWN_865, self.unknown_865);
+        ram.set_flag(at + ALL_TERRAIN, self.all_terrain);
         ram.set_u8(at + STATE, self.state);
-        ram.set_u8(at + WRECKED, self.wrecked);
-        ram.set_u8(at + WRECK_VIEW, self.wreck_view);
-        ram.set_u8(at + UNKNOWN_25, self.unknown_25);
-        ram.set_u8(at + UNKNOWN_26, self.unknown_26);
-        ram.set_u8(at + UNKNOWN_27, self.unknown_27);
-        ram.set_u8(at + UNKNOWN_5E3, self.unknown_5e3);
+        ram.set_flag(at + WRECKED, self.wrecked);
+        ram.set_flag(at + WRECK_VIEW, self.wreck_view);
+        ram.set_flag(at + RESET_HELD, self.reset_held);
+        ram.set_flag(at + TURBO_HELD, self.turbo_held);
+        ram.set_flag(at + FINISHED, self.finished);
         ram.set_i32(at + LAP_DISTANCE, self.lap_distance);
         let g = &self.ground;
-        ram.set_u8(at + FLOOR[0], g.floor.found);
+        ram.set_flag(at + FLOOR[0], g.floor.found);
         ram.set_vec3(at + FLOOR[1], g.origin);
         ram.set_vec3(at + FLOOR[2], g.floor.normal);
         ram.set_i32(at + FLOOR[3], g.floor.d);
-        ram.set_u8(at + NEAREST[0], g.nearest.found);
+        ram.set_flag(at + NEAREST[0], g.nearest.found);
         ram.set_vec3(at + NEAREST[1], g.nearest.normal);
         ram.set_i32(at + NEAREST[2], g.nearest.d);
         ram.set_i32(at + AIR_TOTAL_MS, self.air_total_ms as i32);
@@ -385,23 +374,79 @@ impl InMemory for Car {
         ram.set_vec3(at + STUNT_TURN, self.stunt_turn);
         ram.set_vec3(at + STUNT_PEAK, self.stunt_peak);
         ram.set_i32(at + AIR_MS, self.air_ms as i32);
-        ram.set_u8(at + TURBO_HINT, self.turbo_hint);
+        ram.set_flag(at + TURBO_HINT, self.turbo_hint);
         ram.set_i32(at + STUNT_POINTS, self.stunt_points);
-        ram.set_u8(at + AIRBORNE, self.airborne);
+        ram.set_flag(at + AIRBORNE, self.airborne);
         ram.set_i32(at + CONTACT_CLOCK, self.contact_clock as i32);
         ram.set_i32(at + CONTACT_MS, self.contact_ms as i32);
         ram.set_i32(at + CONTACT_TIME, self.contact_time as i32);
-        ram.set_i32(at + UNKNOWN_7CC, self.unknown_7cc);
+        ram.set_i32(at + RESPAWN_ZONE, self.respawn_zone.map_or(-1, i32::from));
         ram.set_u8(at + TURBOS, self.turbos);
-        ram.set_u8(at + AIR_CONTROL, self.air_control);
-        ram.set_u8(at + AIR_ARMED, self.air_armed);
-        ram.set_u8(at + AIR_LOCK, self.air_lock.active);
+        ram.set_flag(at + AIR_CONTROL, self.air_control);
+        let others = ram.u8(at + AIR_ARMED) & !3;
+        ram.set_u8(at + AIR_ARMED, others | self.air_armed.along as u8 | (self.air_armed.across as u8) << 1);
+        ram.set_flag(at + AIR_LOCK, self.air_lock.active);
         ram.set_i32(at + AIR_LOCK_AXIS, self.air_lock.axis);
         ram.set_vec3(at + AIR_LOCK_DIR, self.air_lock.dir);
         for (k, t) in self.righting.iter().enumerate() {
             ram.set_i32(at + RIGHTING + 4 * k as u32, *t as i32);
         }
-        ram.set_u8(at + RIGHTS_ITSELF, self.rights_itself);
-        ram.set_u8(at + ROLL_WAY, self.roll_way);
+        ram.set_flag(at + RIGHTS_ITSELF, self.rights_itself);
+        ram.set_flag(at + ROLL_WAY, self.roll_way);
+    }
+}
+
+/// Where block A keeps each field the port models (the rest it leaves as
+/// the original has it).
+mod block_a {
+    pub const DRIVE: u32 = 0x00;
+    pub const STEER_LOCK: u32 = 0x04;
+    pub const MASS: u32 = 0x08;
+    pub const DOWNFORCE: u32 = 0x20;
+    pub const AXLES: u32 = 0x30;
+    pub const AIR_POWER: u32 = 0x60;
+    pub const SKILL: u32 = 0x74;
+    pub const FLAGS: u32 = 0x78;
+    pub const WHEEL_COUNT: u32 = 0x7c;
+    pub const ORIGIN: u32 = 0x80;
+    pub const SIZE: u32 = 0x90;
+    pub const MOUNTS: u32 = 0xa0;
+    pub const DIAMETERS: u32 = 0x118;
+}
+
+/// Writes the handling's fields over block A at `at`.
+fn write_handling(ram: &mut Ram, at: u32, h: &Handling) {
+    use block_a::*;
+    for (k, on) in [h.front_driven, h.front_steers, h.rear_driven, h.rear_steers].into_iter().enumerate() {
+        ram.set_flag(at + DRIVE + k as u32, on);
+    }
+    ram.set_i32(at + STEER_LOCK, h.steer_lock);
+    for (k, v) in [h.mass, h.cg_along, h.cg_up, h.brake_grip, h.brake_bias, h.drag].into_iter().enumerate() {
+        ram.set_i32(at + MASS + 4 * k as u32, v);
+    }
+    let down = [h.front.downforce, h.rear.downforce, h.front.downforce_scale, h.rear.downforce_scale];
+    for (k, v) in down.into_iter().enumerate() {
+        ram.set_i32(at + DOWNFORCE + 4 * k as u32, v);
+    }
+    for (a, axle) in [h.front, h.rear].into_iter().enumerate() {
+        let fields = [axle.stiffness, axle.grip, axle.travel, axle.damp_in, axle.damp_out, axle.ride_height];
+        for (k, v) in fields.into_iter().enumerate() {
+            ram.set_i32(at + AXLES + 24 * a as u32 + 4 * k as u32, v);
+        }
+    }
+    for (k, v) in [h.air_power.pitch, h.air_power.roll, h.air_power.yaw].into_iter().enumerate() {
+        ram.set_i32(at + AIR_POWER + 4 * k as u32, v);
+    }
+    ram.set_i32(at + SKILL, h.skill);
+    let flags = ram.i32(at + FLAGS);
+    ram.set_i32(at + FLAGS, (flags & !1) | h.all_terrain as i32);
+    ram.set_u8(at + WHEEL_COUNT, h.wheel_count);
+    ram.set_vec3(at + ORIGIN, h.origin);
+    ram.set_vec3(at + SIZE, h.size);
+    for (k, m) in h.mounts.iter().enumerate() {
+        ram.set_vec3(at + MOUNTS + 16 * k as u32, *m);
+    }
+    for (k, d) in h.diameters.iter().enumerate() {
+        ram.set_i32(at + DIAMETERS + 4 * k as u32, *d);
     }
 }

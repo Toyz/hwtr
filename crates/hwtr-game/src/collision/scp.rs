@@ -24,9 +24,7 @@ pub struct Zone {
     /// A distance along the track, in tenths (inferred: checkpoints).
     pub distance: u16,
     pub plane_count: u8,
-    pub unknown_b: u8,
     pub first_plane: u16,
-    pub unknown_e: u16,
 }
 
 impl Zone {
@@ -54,7 +52,6 @@ pub struct Plane {
     pub target: u16,
     /// 0: a portal; 2 and from 5: the ground; others: walls and the like.
     pub kind: u8,
-    pub unknown_b: u8,
 }
 
 impl Plane {
@@ -146,9 +143,7 @@ impl Scp {
                 origin: [b[z + 5] as i8, b[z + 6] as i8, b[z + 7] as i8],
                 distance: u16_at(z + 8),
                 plane_count: b[z + 10],
-                unknown_b: b[z + 11],
                 first_plane: u16_at(z + 12),
-                unknown_e: u16_at(z + 14),
             })
             .collect();
         let edge = |e: usize| EdgePoint {
@@ -162,7 +157,6 @@ impl Scp {
                 d: i16_at(p + 6),
                 target: u16_at(p + 8),
                 kind: b[p + 10],
-                unknown_b: b[p + 11],
             })
             .collect();
         let d = table(3).map(|o| b[o..o + 20].try_into().unwrap()).collect();

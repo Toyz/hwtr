@@ -26,9 +26,8 @@ pub struct Body {
     pub gravity: i32,
     pub gravity_dir: Vec3,
     /// The centre of mass from the position, world axes (where drag acts on
-    /// a car), and the word after it.
+    /// a car).
     pub centre: Vec3,
-    pub centre_pad: i32,
     pub pos: Vec3,
     pub momentum: Vec3,
     pub vel: Vec3,
@@ -45,8 +44,8 @@ pub struct Body {
     /// Force and torque summed over the step.
     pub force: Vec3,
     pub torque: [i64; 3],
-    /// Non-zero: at rest and not integrated.
-    pub asleep: u8,
+    /// At rest, and not integrated.
+    pub asleep: bool,
     /// Steps the body has been still for; it falls asleep after enough.
     pub sleep_count: i32,
 }
@@ -204,7 +203,7 @@ impl Body {
     /// entry in 16 bits, with no renormalising here. Both sums are cleared.
     /// An asleep body is left alone.
     pub fn integrate(&mut self, t: &Tables, dt: i32) {
-        if self.asleep != 0 {
+        if self.asleep {
             return;
         }
         let weight = fx(self.gravity, self.mass);

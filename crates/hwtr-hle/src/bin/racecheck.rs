@@ -131,7 +131,7 @@ fn main() {
         let original = cars(&mut hle.m.bus.ram);
         let (o, n) = (&original[0], &mut native[0]);
         (n.steer, n.accel, n.brake, n.stick, n.handbrake) = (o.steer, o.accel, o.brake, o.stick, o.handbrake);
-        (n.unknown_25, n.unknown_26, n.unknown_27) = (o.unknown_25, o.unknown_26, o.unknown_27);
+        (n.reset_held, n.turbo_held) = (o.reset_held, o.turbo_held);
         n.update(&tables, &tuning, dt);
         world.contacts.clear();
         world.step = world.step.wrapping_add(1);

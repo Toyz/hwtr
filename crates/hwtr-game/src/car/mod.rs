@@ -37,25 +37,35 @@ const AIR: i32 = 0x94_9000 / 1000;
 /// The surface that drags a car along the ground.
 const DRAGGING_SURFACE: u8 = 6;
 
-/// One wheel. Byte flags are kept as the game stores them; the methods say
-/// what they mean.
+/// The stick axes armed for turning the car in the air.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Armed {
+    pub along: bool,
+    pub across: bool,
+}
+
+impl Armed {
+    pub fn any(self) -> bool {
+        self.along || self.across
+    }
+}
+
+/// One wheel.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Wheel {
-    /// Mount point, body space, and the word after it (two halfwords, from
-    /// the handling).
+    /// Mount point, body space (from the handling).
     pub mount: Vec3,
-    pub mount_pad: i32,
-    /// From the handling; meaning not yet known.
-    pub unknown_10: i32,
     pub diameter: i32,
-    /// [`Wheel::REAR`], [`Wheel::STEERS`], [`Wheel::DRIVEN`].
-    pub flags: u8,
+    /// On the rear axle; steering; driven.
+    pub rear: bool,
+    pub steers: bool,
+    pub driven: bool,
     /// Rolling direction, world space, unit length.
     pub heading: Vec3,
     /// Mount point, world space.
     pub world: Vec3,
-    /// Non-zero while touching the ground.
-    pub ground: u8,
+    /// Touching the ground.
+    pub on_ground: bool,
     /// The kind of ground under it.
     pub surface: u8,
     pub normal: Vec3,
@@ -67,7 +77,7 @@ pub struct Wheel {
     /// The spring's force along the ground normal.
     pub spring: i32,
     /// Set when the tyre's force passed its grip.
-    pub slip: u8,
+    pub slipping: bool,
     /// How far the spring is compressed (negative: extended), from the
     /// collision with the ground.
     pub compression: i32,
@@ -75,31 +85,6 @@ pub struct Wheel {
     pub spin_rate: i32,
 }
 
-impl Wheel {
-    pub const REAR: u8 = 1;
-    pub const STEERS: u8 = 2;
-    pub const DRIVEN: u8 = 4;
-
-    pub fn is_rear(&self) -> bool {
-        self.flags & Self::REAR != 0
-    }
-
-    pub fn steers(&self) -> bool {
-        self.flags & Self::STEERS != 0
-    }
-
-    pub fn is_driven(&self) -> bool {
-        self.flags & Self::DRIVEN != 0
-    }
-
-    pub fn on_ground(&self) -> bool {
-        self.ground != 0
-    }
-
-    pub fn is_slipping(&self) -> bool {
-        self.slip != 0
-    }
-}
 
 /// The engine and gearbox. Speeds of rotation are revolutions a minute.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -107,8 +92,8 @@ pub struct Engine {
     pub rpm: i32,
     /// The rpm over the overall ratio: the driven wheels' speed.
     pub wheel_rpm: i32,
-    /// Non-zero while the car rolls backwards along its forward axis.
-    pub reverse: u8,
+    /// The car rolls backwards along its forward axis.
+    pub reverse: bool,
     /// The gear in use, from 0.
     pub gear: u8,
     /// The overall ratio in use (gear times final drive), negative in reverse
@@ -131,7 +116,7 @@ pub struct Engine {
 
 impl Engine {
     pub fn in_reverse(&self) -> bool {
-        self.reverse != 0
+        self.reverse
     }
 
     /// The ratio of the gear in use, before the final drive.
@@ -159,8 +144,8 @@ pub struct AirPower {
 /// as the game stores it, active or not.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AxisLock {
-    /// Non-zero while held.
-    pub active: u8,
+    /// Held.
+    pub active: bool,
     pub axis: i32,
     pub dir: Vec3,
 }
@@ -170,8 +155,8 @@ pub struct AxisLock {
 /// and are not modelled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GroundPlane {
-    /// Non-zero once found this step.
-    pub found: u8,
+    /// Found this step.
+    pub found: bool,
     pub normal: Vec3,
     pub d: i32,
 }
@@ -316,9 +301,9 @@ pub struct Car {
     pub brake: i32,
     /// The stick, -1 to 1: across (steering) and along.
     pub stick: [i32; 2],
-    /// Non-zero while the handbrake is on: the rear wheels lose their
+    /// The handbrake is on: the rear wheels lose their
     /// sideways grip.
-    pub handbrake: u8,
+    pub handbrake: bool,
     pub body: Body,
     pub wheels: Vec<Wheel>,
     /// Wheels on the ground this step, and of those, the ones on a floor.
@@ -333,30 +318,28 @@ pub struct Car {
     /// The point wheel mounts are measured from (the handling's, scaled for
     /// the race).
     pub origin: Vec3,
-    pub origin_pad: i32,
     pub width: i32,
     pub length: i32,
     pub height: i32,
-    pub size_pad: i32,
     /// Each spring's force with the car at rest: its weight over its wheels.
     pub spring_preload: i32,
     /// How far each axle's springs extend: preload over stiffness, front and
     /// rear.
     pub extension: [i32; 2],
-    /// Non-zero: the dragging surface does not drag. Meaning not yet known.
-    pub unknown_865: u8,
+    /// A power-up (0x80065520) has made the dragging surface not drag it.
+    pub all_terrain: bool,
     /// 2: full physics (players), 1: computer cars, 0: (not yet known).
     pub state: u8,
-    /// Non-zero once wrecked (0x8004619c), until put back on the road.
-    pub wrecked: u8,
+    /// Wrecked (0x8004619c), until put back on the road.
+    pub wrecked: bool,
     /// Which way the camera shows a player's wreck, chosen at random.
-    pub wreck_view: u8,
-    /// Set by the controls from actions 9 and 10; meanings not yet known.
-    pub unknown_25: u8,
-    pub unknown_26: u8,
-    pub unknown_27: u8,
-    /// Non-zero: the car drives itself (the controls are ignored).
-    pub unknown_5e3: u8,
+    pub wreck_view: bool,
+    /// The reset (action 9, R1) and the turbo (action 10, R2) held.
+    pub reset_held: bool,
+    pub turbo_held: bool,
+    /// The race is over for it (its laps run, 0x8006137c): it drives
+    /// itself, the controls ignored.
+    pub finished: bool,
     /// The distance along the lap of the zone the car is in, from the
     /// zone's distance (tenths).
     pub lap_distance: i32,
@@ -374,43 +357,43 @@ pub struct Car {
     pub air_ms: u32,
     /// Set while a player's car is off the ground, for its stunt
     /// (0x8003cb74); scraping a wall for half a second clears it.
-    pub airborne: u8,
+    pub airborne: bool,
     /// The system clock at its last contact, and how long its contacts have
     /// run on with gaps of at most 100 ms (0x8003caec).
     pub contact_clock: u32,
     pub contact_ms: u32,
     /// The race clock at its last contact.
     pub contact_time: u32,
-    pub unknown_7cc: i32,
+    /// The zone the car is put back in after a reset (saved by
+    /// `car_update` while it drives well).
+    pub respawn_zone: Option<u16>,
     /// Turbos in hand, at most 10 (0x8003c850 adds, a boost spends one).
     pub turbos: u8,
     /// Set once the turbo has been used, or the ten-turbos hint played.
-    pub turbo_hint: u8,
-    /// Non-zero while the stick is turning the car in the air.
-    pub air_control: u8,
-    /// Which stick axes may turn the car in the air: [`Car::ARMED_ALONG`],
-    /// [`Car::ARMED_ACROSS`]. An axis is armed once centred above 15 mph.
-    pub air_armed: u8,
+    pub turbo_hint: bool,
+    /// The stick is turning the car in the air.
+    pub air_control: bool,
+    /// Which stick axes may turn the car in the air: each is armed once
+    /// centred above 15 mph.
+    pub air_armed: Armed,
     pub air_lock: AxisLock,
     /// Milliseconds the car has lain on its side, on its nose or tail, and
     /// on its roof (0x80046ac0).
     pub righting: [u32; 3],
     /// On its roof: whether it will be turned back (else it is wrecked), and
     /// which way (decided once, as it lands there).
-    pub rights_itself: u8,
-    pub roll_way: u8,
+    pub rights_itself: bool,
+    pub roll_way: bool,
 }
 
 impl Car {
-    pub const ARMED_ALONG: u8 = 1;
-    pub const ARMED_ACROSS: u8 = 2;
 
     fn axle(&self, rear: bool) -> &Axle {
         self.handling.axle(rear)
     }
 
     fn handbrake_on(&self) -> bool {
-        self.handbrake != 0
+        self.handbrake
     }
 
     /// The pedal that drives: the accelerator, or the brake in reverse.
@@ -441,17 +424,17 @@ impl Car {
         let (front_heading, rear_heading) = (sub(ahead, across), add(ahead, across));
         let (mut grounded, mut level) = (0u8, 0u8);
         for (i, wheel) in self.wheels.iter_mut().enumerate() {
-            wheel.heading = match (wheel.steers(), i < 2) {
+            wheel.heading = match (wheel.steers, i < 2) {
                 (false, _) => forward,
                 (true, true) => front_heading,
                 (true, false) => rear_heading,
             };
-            if wheel.on_ground() {
+            if wheel.on_ground {
                 let (h, n) = (wheel.heading, wheel.normal);
                 wheel.heading = t.normalize(sub(h, n.map(|x| fx(x, dot(h, n)))));
             }
             wheel.world = add(apply_matrix_lv(&rot, sub(wheel.mount, self.origin)), pos);
-            if wheel.on_ground() {
+            if wheel.on_ground {
                 wheel.contact_vel = add(vel, cross(spin, sub(wheel.contact, pos)));
                 grounded = grounded.wrapping_add(1);
                 if dot(wheel.normal, gravity_dir).wrapping_neg() > HALF {
@@ -475,7 +458,7 @@ impl Car {
     /// held there with no drive; in the air the engine revs with the throttle
     /// and gives no drive either. The rpm never falls below idle.
     pub fn drivetrain(&mut self, t: &Tables) {
-        let driven: Vec<&Wheel> = self.wheels.iter().filter(|w| w.is_driven() && w.on_ground()).collect();
+        let driven: Vec<&Wheel> = self.wheels.iter().filter(|w| w.driven && w.on_ground).collect();
         let diameter = driven.first().map_or(0, |w| w.diameter);
         if driven.is_empty() || diameter <= 0 {
             let throttle = self.throttle();
@@ -484,7 +467,7 @@ impl Car {
             e.rpm = fx(e.redline, throttle);
             e.drive = 0;
         } else {
-            let gripping = driven.iter().filter(|w| !w.is_slipping()).count();
+            let gripping = driven.iter().filter(|w| !w.slipping).count();
             let (contact, normal) =
                 driven.iter().fold(([0; 3], [0; 3]), |(c, n), w| (add(c, w.contact), add(n, w.normal)));
             let mean = div_fx(ONE, (driven.len() as i32) << 12);
@@ -495,7 +478,7 @@ impl Car {
             let v = sub(v, normal.map(|c| fx(c, dot(v, normal))));
             let side = column(&self.body.rot, 0);
             let v = sub(v, side.map(|c| fx(c, dot(v, side))));
-            self.engine.reverse = (dot(v, column(&self.body.rot, 1)) < 0) as u8;
+            self.engine.reverse = dot(v, column(&self.body.rot, 1)) < 0;
             let wheel_rpm = fx(SIXTY, div_fx(t.length(v), fx(diameter, PI)));
             let throttle = self.throttle();
             let e = &mut self.engine;
@@ -570,7 +553,7 @@ impl Car {
     /// suspension on the ground ([`Car::tyre`]), its axle's share of the
     /// downforce in the air.
     pub fn physics(&mut self, t: &Tables, tuning: &Tuning) {
-        let driven = self.wheels.iter().filter(|w| w.is_driven() && w.on_ground()).count() as i32;
+        let driven = self.wheels.iter().filter(|w| w.driven && w.on_ground).count() as i32;
         self.place_wheels(t);
         self.drivetrain(t);
         let down = self.aero(tuning);
@@ -584,8 +567,8 @@ impl Car {
         let cg = rot.map(|row| (0..3).fold(0i32, |s, k| s.wrapping_add(fx(row[k] as i32, offset[k]))));
         for i in 0..self.wheels.len() {
             let wheel = &self.wheels[i];
-            let down = share.on(wheel.is_rear());
-            let (at, force, slipping) = if wheel.on_ground() {
+            let down = share.on(wheel.rear);
+            let (at, force, slipping) = if wheel.on_ground {
                 let (force, slipping) = self.tyre(t, tuning, wheel, down, driven);
                 (sub(wheel.contact, cg), force, Some(slipping))
             } else if self.grounded != 0 {
@@ -593,7 +576,7 @@ impl Car {
                 (wheel.world, column(&rot, 2).map(|c| fx(c, down)), None)
             } else {
                 // Under air control, about the centre of gravity's height.
-                let at = if self.air_armed != 0 && self.air_control != 0 {
+                let at = if self.air_armed.any() && self.air_control {
                     let along = wheel.mount[1].wrapping_sub(self.origin[1]);
                     add(column(&rot, 1).map(|c| fx(c, along)), self.body.pos)
                 } else {
@@ -602,7 +585,7 @@ impl Car {
                 (at, self.body.gravity_dir.map(|c| fx(c, down.wrapping_neg())), None)
             };
             if let Some(slipping) = slipping {
-                self.wheels[i].slip = slipping as u8;
+                self.wheels[i].slipping = slipping;
             }
             self.body.apply_force(at, force);
         }
@@ -622,7 +605,7 @@ impl Car {
     /// dragging surface also drags the car along the ground.
     fn tyre(&self, t: &Tables, tuning: &Tuning, wheel: &Wheel, down: i32, driven: i32) -> (Vec3, bool) {
         let (n, cv, heading) = (wheel.normal, wheel.contact_vel, wheel.heading);
-        let rear = wheel.is_rear();
+        let rear = wheel.rear;
         let across = sub(cv, n.map(|c| fx(c, dot(cv, n))));
         let slide = if rear && self.handbrake_on() {
             across
@@ -633,7 +616,7 @@ impl Car {
         let mut f = slide.map(|c| fx(c.wrapping_neg(), per_wheel));
         let brake = self.brake_force(rear);
         f = add(f, heading.map(|c| fx(c, brake)));
-        if wheel.is_driven() {
+        if wheel.driven {
             let share = div_fx((self.engine.drive >> 8) as i32, driven << 12);
             f = add(f, heading.map(|c| fx(c, share)));
         }
@@ -650,7 +633,7 @@ impl Car {
             tangent = tangent.map(|c| fx(c, scale));
         }
         let mut force = add(normal, tangent);
-        if wheel.surface == DRAGGING_SURFACE && self.unknown_865 == 0 && self.handling.unknown_78 & 1 == 0 {
+        if wheel.surface == DRAGGING_SURFACE && !self.all_terrain && !self.handling.all_terrain {
             let (pct, k) = (percent(tuning.surface_drag), div_fx(4 << 12, 10 << 12));
             let x = cv.map(|c| fx(fx(fx(c, self.handling.mass.wrapping_neg()), pct), k));
             force = add(force, sub(x, n.map(|c| fx(c, dot(n, x)))));
@@ -679,7 +662,7 @@ impl Car {
     /// with the axle's compression and rebound constants; in rebound no
     /// larger than the spring.
     fn damping(&self, t: &Tables, wheel: &Wheel) -> Vec3 {
-        let axle = self.axle(wheel.is_rear());
+        let axle = self.axle(wheel.rear);
         let speed = dot(wheel.contact_vel, wheel.normal);
         let along = wheel.normal.map(|c| fx(c, speed));
         if speed < 0 {
@@ -717,12 +700,12 @@ impl Car {
         let engine_rate = div_fx(fx(self.engine.wheel_rpm, fx(2 << 12, PI)), SIXTY);
         let handbrake = self.handbrake_on();
         for (i, wheel) in self.wheels.iter_mut().enumerate() {
-            let rate = if wheel.on_ground() && !wheel.is_slipping() {
+            let rate = if wheel.on_ground && !wheel.slipping {
                 let rate = fx(2 << 12, div_fx(speed, wheel.diameter));
                 Some(if dot(vel, wheel.heading) < 0 { rate.wrapping_neg() } else { rate })
             } else if i >= 2 && handbrake {
                 Some(0)
-            } else if wheel.is_driven() {
+            } else if wheel.driven {
                 Some(if driving < braking { 0 } else { engine_rate })
             } else if braking > HALF {
                 Some(0)
@@ -746,38 +729,38 @@ impl Car {
     /// perpendicular is then held (see [`Body::align`]) until another wins.
     /// The spin is damped while the stick acts.
     pub fn air_control(&mut self) {
-        if self.air_lock.active != 0 {
+        if self.air_lock.active {
             self.body.align(self.air_lock.axis as u8, self.air_lock.dir);
         }
-        self.air_control = 0;
+        self.air_control = false;
         let dead = div_fx(2 << 12, 10 << 12);
         let centred = |v: i32| v < dead && -dead < v;
         let [across, along] = self.stick;
         let (across_centred, along_centred) = (centred(across), centred(along));
         if across_centred {
-            self.air_armed |= Self::ARMED_ACROSS;
+            self.air_armed.across = true;
         }
         if along_centred {
-            self.air_armed |= Self::ARMED_ALONG;
+            self.air_armed.along = true;
         }
         let mph = div_fx(176 << 12, 10 << 12);
         if self.body.speed < fx(15 << 12, mph) {
-            self.air_armed = 0;
-            self.air_lock.active = 0;
+            self.air_armed = Armed::default();
+            self.air_lock.active = false;
         }
-        let armed = |bit: u8| self.air_armed & bit != 0;
-        let acting = (!across_centred && armed(Self::ARMED_ACROSS)) || (!along_centred && armed(Self::ARMED_ALONG));
+        let armed = self.air_armed;
+        let acting = (!across_centred && armed.across) || (!along_centred && armed.along);
         if !acting {
             return;
         }
-        self.air_control = 1;
+        self.air_control = true;
         self.body.damp_spin();
         let (mut roll, mut yaw) = if self.handbrake_on() { (across, 0) } else { (0, across) };
         let mut pitch = along;
-        if !armed(Self::ARMED_ACROSS) {
+        if !armed.across {
             (roll, yaw) = (0, 0);
         }
-        if !armed(Self::ARMED_ALONG) {
+        if !armed.along {
             pitch = 0;
         }
         let half = div_fx(50 << 12, 100 << 12);
@@ -801,8 +784,8 @@ impl Car {
         let centre = add(self.body.pos, self.body.centre);
         self.body.apply_force(add(centre, arm), push);
         self.body.apply_force(sub(centre, arm), push.map(i32::wrapping_neg));
-        if self.air_lock.active == 0 || self.air_lock.axis != axis {
-            self.air_lock = AxisLock { active: 1, axis, dir: col(axis as usize) };
+        if !self.air_lock.active || self.air_lock.axis != axis {
+            self.air_lock = AxisLock { active: true, axis, dir: col(axis as usize) };
         }
     }
 }
@@ -813,22 +796,22 @@ impl Car {
     /// ground, the step's motion, the rotation kept orthonormal, the wheels'
     /// spin; a pedal wakes it.
     pub fn update(&mut self, t: &Tables, tuning: &Tuning, dt: i32) {
-        if self.body.asleep == 0 {
+        if !self.body.asleep {
             self.physics(t, tuning);
         }
         if self.grounded == 0 {
             self.air_control();
         } else {
-            self.air_armed = 0;
-            self.air_lock.active = 0;
+            self.air_armed = Armed::default();
+            self.air_lock.active = false;
         }
         self.body.integrate(t, dt);
-        if self.body.asleep == 0 {
+        if !self.body.asleep {
             self.body.rot = t.orthonormalize(&self.body.rot);
             self.spin_wheels();
         }
         if self.accel != 0 || self.brake != 0 {
-            self.body.asleep = 0;
+            self.body.asleep = false;
         }
     }
 }

@@ -4,7 +4,7 @@ mod common;
 
 use hwtr_hle::original::InMemory;
 use hwtr_hle::original::car::{self as car, CAR_SIZE, CARS, WHEEL_SIZE, WHEELS};
-use hwtr_game::car::{Car, Tuning, Wheel};
+use hwtr_game::car::{Car, Tuning};
 use hwtr_game::math::{Tables, div_fx, fx};
 use hwtr_hle::original::Ram;
 
@@ -239,7 +239,7 @@ fn car_physics_matches_the_original() {
                         ram.set_i32(w + car::wheel::SPRING, rng.below(2000 << 12) as i32);
                         ram.set_i32(w + car::wheel::FRICTION, rng.below(2 << 12) as i32);
                         if rng.below(3) == 0 {
-                            ram.set_u8(w + car::wheel::FLAGS, ram.u8(w + car::wheel::FLAGS) ^ Wheel::REAR);
+                            ram.set_u8(w + car::wheel::FLAGS, ram.u8(w + car::wheel::FLAGS) ^ 1);
                         }
                     }
                     ram.set_i32(at + car::ACCEL, rng.below(4097) as i32);
@@ -397,10 +397,10 @@ fn righting_matches_the_original() {
             // way now and then), its timers somewhere along, the floor under
             // it straight up or as saved.
             let seed = rng.word();
-            let mut roof = (0, 0);
+            let mut roof = (0, false);
             on_car(&mut m.bus.ram, at, |car, tuning| {
-                car.air_armed = rng.below(4) as u8;
-                car.air_lock.active = rng.below(2) as u8;
+                car.air_armed = hwtr_game::car::Armed { along: rng.below(2) != 0, across: rng.below(2) != 0 };
+                car.air_lock.active = rng.below(2) != 0;
                 if round % 25 != 0 {
                     let perm = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]][rng.below(6) as usize];
                     let signs = [0, 1, 2].map(|_| if rng.below(2) == 0 { 1i16 } else { -1 });
@@ -421,8 +421,8 @@ fn righting_matches_the_original() {
                     [0, 25, 400, 1000, rng.below(3000), edge.saturating_sub(25), edge.saturating_sub(24)]
                         [rng.below(7) as usize]
                 });
-                car.rights_itself = rng.below(2) as u8;
-                car.roll_way = rng.below(2) as u8;
+                car.rights_itself = rng.below(2) != 0;
+                car.roll_way = rng.below(2) != 0;
                 car.body.force = [0; 3];
                 car.body.torque = [0; 3];
                 roof = (car.righting[2], car.rights_itself);
@@ -436,7 +436,7 @@ fn righting_matches_the_original() {
             let original = Car::read(&Ram(&mut m.bus.ram), at);
             *seen.entry(format!("{outcome:?}")).or_insert(0) += 1;
             if outcome == Righting::Wreck {
-                assert_eq!(original.wrecked, 1, "{name} round {round}: the original wrecked the car too");
+                assert!(original.wrecked, "{name} round {round}: the original wrecked the car too");
                 continue;
             }
             let ported = Car::read(&Ram(&mut port), at);
@@ -465,7 +465,7 @@ fn wreck_matches_the_original_for_computer_cars() {
             let flip = rng.below(2);
             on_car(&mut m.bus.ram, at, |car, _| {
                 assert_eq!(car.flags & 1, 0, "{name}: a computer car");
-                car.wrecked = (rng.below(8) == 0) as u8;
+                car.wrecked = rng.below(8) == 0;
                 car.body.vel = [0; 3].map(|_| (rng.word() as i32) >> (6 + rng.below(8)));
                 car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (14 + rng.below(6)));
             });
@@ -546,7 +546,7 @@ fn stunt_watch_matches_the_original() {
             m.bus.ram.copy_from_slice(&start);
             let at = CARS;
             on_car(&mut m.bus.ram, at, |car, _| {
-                car.airborne = rng.below(2) as u8;
+                car.airborne = rng.below(2) != 0;
                 car.grounded = [0, 0, 2, 4][rng.below(4) as usize];
                 car.grounded_level = (rng.below(3) == 0) as u8;
                 car.body.spin = [0; 3].map(|_| (rng.word() as i32) >> (13 + rng.below(8)));
@@ -555,7 +555,7 @@ fn stunt_watch_matches_the_original() {
                 car.stunt_peak = [0; 3].map(|_| (rng.word() as i32) >> (10 + rng.below(12)));
                 car.air_ms = [0, 999, 1500, 2500, 3900, rng.below(9000)][rng.below(6) as usize];
                 car.turbos = rng.below(11) as u8;
-                car.turbo_hint = rng.below(2) as u8;
+                car.turbo_hint = rng.below(2) != 0;
             });
             let seed = rng.word();
             m.bus.write_u32(SEED, seed);

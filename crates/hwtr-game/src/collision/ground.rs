@@ -22,22 +22,22 @@ impl Collision {
             let obj = &self.objects[id];
             let Some(slot) = obj.car else { continue };
             let car = &mut cars[slot as usize];
-            if car.body.asleep != 0 {
+            if car.body.asleep {
                 continue;
             }
-            car.ground.floor.found = 0;
-            car.ground.nearest.found = 0;
+            car.ground.floor.found = false;
+            car.ground.nearest.found = false;
             search[slot as usize] = true;
             if obj.kind != Kind::PlayerCar {
                 continue;
             }
             for k in (0..car.wheels.len()).rev() {
                 let wheel = &car.wheels[k];
-                if !wheel.on_ground() {
+                if !wheel.on_ground {
                     continue;
                 }
                 let n = wheel.normal;
-                let plane = GroundPlane { found: 1, normal: n, d: dot(n, wheel.contact).wrapping_neg() };
+                let plane = GroundPlane { found: true, normal: n, d: dot(n, wheel.contact).wrapping_neg() };
                 car.ground.nearest = plane;
                 if car.flags & 0x400 != 0 || n[2] > 0x800 {
                     car.ground.floor = plane;
@@ -54,7 +54,7 @@ impl Collision {
             let obj = &self.objects[id];
             let Some(slot) = obj.car else { continue };
             let car = &mut cars[slot as usize];
-            if car.body.asleep != 0 || !search[slot as usize] {
+            if car.body.asleep || !search[slot as usize] {
                 continue;
             }
             let (mut nearest_d, mut floor_d) = (0i32, 0i32);
@@ -63,13 +63,13 @@ impl Collision {
                 let origin = zone.origin();
                 let c = sub(obj.centre, origin);
                 let mut consider = |car: &mut Car, d: i32, normal: Vec3, plane_d: i32, facing_up: bool| {
-                    if car.ground.nearest.found == 0 || d < nearest_d {
-                        car.ground.nearest = GroundPlane { found: 1, normal, d: plane_d };
+                    if !car.ground.nearest.found || d < nearest_d {
+                        car.ground.nearest = GroundPlane { found: true, normal, d: plane_d };
                         nearest_d = d;
                     }
-                    if (car.ground.floor.found == 0 || d < floor_d) && facing_up {
+                    if (!car.ground.floor.found || d < floor_d) && facing_up {
                         floor_d = d;
-                        car.ground.floor = GroundPlane { found: 1, normal, d: plane_d };
+                        car.ground.floor = GroundPlane { found: true, normal, d: plane_d };
                         car.ground.origin = origin;
                     }
                 };
@@ -105,7 +105,7 @@ impl Collision {
         for id in self.cars.iter() {
             let Some(slot) = self.objects[id].car else { continue };
             let car = &mut cars[slot as usize];
-            if car.body.asleep != 0 || car.ground.floor.found == 0 || car.ground.nearest.found == 0 {
+            if car.body.asleep || !car.ground.floor.found || !car.ground.nearest.found {
                 continue;
             }
             let floor = car.ground.floor;
