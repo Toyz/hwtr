@@ -14,8 +14,6 @@ use crate::ram::Ram;
 pub const CARS: u32 = 0x8012_8fcc;
 pub const CAR_SIZE: u32 = 0x930;
 pub const CAR_COUNT: u32 = 0x800d_263c;
-/// The update state: 2 full physics, 1 and 0 simpler updates.
-pub const STATE: u32 = 0x891;
 
 pub const SLOT: u32 = 0x0;
 pub const FLAGS: u32 = 0x4;
@@ -28,7 +26,8 @@ pub const HANDBRAKE: u32 = 0x24;
 /// The rigid body; the car's position, velocity and the rest are its.
 pub const BODY: u32 = 0x30;
 pub const GRAVITY_DIR: u32 = BODY + body::layout::GRAVITY_DIR;
-pub const DRAG_POINT: u32 = 0xfc;
+/// The body's centre of mass offset, where drag acts.
+pub const DRAG_POINT: u32 = BODY + body::layout::CENTRE;
 pub const POS: u32 = BODY + body::layout::POS;
 pub const VEL: u32 = BODY + body::layout::VEL;
 pub const SPEED: u32 = BODY + body::layout::SPEED;
@@ -73,6 +72,12 @@ pub const HEIGHT: u32 = 0x788;
 pub const SPRING_PRELOAD: u32 = 0x790;
 pub const EXTENSION: u32 = 0x794;
 pub const UNKNOWN_865: u32 = 0x865;
+pub const STATE: u32 = 0x891;
+pub const UNKNOWN_618: u32 = 0x618;
+pub const UNKNOWN_624: u32 = 0x624;
+pub const UNKNOWN_628: u32 = 0x628;
+pub const UNKNOWN_7CC: u32 = 0x7cc;
+pub const UNKNOWN_874: u32 = 0x874;
 pub const AIR_CONTROL: u32 = 0x86a;
 pub const AIR_ARMED: u32 = 0x86b;
 /// The axis lock: active (byte), axis (word), direction (VECTOR).
@@ -129,6 +134,8 @@ pub mod tuning {
     pub const DOWNFORCE_MPH: u32 = 10;
     pub const SETS: u32 = 33;
     pub const SURFACE_DRAG: u32 = 51;
+    pub const COMPUTER_SKILL: u32 = 14;
+    pub const PLAYER_SKILL: u32 = 16;
 }
 
 impl Wheel {
@@ -230,6 +237,8 @@ impl Tuning {
             downforce_mph: ram.u8(TUNING + DOWNFORCE_MPH),
             sets: [set(0), set(1), set(2)],
             surface_drag: ram.u8(TUNING + SURFACE_DRAG),
+            computer_skill: [ram.u8(TUNING + COMPUTER_SKILL), ram.u8(TUNING + COMPUTER_SKILL + 1)],
+            player_skill: [ram.u8(TUNING + PLAYER_SKILL), ram.u8(TUNING + PLAYER_SKILL + 1)],
         }
     }
 }
@@ -249,7 +258,6 @@ impl Car {
             stick: [ram.i32(at + STICK), ram.i32(at + STICK + 4)],
             handbrake: ram.u8(at + HANDBRAKE),
             body: Body::read(ram, at + BODY),
-            drag_point: ram.vec3(at + DRAG_POINT),
             wheels: wheels.collect(),
             grounded: ram.u8(at + GROUNDED),
             grounded_level: ram.u8(at + GROUNDED_LEVEL),
@@ -266,6 +274,12 @@ impl Car {
             spring_preload: ram.i32(at + SPRING_PRELOAD),
             extension: [ram.i32(at + EXTENSION), ram.i32(at + EXTENSION + 4)],
             unknown_865: ram.u8(at + UNKNOWN_865),
+            state: ram.u8(at + STATE),
+            unknown_618: ram.i32(at + UNKNOWN_618),
+            unknown_624: ram.i32(at + UNKNOWN_624),
+            unknown_628: ram.u8(at + UNKNOWN_628),
+            unknown_7cc: ram.i32(at + UNKNOWN_7CC),
+            unknown_874: ram.u8(at + UNKNOWN_874),
             air_control: ram.u8(at + AIR_CONTROL),
             air_armed: ram.u8(at + AIR_ARMED),
             air_lock: AxisLock {
@@ -288,7 +302,6 @@ impl Car {
         ram.set_i32(at + STICK + 4, self.stick[1]);
         ram.set_u8(at + HANDBRAKE, self.handbrake);
         self.body.write(ram, at + BODY);
-        ram.set_vec3(at + DRAG_POINT, self.drag_point);
         ram.set_u8(at + WHEEL_COUNT, self.wheels.len() as u8);
         for (i, wheel) in self.wheels.iter().enumerate() {
             wheel.write(ram, at + WHEELS + i as u32 * WHEEL_SIZE);
@@ -311,6 +324,12 @@ impl Car {
         ram.set_i32(at + EXTENSION, self.extension[0]);
         ram.set_i32(at + EXTENSION + 4, self.extension[1]);
         ram.set_u8(at + UNKNOWN_865, self.unknown_865);
+        ram.set_u8(at + STATE, self.state);
+        ram.set_i32(at + UNKNOWN_618, self.unknown_618);
+        ram.set_i32(at + UNKNOWN_624, self.unknown_624);
+        ram.set_u8(at + UNKNOWN_628, self.unknown_628);
+        ram.set_i32(at + UNKNOWN_7CC, self.unknown_7cc);
+        ram.set_u8(at + UNKNOWN_874, self.unknown_874);
         ram.set_u8(at + AIR_CONTROL, self.air_control);
         ram.set_u8(at + AIR_ARMED, self.air_armed);
         ram.set_u8(at + AIR_LOCK, self.air_lock.active);

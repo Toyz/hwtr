@@ -9,4 +9,5 @@ pub mod body;
 pub mod car;
 pub mod fsm;
 pub mod math;
+pub mod race;
 pub mod ram;

@@ -9,11 +9,12 @@
 
 pub mod handling;
 pub mod layout;
+mod load;
 
 pub use handling::{Axle, EngineSpec, Handling};
 
 use crate::body::Body;
-use crate::math::{Tables, Vec3, add, apply_matrix_lv, column, cross, div, div_fx, dot, fx, sub};
+use crate::math::{Tables, Vec3, add, apply_matrix_lv, column, cross, div, div_fx, divdi3, dot, fx, sub};
 
 /// 1 and ½, 4.12.
 const ONE: i32 = 0x1000;
@@ -175,6 +176,10 @@ pub struct Tuning {
     pub sets: [TuningSet; 3],
     /// The drag of the dragging surface, in percent.
     pub surface_drag: u8,
+    /// The range a car's skill is scaled into by the difficulty, in
+    /// percent: for computer cars and for players' (low, high).
+    pub computer_skill: [u8; 2],
+    pub player_skill: [u8; 2],
 }
 
 impl Tuning {
@@ -209,12 +214,6 @@ impl Downforce {
     }
 }
 
-/// libgcc's `__divdi3` (0x800a9f78), 64-bit division truncated toward zero.
-/// The car code never divides by zero with it; that gives 0 here.
-fn divdi3(a: i64, b: i64) -> i64 {
-    a.checked_div(b).unwrap_or(0)
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Car {
     /// The car's place in the race's car array.
@@ -235,8 +234,6 @@ pub struct Car {
     /// sideways grip.
     pub handbrake: u8,
     pub body: Body,
-    /// Where drag acts, from the position, world axes.
-    pub drag_point: Vec3,
     pub wheels: Vec<Wheel>,
     /// Wheels on the ground this step, and of those, the ones on a floor.
     pub grounded: u8,
@@ -262,6 +259,14 @@ pub struct Car {
     pub extension: [i32; 2],
     /// Non-zero: the dragging surface does not drag. Meaning not yet known.
     pub unknown_865: u8,
+    /// 2: full physics (players), 1: computer cars, 0: (not yet known).
+    pub state: u8,
+    /// Set as the car is loaded; meanings not yet known.
+    pub unknown_618: i32,
+    pub unknown_624: i32,
+    pub unknown_628: u8,
+    pub unknown_7cc: i32,
+    pub unknown_874: u8,
     /// Non-zero while the stick is turning the car in the air.
     pub air_control: u8,
     /// Which stick axes may turn the car in the air: [`Car::ARMED_ALONG`],
@@ -402,7 +407,7 @@ impl Car {
 
     /// 0x80041af0: aerodynamics. Above a speed of 1, applies the drag
     /// `0.5 ρ v² Cd w h` (feet, from inches) against the velocity, at
-    /// [`Car::drag_point`]. Returns the downforce on each axle from the same
+    /// the body's centre. Returns the downforce on each axle from the same
     /// dynamic pressure, with the tuning's bonus speed while the car is on
     /// the ground and its percentages when the car's flags choose a set.
     pub fn aero(&mut self, tuning: &Tuning) -> Downforce {
@@ -429,7 +434,7 @@ impl Car {
             down.front = fx(down.front, percent(set.downforce_front));
             down.rear = fx(down.rear, percent(set.downforce_rear));
         }
-        let at = add(self.body.pos, self.drag_point);
+        let at = add(self.body.pos, self.body.centre);
         self.body.apply_force(at, dir.map(|d| fx(d, drag.wrapping_neg())));
         down
     }
@@ -667,7 +672,7 @@ impl Car {
         } else {
             return;
         };
-        let centre = add(self.body.pos, self.drag_point);
+        let centre = add(self.body.pos, self.body.centre);
         self.body.apply_force(add(centre, arm), push);
         self.body.apply_force(sub(centre, arm), push.map(i32::wrapping_neg));
         if self.air_lock.active == 0 || self.air_lock.axis != axis {

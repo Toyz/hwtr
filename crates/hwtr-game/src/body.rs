@@ -4,7 +4,9 @@
 //! physics (`car_update`), cars at state 1 (0x80040494) and two other
 //! callers (0x8006b754, 0x8007c894).
 
-use crate::math::{Matrix, Matrix64, Tables, Vec3, add, column, div_fx, dot, fx, mul_16_64, mul_64_16, sub, transpose};
+use crate::math::{
+    Matrix, Matrix64, Tables, Vec3, add, column, div_fx, divdi3, dot, fx, mul_16_64, mul_64_16, sub, transpose,
+};
 
 /// The fastest a body moves, inches a second (about 131 mph).
 pub const MAX_SPEED: i32 = 0x90_0000;
@@ -15,13 +17,18 @@ const SPIN_KEPT: i32 = 0x1000 - fx(8, 0x1_9000);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Body {
-    /// The inverse of the inertia tensor in the body's axes.
+    /// The inertia tensor in the body's axes, and its inverse.
+    pub inertia: Matrix64,
     pub inv_inertia: Matrix64,
     pub mass: i32,
     pub inv_mass: i32,
     /// Gravity's strength (386, inches a second squared) and direction.
     pub gravity: i32,
     pub gravity_dir: Vec3,
+    /// The centre of mass from the position, world axes (where drag acts on
+    /// a car), and the word after it.
+    pub centre: Vec3,
+    pub centre_pad: i32,
     pub pos: Vec3,
     pub momentum: Vec3,
     pub vel: Vec3,
@@ -40,6 +47,8 @@ pub struct Body {
     pub torque: [i64; 3],
     /// Non-zero: at rest and not integrated.
     pub asleep: u8,
+    /// Steps the body has been still for; it falls asleep after enough.
+    pub sleep_count: i32,
 }
 
 /// The 64-bit product the torque uses: both factors shifted up 8 as 64-bit
@@ -49,7 +58,42 @@ fn wide(a: i32, b: i32) -> i64 {
     ((a as i64) << 8).wrapping_mul((b as i64) << 8) >> 20
 }
 
+/// A box's inertia about its centre, and the inverse, 64-bit as the game
+/// keeps them (0x80071940): each moment `m (a² + b²) / 12`, the tensor
+/// scaled up 8 bits and the inverse `12 · 2³² / (m (a² + b²))`.
+fn box_inertia(mass: i32, [w, l, h]: Vec3) -> (Matrix64, Matrix64) {
+    let sq = |x: i32| fx(x, x);
+    let moments =
+        [fx(mass, sq(l).wrapping_add(sq(h))), fx(mass, sq(w).wrapping_add(sq(h))), fx(mass, sq(w).wrapping_add(sq(l)))];
+    let (mut inertia, mut inverse) = ([[0i64; 3]; 3], [[0i64; 3]; 3]);
+    for (k, m) in moments.into_iter().enumerate() {
+        inertia[k][k] = divdi3((m as i64) << 28, 12 << 20);
+        inverse[k][k] = divdi3(3072 << 32, (m as i64) << 8);
+    }
+    (inertia, inverse)
+}
+
 impl Body {
+    /// 0x8006bdd8: a box-shaped body of `mass` and `size` (width, length,
+    /// height) at rest at the origin, unrotated, with its centre of mass at
+    /// `centre` and gravity pulling down at 386 in/s².
+    pub fn new(mass: i32, size: Vec3, centre: Vec3) -> Body {
+        let (inertia, inv_inertia) = box_inertia(mass, size);
+        let rot = [[0x1000, 0, 0], [0, 0x1000, 0], [0, 0, 0x1000]];
+        Body {
+            inertia,
+            inv_inertia_world: mul_64_16(&mul_16_64(&rot, &inv_inertia), &transpose(&rot)),
+            inv_inertia,
+            mass,
+            inv_mass: div_fx(0x1000, mass),
+            gravity: 0x18_2000,
+            gravity_dir: [0, 0, -0x1000],
+            centre,
+            rot,
+            ..Body::default()
+        }
+    }
+
     /// Adds `force`, acting at the world point `at`, to the force sum, and
     /// its torque about the position to the torque sum.
     pub fn apply_force(&mut self, at: Vec3, force: Vec3) {
@@ -157,11 +201,13 @@ pub mod layout {
     use super::Body;
     use crate::ram::Ram;
 
+    pub const INERTIA: u32 = 0x00;
     pub const INV_INERTIA: u32 = 0x58;
     pub const MASS: u32 = 0xb0;
     pub const INV_MASS: u32 = 0xb4;
     pub const GRAVITY: u32 = 0xb8;
     pub const GRAVITY_DIR: u32 = 0xbc;
+    pub const CENTRE: u32 = 0xcc;
     pub const POS: u32 = 0xdc;
     pub const MOMENTUM: u32 = 0xec;
     pub const VEL: u32 = 0xfc;
@@ -175,16 +221,20 @@ pub mod layout {
     pub const FORCE: u32 = 0x1b4;
     pub const TORQUE: u32 = 0x1c8;
     pub const ASLEEP: u32 = 0x1e0;
+    pub const SLEEP_COUNT: u32 = 0x1e4;
 
     impl Body {
         pub fn read(ram: &Ram, b: u32) -> Body {
             let wide3 = |a: u32| [0, 1, 2].map(|k| ram.i64(a + 8 * k));
             Body {
+                inertia: ram.matrix64(b + INERTIA),
                 inv_inertia: ram.matrix64(b + INV_INERTIA),
                 mass: ram.i32(b + MASS),
                 inv_mass: ram.i32(b + INV_MASS),
                 gravity: ram.i32(b + GRAVITY),
                 gravity_dir: ram.vec3(b + GRAVITY_DIR),
+                centre: ram.vec3(b + CENTRE),
+                centre_pad: ram.i32(b + CENTRE + 12),
                 pos: ram.vec3(b + POS),
                 momentum: ram.vec3(b + MOMENTUM),
                 vel: ram.vec3(b + VEL),
@@ -197,15 +247,19 @@ pub mod layout {
                 force: ram.vec3(b + FORCE),
                 torque: wide3(b + TORQUE),
                 asleep: ram.u8(b + ASLEEP),
+                sleep_count: ram.i32(b + SLEEP_COUNT),
             }
         }
 
         pub fn write(&self, ram: &mut Ram, b: u32) {
+            ram.set_matrix64(b + INERTIA, &self.inertia);
             ram.set_matrix64(b + INV_INERTIA, &self.inv_inertia);
             ram.set_i32(b + MASS, self.mass);
             ram.set_i32(b + INV_MASS, self.inv_mass);
             ram.set_i32(b + GRAVITY, self.gravity);
             ram.set_vec3(b + GRAVITY_DIR, self.gravity_dir);
+            ram.set_vec3(b + CENTRE, self.centre);
+            ram.set_i32(b + CENTRE + 12, self.centre_pad);
             ram.set_vec3(b + POS, self.pos);
             ram.set_vec3(b + MOMENTUM, self.momentum);
             ram.set_vec3(b + VEL, self.vel);
@@ -220,6 +274,7 @@ pub mod layout {
             ram.set_i32(b + SPIN_RATE, self.spin_rate);
             ram.set_vec3(b + FORCE, self.force);
             ram.set_u8(b + ASLEEP, self.asleep);
+            ram.set_i32(b + SLEEP_COUNT, self.sleep_count);
         }
     }
 }

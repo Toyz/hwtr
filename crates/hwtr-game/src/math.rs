@@ -250,3 +250,25 @@ impl Tables {
         out
     }
 }
+
+/// libgcc's `__divdi3` (0x800a9f78), 64-bit division truncated toward zero.
+/// The game never divides by zero with it; that gives 0 here.
+pub fn divdi3(a: i64, b: i64) -> i64 {
+    a.checked_div(b).unwrap_or(0)
+}
+
+/// 0x8006abe4: the rotation of the unit quaternion (x, y, z, w), 4.12, each
+/// doubled product taken as `fx(fx(2, a), b)`; entries kept to 16 bits.
+pub fn quat_to_matrix([x, y, z, w]: [i32; 4]) -> Matrix {
+    let two = |a: i32, b: i32| fx(fx(0x2000, a), b);
+    let (zw, yw, xw) = (two(z, w), two(y, w), two(x, w));
+    let (yx, zx, xx) = (two(y, x), two(z, x), two(x, x));
+    let (zy, yy, zz) = (two(z, y), two(y, y), two(z, z));
+    let one = 0x1000i32;
+    let m = [
+        [one.wrapping_sub(yy.wrapping_add(zz)), yx.wrapping_sub(zw), zx.wrapping_add(yw)],
+        [yx.wrapping_add(zw), one.wrapping_sub(xx.wrapping_add(zz)), zy.wrapping_sub(xw)],
+        [zx.wrapping_sub(yw), zy.wrapping_add(xw), one.wrapping_sub(xx.wrapping_add(yy))],
+    ];
+    m.map(|row| row.map(|v| v as i16))
+}

@@ -43,6 +43,8 @@ pub struct CheckStats {
 
 struct OpenCheck {
     func: u32,
+    /// Checked even when interrupts ran during the call.
+    through_interrupts: bool,
     ret: u32,
     sp: u32,
     interrupts: u64,
@@ -88,7 +90,7 @@ pub struct Machine {
     pub pending: std::rc::Rc<std::cell::RefCell<Vec<(u64, u32)>>>,
     /// Interrupt handlers run so far.
     pub interrupts: u64,
-    checks: HashMap<u32, Check>,
+    checks: HashMap<u32, (Check, bool)>,
     open_checks: Vec<OpenCheck>,
     pub check_stats: CheckStats,
 }
@@ -234,7 +236,14 @@ impl Machine {
     /// the machine at entry, and what it returns sees it at the return. The
     /// results collect in `check_stats`.
     pub fn check(&mut self, addr: u32, check: impl FnMut(&Cpu, &Bus) -> CheckExit + 'static) {
-        self.checks.insert(addr, Box::new(check));
+        self.checks.insert(addr, (Box::new(check), false));
+    }
+
+    /// As `check`, for a function whose result interrupts do not touch (a
+    /// loader that runs across frames): its calls are checked even when
+    /// interrupts ran during them.
+    pub fn check_through_interrupts(&mut self, addr: u32, check: impl FnMut(&Cpu, &Bus) -> CheckExit + 'static) {
+        self.checks.insert(addr, (Box::new(check), true));
     }
 
     /// The BIOS functions the PsyQ library reaches that are pure enough to
@@ -539,7 +548,7 @@ impl Machine {
                 && self.cpu.r[29] == top.sp
             {
                 let c = self.open_checks.pop().unwrap();
-                if c.interrupts != self.interrupts {
+                if c.interrupts != self.interrupts && !c.through_interrupts {
                     self.check_stats.skipped += 1;
                 } else {
                     match (c.exit)(&self.cpu, &self.bus) {
@@ -552,11 +561,19 @@ impl Machine {
                 }
             }
             if self.cpu.next_pc == pc.wrapping_add(4)
-                && let Some(check) = self.checks.get_mut(&pc)
+                && let Some((check, through_interrupts)) = self.checks.get_mut(&pc)
             {
                 let exit = check(&self.cpu, &self.bus);
+                let through_interrupts = *through_interrupts;
                 let (ret, sp) = (self.cpu.r[31], self.cpu.r[29]);
-                self.open_checks.push(OpenCheck { func: pc, ret, sp, interrupts: self.interrupts, exit });
+                self.open_checks.push(OpenCheck {
+                    func: pc,
+                    through_interrupts,
+                    ret,
+                    sp,
+                    interrupts: self.interrupts,
+                    exit,
+                });
             }
             // A hook or a BIOS entry replaces the function: run it, then return
             // to ra as if the function had. Hooks only fire on a function's
