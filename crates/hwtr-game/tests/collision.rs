@@ -174,3 +174,66 @@ fn wheels_match_the_original() {
     }
     assert!(grounded > 0, "no wheel touched the ground");
 }
+
+#[test]
+fn ground_matches_the_original() {
+    let Some(exe) = common::exe() else { return };
+    let t = hwtr_game::math::Tables::from_exe(&exe);
+    let (mut from_wheels, mut from_zones) = (0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { continue };
+        // Every other road zone turns gravity toward its surface, as a
+        // loop's do (Desert has none).
+        let scp_at = Ram(&mut m.bus.ram).i32(hwtr_game::collision::world::layout::SCP) as u32;
+        let zones = Ram(&mut m.bus.ram).i32(scp_at) as u32;
+        for z in (1..zones).step_by(2) {
+            let at = scp_at + 240 + 20 * z;
+            let flags = Ram(&mut m.bus.ram).u8(at + 1);
+            if flags & 0x08 != 0 {
+                Ram(&mut m.bus.ram).set_u8(at + 1, flags | 0x20);
+            }
+        }
+        let (mut world, _) = Collision::read(&Ram(&mut m.bus.ram));
+        let mut cars = cars_from(&mut m.bus.ram);
+        let mut rng = common::Rng(0x6e0d_0000_0000_000d);
+        for step in 0..40 {
+            for (k, car) in cars.iter_mut().enumerate() {
+                let mut push = [0; 3].map(|_| (rng.word() as i32) >> (10 + rng.below(8)));
+                push[2] = (rng.word() as i32) >> (13 + rng.below(6));
+                car.body.pos = hwtr_game::math::add(car.body.pos, push);
+                car.body.asleep = 0;
+                // Now and then the car's zone holds gravity.
+                if rng.below(4) == 0 {
+                    car.flags ^= 0x400;
+                }
+                // And now and then gravity turns, so not every road is a
+                // floor.
+                if rng.below(5) == 0 {
+                    car.body.gravity_dir = [[0, 0, -0x1000], [0, 0, 0x1000], [0x1000, 0, 0], [0, -0xb50, -0xb50]]
+                        [rng.below(4) as usize];
+                }
+                car.write(&mut Ram(&mut m.bus.ram), CARS + k as u32 * CAR_SIZE);
+            }
+            world.update_points(&mut cars);
+            world.track_zones(&cars);
+            world.wheels(&t, &mut cars);
+            for addr in [0x8004_e47c, 0x8005_15e0, 0x8005_1bc0] {
+                m.call(addr, &[]).unwrap();
+            }
+            world.ground(&t, &mut cars);
+            m.call(0x8005_36b4, &[]).unwrap();
+            let original = cars_from(&mut m.bus.ram);
+            for (k, (a, b)) in original.iter().zip(&cars).enumerate() {
+                assert_eq!(a.ground, b.ground, "{name} step {step}: car {k} ground");
+                assert_eq!(a, b, "{name} step {step}: car {k}");
+                if a.ground.floor.found != 0 {
+                    if a.ground.origin == [0; 3] { from_wheels += 1 } else { from_zones += 1 }
+                }
+            }
+            let (w, _) = Collision::read(&Ram(&mut m.bus.ram));
+            world = w;
+            cars = original;
+        }
+    }
+    assert!(from_wheels > 0 && from_zones > 0, "floors from wheels {from_wheels}, from zones {from_zones}");
+}

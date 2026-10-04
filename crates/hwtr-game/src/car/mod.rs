@@ -163,6 +163,28 @@ pub struct AxisLock {
     pub dir: Vec3,
 }
 
+/// A plane, `n · p + d` (world coordinates unless said otherwise). The
+/// words after the game's normals and origin often hold uninitialised stack
+/// and are not modelled.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GroundPlane {
+    /// Non-zero once found this step.
+    pub found: u8,
+    pub normal: Vec3,
+    pub d: i32,
+}
+
+/// The ground near a car, found each step (0x800536b4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Ground {
+    /// The floor (ground facing up against gravity): its plane relative to
+    /// `origin` (a zone's origin, or zero).
+    pub floor: GroundPlane,
+    pub origin: Vec3,
+    /// The nearest surface of any kind (a wheel's ground, the road, a wall).
+    pub nearest: GroundPlane,
+}
+
 /// One set of tuning bytes, chosen by car flag bit 7, 8 or 9.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TuningSet {
@@ -285,6 +307,7 @@ pub struct Car {
     /// The distance along the lap of the zone the car is in, from the
     /// zone's distance (tenths).
     pub lap_distance: i32,
+    pub ground: Ground,
     /// Set as the car is loaded; meanings not yet known.
     pub unknown_618: i32,
     pub unknown_624: i32,

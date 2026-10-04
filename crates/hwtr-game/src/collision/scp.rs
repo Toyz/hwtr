@@ -77,18 +77,23 @@ impl Plane {
     }
 }
 
-/// A road edge point, 12 bytes: a position in whole units and six bytes
-/// not yet understood.
+/// A road edge point, 12 bytes: a position, and a second point above the
+/// road from it (the road's up there, once normalised), in whole units.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EdgePoint {
     pub pos: [i16; 3],
-    pub unknown: [u8; 6],
+    pub up: [i16; 3],
 }
 
 impl EdgePoint {
     /// The position in world units, 4.12.
     pub fn pos(&self) -> Vec3 {
         self.pos.map(|c| (c as i32) << 12)
+    }
+
+    /// The point above it, 4.12.
+    pub fn up(&self) -> Vec3 {
+        self.up.map(|c| (c as i32) << 12)
     }
 }
 
@@ -148,7 +153,7 @@ impl Scp {
             .collect();
         let edge = |e: usize| EdgePoint {
             pos: [i16_at(e), i16_at(e + 2), i16_at(e + 4)],
-            unknown: b[e + 6..e + 12].try_into().unwrap(),
+            up: [i16_at(e + 6), i16_at(e + 8), i16_at(e + 10)],
         };
         let sections = table(1).map(|s| Section { edges: [edge(s), edge(s + 12)] }).collect();
         let planes = table(2)

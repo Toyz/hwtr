@@ -7,7 +7,7 @@
 //! port to the original byte for byte.
 
 use super::handling::{BLOCK_A, Handling};
-use super::{AxisLock, Car, Engine, Tuning, TuningSet, Wheel};
+use super::{AxisLock, Car, Engine, Ground, GroundPlane, Tuning, TuningSet, Wheel};
 use crate::body::{self, Body};
 use crate::ram::Ram;
 
@@ -80,6 +80,10 @@ pub const UNKNOWN_26: u32 = 0x26;
 pub const UNKNOWN_27: u32 = 0x27;
 pub const UNKNOWN_5E3: u32 = 0x5e3;
 pub const LAP_DISTANCE: u32 = 0x5dc;
+/// The ground: the floor (found +0x8b2, origin +0x8b4, normal +0x8c4, d
+/// +0x8d4) and the nearest surface (found +0x8f0, normal +0x8f4, d +0x904).
+pub const FLOOR: [u32; 4] = [0x8b2, 0x8b4, 0x8c4, 0x8d4];
+pub const NEAREST: [u32; 3] = [0x8f0, 0x8f4, 0x904];
 pub const UNKNOWN_618: u32 = 0x618;
 pub const UNKNOWN_624: u32 = 0x624;
 pub const UNKNOWN_628: u32 = 0x628;
@@ -303,6 +307,19 @@ impl Car {
             unknown_27: ram.u8(at + UNKNOWN_27),
             unknown_5e3: ram.u8(at + UNKNOWN_5E3),
             lap_distance: ram.i32(at + LAP_DISTANCE),
+            ground: Ground {
+                floor: GroundPlane {
+                    found: ram.u8(at + FLOOR[0]),
+                    normal: ram.vec3(at + FLOOR[2]),
+                    d: ram.i32(at + FLOOR[3]),
+                },
+                origin: ram.vec3(at + FLOOR[1]),
+                nearest: GroundPlane {
+                    found: ram.u8(at + NEAREST[0]),
+                    normal: ram.vec3(at + NEAREST[1]),
+                    d: ram.i32(at + NEAREST[2]),
+                },
+            },
             unknown_618: ram.i32(at + UNKNOWN_618),
             unknown_624: ram.i32(at + UNKNOWN_624),
             unknown_628: ram.u8(at + UNKNOWN_628),
@@ -360,6 +377,14 @@ impl Car {
         ram.set_u8(at + UNKNOWN_27, self.unknown_27);
         ram.set_u8(at + UNKNOWN_5E3, self.unknown_5e3);
         ram.set_i32(at + LAP_DISTANCE, self.lap_distance);
+        let g = &self.ground;
+        ram.set_u8(at + FLOOR[0], g.floor.found);
+        ram.set_vec3(at + FLOOR[1], g.origin);
+        ram.set_vec3(at + FLOOR[2], g.floor.normal);
+        ram.set_i32(at + FLOOR[3], g.floor.d);
+        ram.set_u8(at + NEAREST[0], g.nearest.found);
+        ram.set_vec3(at + NEAREST[1], g.nearest.normal);
+        ram.set_i32(at + NEAREST[2], g.nearest.d);
         ram.set_i32(at + UNKNOWN_618, self.unknown_618);
         ram.set_i32(at + UNKNOWN_624, self.unknown_624);
         ram.set_u8(at + UNKNOWN_628, self.unknown_628);

@@ -2,6 +2,7 @@
 //! and the contacts between them.
 
 pub mod create;
+pub mod ground;
 pub mod object;
 pub mod scp;
 pub mod wheels;
