@@ -339,6 +339,7 @@ impl InMemory for Car {
             },
             wreck_draws: Default::default(),
             turbo_fired: Default::default(),
+            flame_out: Default::default(),
             sounds: Default::default(),
             lines: Default::default(),
             laps: laps(ram, at),

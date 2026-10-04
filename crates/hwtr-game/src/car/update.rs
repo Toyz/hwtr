@@ -60,7 +60,8 @@ impl Car {
         if let Some(speed) = self.boost
             && self.body.speed.wrapping_add(mph(30)) < speed
         {
-            tracing::trace!("car {}: the boost's end, not yet ported", self.slot);
+            // iface_general+0xd8 (0x8002aff4): the boost flame out.
+            self.flame_out.0 = Some(());
             self.boost = None;
         }
         grace_over

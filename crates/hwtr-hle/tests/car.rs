@@ -793,3 +793,50 @@ fn shadows_match_the_original() {
     }
     assert!(cast > 1000 && none > 100, "{cast} cast, {none} none");
 }
+
+/// `cars_update`'s boost end: a car short of its boost's speed by more
+/// than 30 mph has its boost flame put out (iface_general+0xd8,
+/// 0x8002aff4, hooked) before its update; any speed and boost speed.
+#[test]
+fn a_boost_ends_as_in_the_original() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0xb005_7e4d);
+    let (mut ended, mut kept) = (0, 0);
+    for name in STATES {
+        let Some(mut m) = common::state(&exe, name) else { return };
+        let out: Rc<RefCell<Vec<u32>>> = Rc::default();
+        let o = out.clone();
+        m.hook(0x8002_aff4, move |cpu, _| {
+            o.borrow_mut().push(cpu.r[4] & 0xff);
+            0
+        });
+        let start = m.bus.ram.clone();
+        let cars = m.bus.read_u32(car::CAR_COUNT);
+        for round in 0..300 {
+            m.bus.ram.copy_from_slice(&start);
+            out.borrow_mut().clear();
+            let mut expected = Vec::new();
+            for slot in 0..cars {
+                let at = CARS + CAR_SIZE * slot;
+                let mut ours = on_car(&mut m.bus.ram, at, |c, _| {
+                    c.body.speed = rng.below(0x80_0000) as i32;
+                    c.boost = (rng.below(3) != 0).then(|| rng.below(0x90_0000) as i32);
+                    c.wrecked = false;
+                    c.clone()
+                });
+                ours.run_timers(25);
+                if ours.flame_out.0.is_some() {
+                    expected.push(slot);
+                    ended += 1;
+                } else if ours.boost.is_some() {
+                    kept += 1;
+                }
+            }
+            m.call(0x8004_064c, &[25]).unwrap();
+            assert_eq!(*out.borrow(), expected, "{name} round {round}");
+        }
+    }
+    assert!(ended > 300 && kept > 300, "{ended} ended, {kept} kept");
+}

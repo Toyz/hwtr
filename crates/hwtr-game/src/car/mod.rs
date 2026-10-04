@@ -415,6 +415,8 @@ pub struct Car {
     /// and the sound effects the car asked for (0x800157f8: effect,
     /// importance).
     pub turbo_fired: crate::effects::Pending<()>,
+    /// A boost ended this step (it puts the boost flame out, 0x8002aff4).
+    pub flame_out: crate::effects::Pending<()>,
     pub sounds: crate::effects::Pending<Vec<(u8, u8)>>,
     /// The commentator's lines the car asked for (0x80036484).
     pub lines: crate::effects::Pending<Vec<u8>>,

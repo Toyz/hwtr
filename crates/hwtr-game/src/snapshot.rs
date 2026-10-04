@@ -148,7 +148,6 @@ impl CarShot {
             wheel.spin_rate = 0;
             wheel.compression = 0;
         }
-        tracing::trace!("car {}: its trail cleared (0x8002aff4): not yet ported", car.slot);
     }
 }
 

@@ -3,7 +3,7 @@ title: The race's effects: puffs, skid marks, sparks
 status: partial
 discs: US
 covers: US CCCPSX.EXE:0x8002bdb4 effects_init, 0x8002c0dc pool_init, 0x8002c2b8 pool_alloc, 0x8002f354 particles_update, 0x8002f618 pool_draw, 0x8002b888 trails_emit, 0x80029230 trail_push, 0x800303cc skid_segment_spawn, 0x80030fc8 dust_puff_spawn, 0x8003119c spark_puff_spawn, 0x8002e9f8 collision_sparks, 0x8002c32c spark_spawn, 0x80049ecc car_pose, 0x80068540 view_setup, 0x800d25c0 0x800d25c8 0x800d25d0 0x800d25d8 pools, 0x8011ec2c trails, 0x800d0d98 fx_enable, 0x800d2578 fps, 0x800d0b68 frame_count
-worklog: 45, 46, 47, 56
+worklog: 45, 46, 47, 56, 61
 ---
 
 # The race's effects
@@ -214,6 +214,11 @@ It does this through the cvs byte +0x1ef (iface_general+220).
     lift of the car's last posed wheel (see [the car's wheels](car-wheels.md))
   - meanwhile the car's root colour pulses from 128 to 248 and back, a
     step every 20 ms of the system clock (0x8002bc04)
+  - it goes out early (0x8002aff4, through iface_general+0xd8) when
+    `cars_update` finds the car's boost over: the car slowed to more than
+    30 mph below the boost's speed. Putting it out stops the pulse (grey
+    again unless wrecked) and clears the effects' wreck mark. The results'
+    snapshots put every car's flame out the same way.
 - **A reset (0x80029f04):** clears every puff and spark, idles the
   columns and restores a wrecked car's colour.
 

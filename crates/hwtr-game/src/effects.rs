@@ -437,7 +437,7 @@ impl Effects {
 
     /// 0x8002aff4 (with 0x8002bd48): the flame out, the colour pulse
     /// stopped (grey again unless wrecked), and the wreck mark cleared.
-    fn flame_stop(&mut self, slot: u8) {
+    pub fn flame_stop(&mut self, slot: u8) {
         let s = slot as usize;
         if s >= 6 {
             return;

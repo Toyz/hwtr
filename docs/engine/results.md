@@ -81,8 +81,8 @@ cleared (0x80029f04); the floor flag is written, and if set the normal
 `q = (b << 12) / (127 << 12)`, `r` its remainder, `(q << 12) + (r << 12) /
 (127 << 12)`; the third row the cross product of the two (each product
 `(a * b) >> 12`); `pos << 12`; steer 0, the body awake, each wheel's
-compression and spin 0, the reset grace 0; then the car's trail is
-cleared (0x8002aff4). The wrecked byte itself is not written.
+compression and spin 0, the reset grace 0; then the car's boost flame is
+put out (0x8002aff4). The wrecked byte itself is not written.
 
 Cameras (0x8003bafc): rotation as for cars, `pos << 12`, the mode and car
 bytes, shake 0.

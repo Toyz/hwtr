@@ -819,6 +819,9 @@ impl Race {
                 for line in self.cars[slot].lines.0.take().unwrap_or_default() {
                     self.commentary.ask(line);
                 }
+                if self.cars[slot].flame_out.0.take().is_some() {
+                    self.effects.flame_stop(slot as u8);
+                }
                 if self.cars[slot].turbo_fired.0.take().is_some() {
                     let human = self.cars[slot].flags & 3 != 0;
                     let shown = self.car_shown(slot);
@@ -1073,10 +1076,12 @@ impl Race {
         if shots != 0 {
             let k = ((since - RESULTS_MS) / SNAPSHOT_MS) as usize % shots;
             self.snapshots.put_back(k, &mut self.cars, &mut self.cameras);
-            // 0x8004aef8's effects: a wrecked car's model blackened
-            // (0x80029e10 mode 2), any other's effects cleared (0x80029f04).
+            // 0x8004aef8's effects: each car's boost flame out (0x8002aff4),
+            // a wrecked car's model blackened (0x80029e10 mode 2), any
+            // other's effects cleared (0x80029f04).
             if let Some(shot) = self.snapshots.shots.get(k) {
                 for (slot, c) in shot.cars.iter().enumerate() {
+                    self.effects.flame_stop(slot as u8);
                     if c.wrecked {
                         self.effects.car_charred(slot as u8);
                     } else {
