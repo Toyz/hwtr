@@ -2,8 +2,8 @@
 title: Flying wheels (a player's wreck throws its wheels)
 status: solid
 discs: US
-covers: US CCCPSX.EXE:0x8007c9b0 wheels_throw, 0x801323f4 flying_wheels, 0x8007c894 flying_step, 0x8004d798 object_add, 0x8004da1c object_remove, 0x8007da78 flying_remove, 0x8006dc08 contact_impulse
-worklog: 65, 71
+covers: US CCCPSX.EXE:0x8007c9b0 wheels_throw, 0x801323f4 flying_wheels, 0x8007c894 flying_step, 0x8004d798 object_add, 0x8004da1c object_remove, 0x8007da78 flying_remove, 0x8006dc08 contact_impulse, 0x8007c7a0 flying_init, 0x8007c824 flying_clear
+worklog: 65, 71, 78
 ---
 
 # Flying wheels
@@ -68,6 +68,19 @@ cars do, with these differences:
 
 The object's +0x7c holds the last contact's normal (not its point). This
 is the same for every kind.
+
+## The in-use byte
+
+A record's +0 is 0 (free) or 1 (a wheel), and nothing else:
+
+- the table's set-up (0x8007c7a0) and clearing (0x8007c824) write 0
+- the throw (0x8007c9b0) writes 1
+- taking a car's wheels away (0x8007da78) writes 0
+- a snapshot put back (0x8007ec08) copies a byte a snapshot saved, and
+  only in-use records are saved
+
+The snapshot code's branch for kind 1 (it keeps the car and wheel only
+then) has no other kind to meet.
 
 ## Each step (0x8007c894)
 

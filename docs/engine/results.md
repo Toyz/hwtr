@@ -3,7 +3,7 @@ title: The race's results: snapshots and the table
 status: partial
 discs: US
 covers: US CCCPSX.EXE:0x8007fe48 snapshot_init, 0x8007fe7c snapshot_reset, 0x8007feb0 snapshot_take, 0x80080014 snapshot_count, 0x80080020 snapshot_put_back, 0x8004a8fc, 0x8004aef8, 0x8003b610, 0x8003bafc, 0x8007e6e0, 0x8007ec08, 0x8006ba48, 0x8007f6f8, 0x80064b8c hud_draw, 0x80064b64 hud_mode, 0x8006452c, 0x80064040, 0x80064294, 0x800644c0, 0x80063ab4, 0x80063bc4, 0x8009b5b8, 0x80135a18 snapshot buffer, 0x800d2718 snapshot count, 0x800d271c bytes used, 0x800d2720 last taken, 0x800d2688 standings order, 0x801399b0 player names, 0x80033aa0 standings, 0x80061824 car_result, 0x800d0e48 lap_length, 0x800d25f8 points, 0x800d0e69 fastest_car, 0x800d0e54 time_left_from
-worklog: 43, 67, 70, 71
+worklog: 43, 67, 70, 71, 78
 ---
 
 # The race's results
@@ -46,7 +46,11 @@ after being let go, or on Start (26).
 5. **Points.** Each of the first six places with a time scores 10, 8, 7,
    6, 5 or 4 (0x800d25f8, by car). Any other car scores 0.
 6. **Fastest lap.** The car with the lowest nonzero best lap is noted at
-   0x800d0e69 (0x80064ce4). If tied, the one placed higher wins.
+   0x800d0e69 (0x80064ce4). If tied, the one placed higher wins. Nothing
+   reads it: it is written only here and by the HUD's race setup
+   (0x80061e04, 0xff for none). No load of it exists, gp-relative or
+   absolute, and no pointer to it is in the executable. The port keeps
+   no such byte.
 7. **Sound.** The race's sound is shut (0x800364cc).
 
 The stunt points' table (0x80064294) first stops the race against the
@@ -97,7 +101,7 @@ moving volumes (0x8006ba48)   4 bytes, nothing written
 track objects (0x8007f6f8)    4 bytes, nothing written
 flying wheels (0x8007e6e0), 16 bytes for each of the 8 slots at 0x801323f4
   (stride 680) in use, in slot order, or 4 bytes (nothing written) if none
-  u16   kind         the slot's in-use byte (+0); 1 for a wheel
+  u16   kind         the slot's in-use byte (+0): always 1 (see flying-wheels.md)
   u8    car          +1 (only for kind 1)
   u8    wheel        +2 (only for kind 1)
   s8    rot[2][3]    body rotation (+152 +0x110), as for cars
@@ -180,7 +184,3 @@ profiles (+8) by 0x8009b5b8 as each race the players start is set up.
 
 - What the draw mode byte (0x800d246c) changes beyond the car effects
   that test it (0x8001cd54, 0x800225c8, 0x80029fe4 and others).
-- Any in-use value but 1 in the flying wheels' table; 0x8007c9b0 only
-  writes 1.
-- Who reads the fastest lap's car (0x800d0e69); no code reads it
-  through gp.
