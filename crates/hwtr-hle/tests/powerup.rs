@@ -113,3 +113,113 @@ fn the_unlock_pickups_note_cars_as_the_original_does() {
     }
     assert_eq!(noted, 4, "each pickup notes its car for both players' slots");
 }
+
+const RACES: [&str; 11] = [
+    "desert1", "desert2", "desert3", "glacial1", "glacial2", "glacial3", "haunted2", "haunted3", "volcano1", "volcano2",
+    "volcano3",
+];
+
+/// What of the power-ups the original keeps, to compare: each pickup's
+/// name, number, power-up and state, each car's held power-ups, and the
+/// cars noted.
+type Kept = (Vec<(String, u16, u8, u32, bool)>, Vec<Vec<hwtr_game::powerup::Held>>, [[Option<u8>; 2]; 2]);
+
+fn kept(p: &hwtr_game::powerup::PowerUps) -> Kept {
+    (
+        p.pickups.iter().map(|q| (q.name.clone(), q.index, q.number, q.taken_at, q.out)).collect(),
+        p.held.clone(),
+        p.unlocked,
+    )
+}
+
+/// 0x800671a8 over each track's pickups: the power-ups `load_defs` keeps,
+/// in the order the original's list holds them (the order "Random" draws
+/// from).
+#[test]
+fn power_ups_load_in_the_originals_order() {
+    use hwtr_hle::original::powerup;
+    let Some(exe) = common::exe() else { return };
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../work/big");
+    let mut checked = 0;
+    for track in RACES {
+        let Some(mut m) = common::state(&exe, &format!("{track}-race")) else { continue };
+        let ram = Ram(&mut m.bus.ram);
+        let names: Vec<String> = (0..ram.i32(powerup::PICKUP_COUNT) as u32).map(|k| powerup::pickup(&ram, k).name).collect();
+        let theirs: Vec<String> = powerup::defs(&ram).into_iter().map(|(_, d)| d.name).collect();
+        let big = root.join(format!("{}BIG", track.to_uppercase()));
+        let ours: Vec<String> = hwtr_game::powerup::load_defs(names.iter().map(String::as_str), |name| {
+            std::fs::read(big.join(format!("{}PUP", name.to_uppercase()))).ok().and_then(|b| PowerUp::parse(&b))
+        })
+        .into_iter()
+        .map(|d| d.name)
+        .collect();
+        assert_eq!(ours, theirs, "{track}: pickups {names:?}");
+        checked += (theirs.len() > 1) as u32;
+    }
+    assert!(checked >= 5, "{checked} tracks with more than one power-up");
+}
+
+/// Pickups taken (0x80067f98) by any car, out or not, "Random" ones too,
+/// and the frames after (0x80068130: power-ups running out, pickups back),
+/// over the race's clock, on every track: the cars, the pickups, what each
+/// car holds, the cars noted and the random seed compared after each.
+#[test]
+fn pickups_are_taken_and_come_back_as_in_the_original() {
+    use hwtr_game::rand::Rand;
+    use hwtr_hle::original::car::CAR_SIZE;
+    use hwtr_hle::original::powerup;
+    use hwtr_hle::original::rand::SEED;
+    let Some(exe) = common::exe() else { return };
+    let mut rng = common::Rng(0x0b1c_4b5);
+    let (mut taken, mut expired, mut back, mut random) = (0, 0, 0, 0);
+    for track in RACES {
+        let Some(mut m) = common::state(&exe, &format!("{track}-race")) else { continue };
+        let mut ours = powerup::read(&Ram(&mut m.bus.ram), 6);
+        if ours.pickups.is_empty() {
+            continue;
+        }
+        let mut now = Ram(&mut m.bus.ram).i32(powerup::CLOCK) as u32;
+        for round in 0..150 {
+            let what = format!("{track} round {round}");
+            // A car through a pickup, put out or not.
+            let k = rng.below(ours.pickups.len() as u32);
+            if rng.below(3) != 0 {
+                ours.pickups[k as usize].out = true;
+                powerup::write_pickup(&mut Ram(&mut m.bus.ram), k, &ours.pickups[k as usize]);
+            }
+            let slot = rng.below(6);
+            let at = CARS + CAR_SIZE * slot;
+            let mut car = Car::read(&Ram(&mut m.bus.ram), at);
+            let mut rand = Rand { seed: Ram(&mut m.bus.ram).i32(SEED) as u32 };
+            random += (ours.pickups[k as usize].out && ours.pickups[k as usize].name.eq_ignore_ascii_case("random")) as u32;
+            let got = ours.take(&mut car, k as usize, now, |n| rand.below(n));
+            // The port's own event for a turbo given (its sound and HUD).
+            car.turbo_given = false;
+            let pickup = powerup::pickup_at(&Ram(&mut m.bus.ram), k);
+            let r = m.call(0x8006_7f98, &[at, pickup]).unwrap();
+            let ram = Ram(&mut m.bus.ram);
+            assert_eq!(got.is_some(), r & 0xff != 0, "{what}: taken");
+            assert_eq!(Car::read(&ram, at), car, "{what}: car {slot} after taking pickup {k}");
+            assert_eq!(kept(&powerup::read(&ram, 6)), kept(&ours), "{what}: after taking pickup {k}");
+            assert_eq!(ram.i32(SEED) as u32, rand.seed, "{what}: seed");
+            taken += got.is_some() as u32;
+            // Time on, and a frame's step.
+            now = now.wrapping_add(rng.below(6000));
+            Ram(&mut m.bus.ram).set_i32(powerup::CLOCK, now as i32);
+            let mut cars: Vec<Car> = (0..6).map(|s| Car::read(&Ram(&mut m.bus.ram), CARS + CAR_SIZE * s)).collect();
+            let before = kept(&ours);
+            ours.step(&mut cars, now);
+            m.call(0x8006_8130, &[]).unwrap();
+            let ram = Ram(&mut m.bus.ram);
+            for (s, c) in cars.iter().enumerate() {
+                assert_eq!(Car::read(&ram, CARS + CAR_SIZE * s as u32), *c, "{what}: car {s} after the step");
+            }
+            assert_eq!(kept(&powerup::read(&ram, 6)), kept(&ours), "{what}: after the step at {now}");
+            let after = kept(&ours);
+            expired += before.1.iter().zip(&after.1).map(|(b, a)| b.len() - a.len()).sum::<usize>();
+            back += before.0.iter().zip(&after.0).filter(|(b, a)| !b.4 && a.4).count();
+        }
+    }
+    eprintln!("{taken} taken, {expired} run out, {back} back, {random} random");
+    assert!(taken > 300 && expired > 50 && back > 50 && random > 10, "{taken} taken, {expired} run out, {back} back, {random} random");
+}

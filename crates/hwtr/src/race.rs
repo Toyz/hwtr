@@ -434,21 +434,15 @@ impl Race {
         // 0x800c5cd0 and 0x800c5cdc, by world and number).
         {
             let world = &scene.world;
-            let mut defs: Vec<hwtr_game::powerup::PowerUp> = Vec::new();
-            let mut spots = Vec::new();
-            for p in &world.pickups {
-                let lower = p.name.to_ascii_lowercase();
-                if lower != "random" && !defs.iter().any(|d| d.name.eq_ignore_ascii_case(&lower)) {
-                    match get(&format!("{}PUP", p.name.to_uppercase()))
-                        .ok()
-                        .and_then(hwtr_game::powerup::PowerUp::parse)
-                    {
-                        Some(def) => defs.push(def),
-                        None => rrt::tracing::warn!("PwrupLoadPowerUp : error loading file {lower}.pup"),
-                    }
+            let defs = hwtr_game::powerup::load_defs(world.pickups.iter().map(|p| p.name.as_str()), |name| {
+                let def = get(&format!("{}PUP", name.to_uppercase())).ok().and_then(hwtr_game::powerup::PowerUp::parse);
+                if def.is_none() {
+                    rrt::tracing::warn!("PwrupLoadPowerUp : error loading file {}.pup", name.to_ascii_lowercase());
                 }
-                spots.push((p.name.clone(), p.pos, p.unknown_0c as i32, p.object));
-            }
+                def
+            });
+            let spots: Vec<_> =
+                world.pickups.iter().map(|p| (p.name.clone(), p.pos, p.unknown_0c as i32, p.object)).collect();
             let view = exe.view();
             let at = |base: u32| view.u8(base + world_index * 3 + world_number - 1).unwrap_or(0);
             race.set_power_ups(&spots, defs, [at(0x800c_5cd0), at(0x800c_5cdc)]);

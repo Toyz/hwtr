@@ -72,6 +72,27 @@ impl PowerUp {
     }
 }
 
+/// 0x800671a8 for each pickup's name: each power-up named loaded once
+/// (`load` reads `<name>.PUP`; one that does not load is left out), and
+/// "Random" none. The original links each new one at the head of its list
+/// (0x80061c00), so they are kept newest first: the order a "Random"
+/// pickup draws from.
+pub fn load_defs<'a>(
+    names: impl IntoIterator<Item = &'a str>,
+    mut load: impl FnMut(&str) -> Option<PowerUp>,
+) -> Vec<PowerUp> {
+    let mut defs: Vec<PowerUp> = Vec::new();
+    for name in names {
+        if same(name, "random") || defs.iter().any(|d| same(&d.name, name)) {
+            continue;
+        }
+        if let Some(def) = load(name) {
+            defs.insert(0, def);
+        }
+    }
+    defs
+}
+
 /// 0x80067090: names alike ignoring case.
 fn same(a: &str, b: &str) -> bool {
     a.eq_ignore_ascii_case(b)
@@ -113,7 +134,7 @@ pub struct Pickup {
 
 /// A power-up a car has (12 bytes on the car's list at 0x8012ff04): which,
 /// since when (race time), and whether it never runs out.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Held {
     pub power_up: usize,
     pub since: u32,

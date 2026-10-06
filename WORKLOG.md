@@ -8,7 +8,7 @@ Running engineering log for reverse engineering Hot Wheels Turbo Racing
 Code says what; the worklog says *how we found out* and *why it is that way*.
 The [reference](docs/README.md) says what is true now.
 
-89 entries: audio 11, bug 1, build 3, content 5, decomp 8, design 3, disc 1, engine 6, format 7, input 11, physics 14, race 12, render 22, test 16, tooling 16, ui 14, video 1.
+90 entries: audio 11, bug 1, build 3, content 5, decomp 8, design 3, disc 1, engine 6, format 7, input 11, physics 14, race 13, render 22, test 16, tooling 16, ui 14, video 1.
 
 | # | Entry | Date | Area |
 | ---: | --- | --- | --- |
@@ -101,3 +101,4 @@ The [reference](docs/README.md) says what is true now.
 | 87 | [Cheat 8 paints each car one colour](worklog/0087-cheat-8-paints-each-car-one-colour.md) | 2026-10-04 | render |
 | 88 | [The controls into the car, checked for any stick](worklog/0088-the-controls-into-the-car-checked-for-any-stick.md) | 2026-10-04 | input |
 | 89 | [The unlock pickups checked, and a page for the power-ups](worklog/0089-the-unlock-pickups-checked-and-a-page-for-the-power-ups.md) | 2026-10-04 | race |
+| 90 | [Pickups taken and back, checked; Random's draw order fixed](worklog/0090-pickups-taken-and-back-checked-random-s-draw-order-fixed.md) | 2026-10-05 | race |

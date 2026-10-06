@@ -10,6 +10,7 @@ pub mod car;
 pub mod effects;
 pub mod object;
 pub mod pad;
+pub mod powerup;
 pub mod race;
 pub mod rand;
 pub mod world;
